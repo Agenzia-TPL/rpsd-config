@@ -1,0 +1,18 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Other
+mnt/
+
+# AI assistants local files (personal, not shared)
+ai-history.local.md
+CLAUDE.local.md
+.claude/settings.local.json

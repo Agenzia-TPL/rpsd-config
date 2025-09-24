@@ -1,0 +1,88 @@
+[project]
+name = "rpsd-config"
+version = "0.1.0"
+description = "Config service of the Rapsodia platform"
+readme = "README.md"
+authors = [
+    { name = "davide.nuccio", email = "davide.nuccio@gmail.com" }
+]
+maintainers = [
+    { name = "davide.nuccio", email = "davide.nuccio@gmail.com" }
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Django :: 5.2",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+keywords = ["django", "web", "framework"]
+
+requires-python = ">=3.13"
+
+dependencies = [
+    "django>=5.2.0",
+    "psycopg[binary]>=3.1.0",  # Modern PostgreSQL adapter
+    "python-decouple>=3.8",    # Environment variables
+    "pillow>=10.0.0",          # Image processing
+    "django-extensions>=3.2.0", # Useful Django extensions
+]
+
+[tool.uv.sources]
+# Example: pin to specific git commit or branch if needed
+# django = { git = "https://github.com/django/django.git", branch = "main" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.13.1",
+    "pytest>=8.0.0",
+    "pytest-django>=4.8.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.5.0",    # Parallel test execution
+    "factory-boy>=3.3.0",
+    "django-debug-toolbar>=4.2.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+src = ["packages/*/src"]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "W"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"packages/*/examples/*" = ["N999"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# Pytest configuration
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "my_django_app.settings.test"  # Adjust path
+addopts = [
+    "--reuse-db",
+    "--cov=my_django_app",  # Replace with your app name
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--strict-markers",
+]
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+]

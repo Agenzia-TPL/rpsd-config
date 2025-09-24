@@ -1,0 +1,23 @@
+services:
+  rpsd-config:
+    extends:
+      file: ./docker-compose-base.yml
+      service: rpsd-config
+    command: ["uv", "run", "--directory", "/workspaces/rpsd-config", "app"]
+    #command: /bin/sh -c "sleep 0s; echo 'PIPPO!!!'"
+
+  ############################
+  # Dapr sidecar
+  ############################
+  rpsd-config-dapr:
+    extends:
+      file: ./docker-compose-base.yml
+      service: rpsd-config-dapr
+
+############################
+# Network between containers
+############################
+networks:
+  rpsd-dapr:
+    external: true
+    name: rpsd-dapr
