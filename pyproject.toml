@@ -40,6 +40,10 @@ dependencies = [
 # Example: pin to specific git commit or branch if needed
 # django = { git = "https://github.com/django/django.git", branch = "main" }
 
+[project.scripts]
+manage = "rpsd_config.manage:main"
+server = "rpsd_config.manage:server"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
