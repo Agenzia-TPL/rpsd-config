@@ -16,8 +16,17 @@ Including another URLconf
 """
 
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+]
+
+urlpatterns += [path("app1/", include("rpsd_config.app1.urls", namespace="app1"))]
+
+# Remove when not needed anymore
+from django.views import debug  # noqa: E402
+
+urlpatterns += [
+    path("", debug.default_urlconf),
 ]
