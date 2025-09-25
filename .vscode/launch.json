@@ -5,6 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "server",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${workspaceFolder}/.venv/bin/python",
+            "cwd": "${workspaceFolder}/src/rpsd_config",
+            "program": "manage.py",
+            "args": [
+                "runserver",
+                "0.0.0.0:8000"
+            ],
+            "justMyCode": false
+        },
+        {
             "name": "Run Current Python File with uv",
             "type": "debugpy",
             "request": "launch",
@@ -13,15 +26,6 @@
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
             "console": "integratedTerminal"
-        },
-        {
-            "name": "app",
-            "type": "debugpy",
-            "request": "launch",
-            "python": "${workspaceFolder}/.venv/bin/python",
-            "cwd": "${workspaceFolder}/src/rpsd_config",
-            "program": "app.py",
-            "justMyCode": false
         }
     ]
 }
