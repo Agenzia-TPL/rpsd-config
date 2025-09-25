@@ -9,7 +9,7 @@ services:
     extends:
       file: ./docker-compose-base.yml
       service: rpsd-config
-
+      
   ############################
   # Dapr sidecar
   ############################
@@ -21,3 +21,5 @@ services:
       - placement
       - scheduler
       - redis
+    ports:
+      - "12080:8000"
