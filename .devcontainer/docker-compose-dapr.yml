@@ -5,8 +5,6 @@ services:
   placement:
     image: "daprio/dapr"
     command: ["./placement", "-port", "50006"]
-    ports:
-      - "50006:50006"
     networks:
       - rpsd-dapr
 
@@ -16,8 +14,6 @@ services:
   scheduler:
     image: "daprio/dapr"
     command: ["./scheduler", "--port", "50007", "--etcd-data-dir", "/data"]
-    ports:
-      - "50007:50007"
     networks:
       - rpsd-dapr
     user: root
@@ -29,13 +25,14 @@ services:
   ############################
   redis:
     image: "redis:alpine"
-    ports:
-      - "6380:6379"
     networks:
       - rpsd-dapr
+
 ############################
 # Network between containers
 ############################
 networks:
   rpsd-dapr:
+    external: true
     name: rpsd-dapr
+
