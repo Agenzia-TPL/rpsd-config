@@ -33,8 +33,10 @@ services:
         bind:
           create_host_path: false
     networks:
-      - rpsd-dapr
-
+      rpsd-dapr:
+        aliases:
+          - rpsd-config        # Alias for the app service
+          
 ############################
 # Network between containers
 ############################
