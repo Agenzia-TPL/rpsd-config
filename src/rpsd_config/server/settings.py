@@ -40,7 +40,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.gis",
     "rpsd_config.app1",
-    "rpsd_config.exchange_agreements",
+    "rpsd_config.exchange_agreement",
 ]
 
 MIDDLEWARE = [

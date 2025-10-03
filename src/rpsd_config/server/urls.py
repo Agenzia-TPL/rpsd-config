@@ -23,7 +23,7 @@ urlpatterns = [
 ]
 
 urlpatterns += [path("app1/",include("rpsd_config.app1.urls",namespace="app1")),
-                path("exchange_agreements/",include("rpsd_config.exchange_agreements.urls",namespace="exchange_agreements"))]
+                path("exchange_agreement/",include("rpsd_config.exchange_agreement.urls",namespace="exchange_agreement"))]
 
 # Remove when not needed anymore
 from django.views import debug  # noqa: E402
