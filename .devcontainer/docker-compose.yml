@@ -3,12 +3,15 @@
 ############################
 include:
   - ./docker-compose-dapr.yml
+  - ./docker-compose-database.yml
 
 services:
   rpsd-config:
     extends:
       file: ./docker-compose-base.yml
       service: rpsd-config
+    depends_on:
+      - postgis
       
   ############################
   # Dapr sidecar

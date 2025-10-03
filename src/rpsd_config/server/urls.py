@@ -22,7 +22,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
 ]
 
-urlpatterns += [path("app1/", include("rpsd_config.app1.urls", namespace="app1"))]
+urlpatterns += [path("app1/",include("rpsd_config.app1.urls",namespace="app1")),
+                path("exchange_agreements/",include("rpsd_config.exchange_agreements.urls",namespace="exchange_agreements"))]
 
 # Remove when not needed anymore
 from django.views import debug  # noqa: E402
