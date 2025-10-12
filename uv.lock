@@ -121,6 +121,18 @@ wheels = [
 ]
 
 [[package]]
+name = "django-leaflet"
+version = "0.32.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9c/73/958f1544f833337326d4ced8c243992ea667a93ebe9172b649890fc5fc75/django_leaflet-0.32.0.tar.gz", hash = "sha256:013ccb06ee08071caec98a65dffd68ab3694dafce72caff34f3d78f35568ae25", size = 562450, upload-time = "2025-05-14T12:49:39.281Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/d3/bf4a46eff75a5a804fc32588696d2dcd04370008041114009f0f35a3fb42/django_leaflet-0.32.0-py3-none-any.whl", hash = "sha256:a17d8e6cc05dd98e8e543fbf198b81dabbf9f195c222e786d1686aeda91c1aa8", size = 582439, upload-time = "2025-05-14T12:49:34.151Z" },
+]
+
+[[package]]
 name = "execnet"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -357,6 +369,7 @@ source = { editable = "." }
 dependencies = [
     { name = "django" },
     { name = "django-extensions" },
+    { name = "django-leaflet" },
     { name = "pillow" },
     { name = "psycopg", extra = ["binary"] },
     { name = "python-decouple" },
@@ -375,8 +388,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "django", specifier = ">=5.2.0" },
+    { name = "django", extras = ["gis"], specifier = ">=5.2.0" },
     { name = "django-extensions", specifier = ">=3.2.0" },
+    { name = "django-leaflet", specifier = ">=0.29.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1.0" },
     { name = "python-decouple", specifier = ">=3.8" },

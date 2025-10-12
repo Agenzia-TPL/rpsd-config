@@ -41,6 +41,10 @@ INSTALLED_APPS = [
     "django.contrib.gis",
     "rpsd_config.app1",
     "rpsd_config.exchange_agreement",
+    "rpsd_config.admin_stakeholders",
+    "rpsd_config.admin_agreements",
+    "rpsd_config.admin_dataset_exchange",
+    "rpsd_config.admin_service_net",
 ]
 
 MIDDLEWARE = [
