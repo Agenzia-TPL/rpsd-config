@@ -102,9 +102,9 @@ class Lot(TimeStampedModel):
 class Line(TimeStampedModel):
     code = models.CharField(max_length=64, unique=True, help_text="Unique line identifier")
     name = models.CharField(max_length=255)
-    authority = models.OneToOneField(
-        Authority, on_delete=models.PROTECT, related_name="line",
-        help_text="Authority associated to the line (1:1)"
+    authority = models.ForeignKey(
+        Authority, on_delete=models.PROTECT, related_name="lines",
+        help_text="Authority associated to the line (1:N)"
     )
     lot = models.ForeignKey(
         Lot, on_delete=models.PROTECT, related_name="lines",
@@ -116,7 +116,8 @@ class Line(TimeStampedModel):
         verbose_name_plural = "Lines"
         indexes = [models.Index(fields=["lot"]), models.Index(fields=["code"])]
         constraints = [
-            models.UniqueConstraint(fields=["authority"], name="unique_line_authority")
+        #    models.UniqueConstraint(fields=["authority"], name="unique_line_authority")
+            models.UniqueConstraint(fields=['code', 'lot'], name='unique_line_lot_identifier')
         ]
 
     def __str__(self) -> str:
