@@ -22,8 +22,12 @@ class StructureAdmin(admin.ModelAdmin):
 
 @admin.register(IndicatorDefAdminProxy)
 class IndicatorDefAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "type", "structure", "created_at", "updated_at")
-    list_filter  = ("type", "structure__dataset")
-    search_fields = ("code", "name", "description", "structure__name", "structure__dataset__slug")
-    autocomplete_fields = ("structure",)
+    list_display = ("code", "name", "type", "structures_list", "created_at", "updated_at")
+    list_filter  = ("type", "structures__dataset")
+    search_fields = ("code", "name", "description", "structures__name", "structures__dataset__slug")
+    autocomplete_fields = ("structures",)
     readonly_fields = ("created_at", "updated_at")
+
+    @admin.display(description="Structures")
+    def structures_list(self, obj):
+        return ", ".join(str(structure) for structure in obj.structures.all())

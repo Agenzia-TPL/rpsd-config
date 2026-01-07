@@ -9,8 +9,8 @@ from rpsd_config.exchange_agreement.models import (
     ContractIndicator,
     Dataset,
     IndicatorDef,
-    Line,
     Lot,
+    Route,
     Stop,
     Structure,
     Trip,
@@ -39,8 +39,8 @@ class AuthorityHidden(_HiddenAdmin):
 class LotHidden(_HiddenAdmin):
     search_fields = ("description",)
 
-@admin.register(Line)
-class LineHidden(_HiddenAdmin):
+@admin.register(Route)
+class RouteHidden(_HiddenAdmin):
     search_fields = ("code", "name")
 
 @admin.register(Stop)

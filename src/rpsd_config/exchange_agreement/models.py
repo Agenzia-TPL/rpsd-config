@@ -51,6 +51,13 @@ class Company(TimeStampedModel):
         return self.name
 
 
+# -----------------------------------------------
+# Consider adding a model here that defines access keys and specific URLs to
+# allow third-party systems to upload datasets into the system.
+# -----------------------------------------------
+
+
+
 class Authority(TimeStampedModel):
     class AuthorityType(models.TextChoices):
         REGION = "region", _("Region")
@@ -89,6 +96,7 @@ class Authority(TimeStampedModel):
 class Lot(TimeStampedModel):
     id = models.BigAutoField(primary_key=True)
     description = models.CharField(max_length=255)
+    # valutare se aggiunger il poligono del lotto
 
     class Meta:
         verbose_name = "Lot"
@@ -99,25 +107,31 @@ class Lot(TimeStampedModel):
         return f"Lot {self.id} - {self.description}"
 
 
-class Line(TimeStampedModel):
-    code = models.CharField(max_length=64, unique=True, help_text="Unique line identifier")
+# -----------------------------------------------
+# Consider that file validation cannot rely on the presence of all lines in
+# every transmission, because a partial upload may have been sent.
+# -----------------------------------------------
+
+class Route(TimeStampedModel):
+    # This allows multiple lots with different authorities, but each line can have only one authority.
+    code = models.CharField(max_length=64, unique=True, help_text="Unique route identifier")
     name = models.CharField(max_length=255)
     authority = models.ForeignKey(
-        Authority, on_delete=models.PROTECT, related_name="lines",
-        help_text="Authority associated to the line (1:N)"
+        Authority, on_delete=models.PROTECT, related_name="routes",
+        help_text="Authority associated to the route (1:N)"
     )
     lot = models.ForeignKey(
-        Lot, on_delete=models.PROTECT, related_name="lines",
-        help_text="The line belongs to a lot (1:N)"
+        Lot, on_delete=models.PROTECT, related_name="routes",
+        help_text="The route belongs to a lot (1:N)"
     )
 
     class Meta:
-        verbose_name = "Line"
-        verbose_name_plural = "Lines"
+        verbose_name = "Route"
+        verbose_name_plural = "Routes"
         indexes = [models.Index(fields=["lot"]), models.Index(fields=["code"])]
         constraints = [
         #    models.UniqueConstraint(fields=["authority"], name="unique_line_authority")
-            models.UniqueConstraint(fields=['code', 'lot'], name='unique_line_lot_identifier')
+            models.UniqueConstraint(fields=['code', 'lot'], name='unique_route_lot_identifier')
         ]
 
     def __str__(self) -> str:
@@ -141,7 +155,7 @@ class Stop(TimeStampedModel):
 class Trip(TimeStampedModel):
     code = models.CharField(max_length=64, unique=True, help_text="Unique trip identifier")
     name = models.CharField(max_length=255, blank=True)
-    line = models.ForeignKey(Line, on_delete=models.PROTECT, related_name="trips")
+    route = models.ForeignKey(Route, on_delete=models.PROTECT, related_name="trips")
     geom = gis_models.LineStringField(
         srid=4326, null=True, blank=True,
         help_text="Trip path (polyline in WGS84)"
@@ -152,7 +166,7 @@ class Trip(TimeStampedModel):
     class Meta:
         verbose_name = "Trip"
         verbose_name_plural = "Trips"
-        indexes = [models.Index(fields=["line"]), models.Index(fields=["code"])]
+        indexes = [models.Index(fields=["route"]), models.Index(fields=["code"])]
 
     def __str__(self) -> str:
         return self.code
@@ -187,7 +201,7 @@ class Dataset(TimeStampedModel):
     slug = models.SlugField(unique=True, help_text="e.g. netex, siri_pt, siri_vm, ...")
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True)
-
+    # valutare se aggiungere lo specifico validation schema .xsd del dataset
     class Meta:
         verbose_name = "Dataset"
         verbose_name_plural = "Datasets"
@@ -201,6 +215,7 @@ class Structure(TimeStampedModel):
     dataset = models.ForeignKey(Dataset, on_delete=models.PROTECT, related_name="structures")
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True)
+    # validation schema va chiamato in modo differente per non confonderlo con lo schema di validazione dei dataset. ( es. attributi specifici  ovvero gli elementi necessari per considerare una porzione di struttura consistente)
     validation_schema = models.FileField(
         upload_to=structure_validation_path, blank=True, null=True,
         validators=[FileExtensionValidator(allowed_extensions=["xsd", "xml", "json", "yaml", "yml"])],
@@ -236,9 +251,10 @@ class IndicatorDef(TimeStampedModel):
     description = models.TextField(blank=True)
     formula = models.TextField(blank=True)
     notes = models.TextField(blank=True)
-    structure = models.ForeignKey(
-        Structure, on_delete=models.PROTECT, related_name="indicators",
-        help_text="Which dataset structures/segments are required"
+    structures = models.ManyToManyField(
+        Structure,
+        related_name="indicators",
+        help_text="Which dataset structures/segments are required",
     )
 
     class Meta:
@@ -268,7 +284,6 @@ class Contract(TimeStampedModel):
         START = "start", _("Start")
         RENEWAL = "renewal", _("Renewal")
 
-    # renamed: contract_code clearer than id_contratto
     contract_code = models.CharField(max_length=64, unique=True)
     client_agency = models.ForeignKey(
         Agency, on_delete=models.PROTECT, related_name="contracts_as_client",
@@ -291,7 +306,7 @@ class Contract(TimeStampedModel):
         help_text="Progressive serial for the pair (client_agency, contractor_company)"
     )
 
-    # Program (NetEx)
+    # Program (es. NetEx)
     contract_program_file = models.FileField(
         upload_to=contract_program_path, blank=True, null=True,
         validators=[FileExtensionValidator(allowed_extensions=["xml", "zip"])],
@@ -335,6 +350,12 @@ class Contract(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.contract_code} ({self.contract_type_label})"
+
+
+
+# 2do
+# evaluate how to associate, to a contract, the users/emails that will be allowed to access the contract’s admin sections
+# evaluate possible integrations with IAM to provision the new users
 
 
 class ContractDocument(TimeStampedModel):

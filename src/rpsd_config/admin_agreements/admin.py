@@ -55,6 +55,6 @@ class ContractDocumentAdmin(admin.ModelAdmin):
 @admin.register(ContractIndicatorAdminProxy)
 class ContractIndicatorAdmin(admin.ModelAdmin):
     list_display = ("contract", "indicator")
-    list_filter  = ("indicator__type", "indicator__structure__dataset")
+    list_filter  = ("indicator__type", "indicator__structures__dataset")
     search_fields = ("contract__contract_code", "indicator__code", "indicator__name")
     autocomplete_fields = ("contract", "indicator")

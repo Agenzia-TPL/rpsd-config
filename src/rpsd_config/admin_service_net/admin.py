@@ -1,16 +1,31 @@
 from django.contrib import admin
-from django.contrib.gis.admin import GISModelAdmin
+from django.contrib.gis.db.models import GeometryField
+from leaflet.admin import LeafletGeoAdmin
+from leaflet.forms.widgets import LeafletWidget
 
 from rpsd_config import admin_hidden  # noqa: F401
 from rpsd_config.exchange_agreement.models import (
     TripStop,  # real through model for inline
 )
 
-from .proxies import LineAdminProxy, LotAdminProxy, StopAdminProxy, TripAdminProxy
+from .proxies import LotAdminProxy, RouteAdminProxy, StopAdminProxy, TripAdminProxy
 
 
-class LineInline(admin.TabularInline):
-    model = LineAdminProxy
+class GeomAdmin(LeafletGeoAdmin):
+    formfield_overrides = {
+        GeometryField: {
+            "widget": LeafletWidget(
+                attrs={
+                    "map_height": "600px",
+                    "map_width": "100%",
+                }
+            )
+        }
+    }
+
+
+class RouteInline(admin.TabularInline):
+    model = RouteAdminProxy
     extra = 0
     fields = ("code", "name", "authority")
     autocomplete_fields = ("authority",)
@@ -19,11 +34,11 @@ class LineInline(admin.TabularInline):
 class LotAdmin(admin.ModelAdmin):
     list_display = ("id", "description")
     search_fields = ("description",)
-    inlines = (LineInline,)
+    inlines = (RouteInline,)
     ordering = ("id",)
 
-@admin.register(LineAdminProxy)
-class LineAdmin(admin.ModelAdmin):
+@admin.register(RouteAdminProxy)
+class RouteAdmin(admin.ModelAdmin):
     list_display = ("code", "name", "lot", "authority")
     list_filter  = ("lot",)
     search_fields = ("code", "name", "lot__description", "authority__name")
@@ -31,10 +46,9 @@ class LineAdmin(admin.ModelAdmin):
     list_select_related = ("lot", "authority")
 
 @admin.register(StopAdminProxy)
-class StopAdmin(GISModelAdmin):
+class StopAdmin(GeomAdmin):
     list_display = ("code", "name")
     search_fields = ("code", "name")
-    gis_widget_kwargs = {"default_lon": 0, "default_lat": 0, "default_zoom": 2}
 
 class TripStopInline(admin.TabularInline):
     model = TripStop
@@ -44,11 +58,10 @@ class TripStopInline(admin.TabularInline):
     ordering = ("sequence",)
 
 @admin.register(TripAdminProxy)
-class TripAdmin(GISModelAdmin):
-    list_display = ("code", "name", "line")
-    list_filter  = ("line",)
-    search_fields = ("code", "name", "line__code", "line__name")
-    autocomplete_fields = ("line",)
-    list_select_related = ("line",)
+class TripAdmin(GeomAdmin):
+    list_display = ("code", "name", "route")
+    list_filter  = ("route",)
+    search_fields = ("code", "name", "route__code", "route__name")
+    autocomplete_fields = ("route",)
+    list_select_related = ("route",)
     inlines = (TripStopInline,)
-    gis_widget_kwargs = {"default_lon": 0, "default_lat": 0, "default_zoom": 2}

@@ -1,12 +1,32 @@
 from django.contrib import admin
-from django.contrib.gis.admin import GISModelAdmin
 
-from ..admin_service_net.proxies import Line
+#from django.contrib.gis.forms import OSMWidget
+from django.contrib.gis.db.models import GeometryField
+
+#from django.urls import reverse
+#from django.utils.html import format_html
+#import django_filters
+from leaflet.admin import LeafletGeoAdmin
+from leaflet.forms.widgets import LeafletWidget
+
+from ..admin_service_net.proxies import Route
 from .proxies import AgencyAdminProxy, AuthorityAdminProxy, CompanyAdminProxy
 
+# oppure: from leaflet.forms.widgets import LeafletWidget
+# e usare formfield_overrides con LeafletWidget
 
-class LineInline(admin.TabularInline):
-    model = Line
+class GeomAdmin(LeafletGeoAdmin):
+    #change_form_template = "admin/custom_admin.html"
+    formfield_overrides = {
+        GeometryField: {"widget": LeafletWidget(attrs={
+            "map_height": "600px",   # <- qui la tua altezza
+            "map_width": "100%",     # opzionale
+        })}
+    }
+
+
+class RouteInline(admin.TabularInline):
+    model = Route
     # Campi da mostrare nella tabella inline
     # 'authority' non serve, perché è già l'autorità che stai modificando
     list_display = ('code', 'name', 'lot')
@@ -32,7 +52,7 @@ class CompanyAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
 
 @admin.register(AuthorityAdminProxy)
-class AuthorityAdmin(GISModelAdmin):
+class AuthorityAdmin(GeomAdmin):
     list_display = ("name", "authority_type", "created_at", "updated_at")
     list_filter = ("authority_type",)
     search_fields = ("name",)
@@ -41,5 +61,4 @@ class AuthorityAdmin(GISModelAdmin):
     #gis_widget_kwargs = {"lon": 0, "lat": 0, "zoom": 2}
     # Se continui ad avere problemi, prova a specificare il widget esplicitamente
     #gis_widget = OSMWidget
-    inlines = [LineInline]
-
+    inlines = [RouteInline]

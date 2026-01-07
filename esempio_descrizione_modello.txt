@@ -1,0 +1,75 @@
+Descrizione del modello dati
+
+Il modello exchange_agreement rappresenta gli accordi contrattuali tra enti (agenzie, aziende), la rete di servizio di TPL a cui si riferiscono (lotti, linee, fermate, corse), i dataset di riferimento e gli indicatori usati nei contratti.
+
+Tutte le entità principali ereditano da TimeStampedModel, che aggiunge created_at e updated_at con gestione automatica e indicizzazione, utili per auditing e ordinamenti.
+
+Stakeholder
+
+Agency: identifica un’agenzia (tipicamente ente concedente/cliente). Ha name univoco e description libera.
+Company: identifica un’azienda (tipicamente gestore/contraente). Ha name univoco e description.
+Authority: rappresenta un’autorità territoriale (ad es. Regione, Comune, altro).
+name, description testuale.
+authority_type (scelta tra region, municipality, other).
+geographic_extent: MultiPolygon in WGS84 per il territorio di competenza.
+Vincolo di univocità su coppia (name, authority_type).
+Rete di servizio (Service net)
+
+Lot: rappresenta un lotto di servizio (unità contrattuale/territoriale).
+id (BigAutoField), description.
+Line: rappresenta una linea (route).
+code univoco, name.
+authority: FK a Authority (ogni linea ha una sola autorità competente).
+lot: FK a Lot (la linea appartiene a un lotto).
+Vincolo di univocità su (code, lot) e indici su lot e code.
+Stop: rappresenta una fermata.
+code univoco, name opzionale.
+geom: punto in WGS84 (lon/lat).
+Trip: rappresenta una corsa (viaggio) su una linea.
+code univoco, name opzionale.
+line: FK a Line.
+geom: LineString opzionale (tracciato della corsa).
+stops: M2M verso Stop tramite modello intermedio TripStop.
+TripStop: relazione ordinata tra Trip e Stop.
+trip, stop (FK).
+sequence: posizione della fermata nella corsa.
+Vincoli: unicità (trip, stop) e (trip, sequence) per garantire sia l’ordine che l’assenza di duplicati.
+Dataset e strutture
+
+Dataset: rappresenta un tipo di dataset (es. Netex, SIRI PT, SIRI VM).
+slug univoco (es. netex, siri_pt), name, description.
+Structure: rappresenta una “sezione/segmento” di un dataset.
+dataset: FK a Dataset.
+name, description.
+validation_schema: file opzionale (XSD/XML/JSON/YAML) usato per validazione.
+Vincolo di univocità su (dataset, name).
+IndicatorDef: definizione di indicatore.
+code univoco, type (QUALITY, QUANTITY, PUNCTUALITY, OTHER).
+name, description, formula, notes.
+structure: FK a Structure per indicare quali strutture di dataset sono necessarie per calcolare l’indicatore.
+Contratti
+
+Contract: rappresenta un contratto (o rinnovo) tra un’agenzia cliente e un’azienda contraente, associato a un lotto.
+contract_code univoco (identificativo leggibile del contratto).
+client_agency: FK ad Agency (cliente).
+contractor_company: FK a Company (contraente).
+start_date, end_date opzionale (con check che end_date >= start_date se presente).
+tender_id opzionale per riferimenti a gare/appalti.
+contract_type: start o renewal.
+version: progressivo per la coppia (client_agency, contractor_company). Vincolo di unicità su (client_agency, contractor_company, version).
+contract_program_file: file (XML/ZIP) NetEx con il programma contrattuale, salvato in cartella contracts/<contract_code>/program/.
+lot: FK a Lot.
+Metodi di utilità: contract_type_label (etichetta umana) e is_active_today (contratto attivo alla data odierna).
+ContractDocument: documenti allegati al contratto.
+contract: FK a Contract.
+name opzionale, file obbligatorio (PDF, DOC, ODT, ZIP…).
+File salvato in contracts/<contract_code>/documents/.
+ContractIndicator: associazione tra Contract e IndicatorDef.
+contract, indicator (FK).
+params: campo JSON opzionale per soglie, pesi, configurazioni specifiche.
+Vincolo di unicità (contract, indicator).
+Proposta di struttura YAML
+
+Qui sotto una possibile struttura YAML pensata per descrivere il modello dati in modo sintetico ma formale, riutilizzabile da altri applicativi (es. per generare documentazione, mapping ETL, validazioni di base, ecc.).
+
+Puoi salvarlo come, ad esempio, exchange_agreement_schema.yaml o incollarlo nel README.md in un blocco codice.

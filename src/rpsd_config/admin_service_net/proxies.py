@@ -1,4 +1,4 @@
-from rpsd_config.exchange_agreement.models import Line, Lot, Stop, Trip
+from rpsd_config.exchange_agreement.models import Lot, Route, Stop, Trip
 
 
 class LotAdminProxy(Lot):
@@ -8,12 +8,12 @@ class LotAdminProxy(Lot):
         verbose_name = "Lot"
         verbose_name_plural = "Lots"
 
-class LineAdminProxy(Line):
+class RouteAdminProxy(Route):
     class Meta:
         proxy = True
         app_label = "admin_service_net"
-        verbose_name = "Line"
-        verbose_name_plural = "Lines"
+        verbose_name = "Route"
+        verbose_name_plural = "Routes"
 
 class StopAdminProxy(Stop):
     class Meta:

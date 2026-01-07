@@ -38,14 +38,41 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "leaflet",
     "django.contrib.gis",
     "rpsd_config.app1",
-    "rpsd_config.exchange_agreement",
+    #"rpsd_config.exchange_agreement",
+    "rpsd_config.exchange_agreement.apps.ExchangeAgreementConfig",    
     "rpsd_config.admin_stakeholders",
     "rpsd_config.admin_agreements",
     "rpsd_config.admin_dataset_exchange",
     "rpsd_config.admin_service_net",
 ]
+
+
+
+
+
+LEAFLET_CONFIG = {
+    "DEFAULT_CENTER": (45.4642637, 9.1896343),
+    "DEFAULT_ZOOM": 13,
+    "MIN_ZOOM": 2,
+    "MAX_ZOOM": 19,   # <-- NON andare oltre 19 con OSM standard
+    "SCALE": "metric",
+    "RESET_VIEW": True,
+    "TILES": [
+        (
+            "OSM",
+            "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            {
+                "attribution": "&copy; OpenStreetMap contributors",
+                "maxZoom": 19,          # zoom massimo consentito dalla mappa
+                "maxNativeZoom": 19,    # i tile esistono nativamente fino a 19
+                # "detectRetina": True, # opzionale
+            },
+        )
+    ],
+}
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

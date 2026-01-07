@@ -1,0 +1,456 @@
+exchange_agreement_model:
+  version: "1.0"
+  description: >
+    Data model for public transport exchange agreements: stakeholders, service network,
+    datasets/structures, indicators, and contracts.
+
+  base_models:
+    TimeStampedModel:
+      description: "Abstract base with creation/update timestamps."
+      fields:
+        created_at:
+          type: datetime
+          auto_now_add: true
+          indexed: true
+        updated_at:
+          type: datetime
+          auto_now: true
+          indexed: true
+
+  models:
+    Agency:
+      inherits: TimeStampedModel
+      description: "Agency acting typically as contracting authority/client."
+      table: "exchange_agreement_agency"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        name:
+          type: string
+          max_length: 255
+          unique: true
+          required: true
+        description:
+          type: text
+          required: false
+      meta:
+        ordering: ["name"]
+
+    Company:
+      inherits: TimeStampedModel
+      description: "Company acting typically as operator/contractor."
+      table: "exchange_agreement_company"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        name:
+          type: string
+          max_length: 255
+          unique: true
+          required: true
+        description:
+          type: text
+          required: false
+      meta:
+        ordering: ["name"]
+
+    Authority:
+      inherits: TimeStampedModel
+      description: "Territorial authority (Region, Municipality, Other)."
+      table: "exchange_agreement_authority"
+      choices:
+        authority_type:
+          region: "Region"
+          municipality: "Municipality"
+          other: "Other"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        name:
+          type: string
+          max_length: 255
+          required: true
+        description:
+          type: text
+          required: false
+        authority_type:
+          type: string
+          max_length: 20
+          required: true
+          choices_ref: authority_type
+        geographic_extent:
+          type: geometry_multipolygon
+          srid: 4326
+          required: false
+      constraints:
+        - type: unique
+          name: "uniq_authority_name_type"
+          fields: ["name", "authority_type"]
+      meta:
+        ordering: ["name"]
+
+    Lot:
+      inherits: TimeStampedModel
+      description: "Service lot (contractual unit)."
+      table: "exchange_agreement_lot"
+      fields:
+        id:
+          type: bigint_auto
+          primary_key: true
+        description:
+          type: string
+          max_length: 255
+          required: true
+      meta:
+        ordering: ["id"]
+
+    Line:
+      inherits: TimeStampedModel
+      description: "Public transport line (route), associated to a lot and an authority."
+      table: "exchange_agreement_line"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        code:
+          type: string
+          max_length: 64
+          required: true
+          unique: true
+        name:
+          type: string
+          max_length: 255
+          required: true
+        authority_id:
+          type: foreign_key
+          to: Authority
+          on_delete: PROTECT
+          required: true
+        lot_id:
+          type: foreign_key
+          to: Lot
+          on_delete: PROTECT
+          required: true
+      indexes:
+        - fields: ["lot_id"]
+        - fields: ["code"]
+      constraints:
+        - type: unique
+          name: "unique_line_lot_identifier"
+          fields: ["code", "lot_id"]
+      meta:
+        ordering: ["id"]
+
+    Stop:
+      inherits: TimeStampedModel
+      description: "Stop (point) of the public transport network."
+      table: "exchange_agreement_stop"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        code:
+          type: string
+          max_length: 64
+          required: true
+          unique: true
+        name:
+          type: string
+          max_length: 255
+          required: false
+        geom:
+          type: geometry_point
+          srid: 4326
+          required: true
+      indexes:
+        - fields: ["code"]
+      meta:
+        ordering: ["id"]
+
+    Trip:
+      inherits: TimeStampedModel
+      description: "Trip (run) on a line, with ordered stops."
+      table: "exchange_agreement_trip"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        code:
+          type: string
+          max_length: 64
+          required: true
+          unique: true
+        name:
+          type: string
+          max_length: 255
+          required: false
+        line_id:
+          type: foreign_key
+          to: Line
+          on_delete: PROTECT
+          required: true
+        geom:
+          type: geometry_linestring
+          srid: 4326
+          required: false
+      relations:
+        stops:
+          type: many_to_many
+          through: TripStop
+          to: Stop
+      indexes:
+        - fields: ["line_id"]
+        - fields: ["code"]
+      meta:
+        ordering: ["id"]
+
+    TripStop:
+      description: "Ordered association between a trip and its stops."
+      table: "exchange_agreement_tripstop"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        trip_id:
+          type: foreign_key
+          to: Trip
+          on_delete: CASCADE
+          required: true
+        stop_id:
+          type: foreign_key
+          to: Stop
+          on_delete: PROTECT
+          required: true
+        sequence:
+          type: integer
+          required: true
+      constraints:
+        - type: unique
+          name: "unique_trip_stop"
+          fields: ["trip_id", "stop_id"]
+        - type: unique
+          name: "unique_trip_sequence"
+          fields: ["trip_id", "sequence"]
+      meta:
+        ordering: ["trip_id", "sequence"]
+
+    Dataset:
+      inherits: TimeStampedModel
+      description: "Dataset type (e.g. NetEx, SIRI_PT, SIRI_VM)."
+      table: "exchange_agreement_dataset"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        slug:
+          type: slug
+          max_length: 50
+          required: true
+          unique: true
+        name:
+          type: string
+          max_length: 128
+          required: true
+        description:
+          type: text
+          required: false
+      meta:
+        ordering: ["slug"]
+
+    Structure:
+      inherits: TimeStampedModel
+      description: "Dataset section/segment with optional validation schema."
+      table: "exchange_agreement_structure"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        dataset_id:
+          type: foreign_key
+          to: Dataset
+          on_delete: PROTECT
+          required: true
+        name:
+          type: string
+          max_length: 128
+          required: true
+        description:
+          type: text
+          required: false
+        validation_schema:
+          type: file
+          required: false
+          allowed_extensions: ["xsd", "xml", "json", "yaml", "yml"]
+          upload_path_pattern: "catalog/structures/{id}/validation/{filename}"
+      constraints:
+        - type: unique
+          name: "unique_structure_dataset_name"
+          fields: ["dataset_id", "name"]
+      meta:
+        ordering: ["dataset_id", "name"]
+
+    IndicatorDef:
+      inherits: TimeStampedModel
+      description: "Indicator definition (quality, quantity, punctuality, etc.)."
+      table: "exchange_agreement_indicatordef"
+      choices:
+        type:
+          QUALITY: "Quality"
+          QUANTITY: "Quantity"
+          PUNCTUALITY: "Punctuality"
+          OTHER: "Other"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        code:
+          type: string
+          max_length: 64
+          required: true
+          unique: true
+        type:
+          type: string
+          max_length: 16
+          required: true
+          choices_ref: type
+        name:
+          type: string
+          max_length: 255
+          required: true
+        description:
+          type: text
+          required: false
+        formula:
+          type: text
+          required: false
+        notes:
+          type: text
+          required: false
+        structure_id:
+          type: foreign_key
+          to: Structure
+          on_delete: PROTECT
+          required: true
+      meta:
+        ordering: ["code"]
+
+    Contract:
+      inherits: TimeStampedModel
+      description: "Contract (or renewal) between an agency and a company, linked to a lot."
+      table: "exchange_agreement_contract"
+      choices:
+        contract_type:
+          start: "Start"
+          renewal: "Renewal"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        contract_code:
+          type: string
+          max_length: 64
+          required: true
+          unique: true
+        client_agency_id:
+          type: foreign_key
+          to: Agency
+          on_delete: PROTECT
+          required: true
+        contractor_company_id:
+          type: foreign_key
+          to: Company
+          on_delete: PROTECT
+          required: true
+        start_date:
+          type: date
+          required: true
+        end_date:
+          type: date
+          required: false
+        tender_id:
+          type: string
+          max_length: 64
+          required: false
+        contract_type:
+          type: string
+          max_length: 7
+          required: true
+          choices_ref: contract_type
+        version:
+          type: integer
+          required: true
+        contract_program_file:
+          type: file
+          required: false
+          allowed_extensions: ["xml", "zip"]
+          upload_path_pattern: "contracts/{contract_code}/program/{filename}"
+        lot_id:
+          type: foreign_key
+          to: Lot
+          on_delete: PROTECT
+          required: true
+      constraints:
+        - type: unique
+          name: "unique_contract_version_per_pair"
+          fields: ["client_agency_id", "contractor_company_id", "version"]
+        - type: check
+          name: "contract_date_range_ok"
+          expression: "end_date >= start_date OR end_date IS NULL"
+      indexes:
+        - fields: ["client_agency_id", "contractor_company_id"]
+        - fields: ["lot_id", "start_date"]
+      meta:
+        ordering: ["-start_date", "contract_code"]
+
+    ContractDocument:
+      inherits: TimeStampedModel
+      description: "Document attached to a contract (PDF, DOC, etc.)."
+      table: "exchange_agreement_contractdocument"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        contract_id:
+          type: foreign_key
+          to: Contract
+          on_delete: CASCADE
+          required: true
+        name:
+          type: string
+          max_length: 255
+          required: false
+        file:
+          type: file
+          required: true
+          allowed_extensions: ["pdf", "doc", "docx", "odt", "zip"]
+          upload_path_pattern: "contracts/{contract_code}/documents/{filename}"
+      meta:
+        ordering: ["-created_at"]
+
+    ContractIndicator:
+      description: "Association between a contract and an indicator, with optional JSON parameters."
+      table: "exchange_agreement_contractindicator"
+      fields:
+        id:
+          type: auto
+          primary_key: true
+        contract_id:
+          type: foreign_key
+          to: Contract
+          on_delete: CASCADE
+          required: true
+        indicator_id:
+          type: foreign_key
+          to: IndicatorDef
+          on_delete: PROTECT
+          required: true
+        params:
+          type: json
+          required: false
+      constraints:
+        - type: unique
+          name: "unique_contract_indicator"
+          fields: ["contract_id", "indicator_id"]
