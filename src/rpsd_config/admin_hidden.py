@@ -6,7 +6,9 @@ from rpsd_config.exchange_agreement.models import (
     Company,
     Contract,
     ContractDocument,
+    ContractInvitation,
     ContractIndicator,
+    ContractMembership,
     Dataset,
     IndicatorDef,
     Lot,
@@ -74,3 +76,13 @@ class ContractDocumentHidden(_HiddenAdmin):
 @admin.register(ContractIndicator)
 class ContractIndicatorHidden(_HiddenAdmin):
     search_fields = ("contract__contract_code", "indicator__code", "indicator__name")
+
+
+@admin.register(ContractMembership)
+class ContractMembershipHidden(_HiddenAdmin):
+    search_fields = ("contract__contract_code", "user__username", "user__email")
+
+
+@admin.register(ContractInvitation)
+class ContractInvitationHidden(_HiddenAdmin):
+    search_fields = ("contract__contract_code", "email", "token")

@@ -10,11 +10,23 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-import os
 from pathlib import Path
+
+from decouple import AutoConfig
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BASE_DIR.parent.parent
+env = AutoConfig(search_path=str(PROJECT_ROOT))
+
+
+def _csv_list(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _env_str(name: str, *, default: str = "") -> str:
+    value = env(name, default=default)
+    return value if isinstance(value, str) else str(value)
 
 
 # Quick-start development settings - unsuitable for production
@@ -24,9 +36,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-gc*7f_p9)xhm6itzdtb(cpkt_pjpl0e-pp7kjn0(u=6+n+i1lp"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env("DEBUG", default=True, cast=bool)
 
-ALLOWED_HOSTS = []
+_allowed_hosts = _env_str("DJANGO_ALLOWED_HOSTS", default="")
+ALLOWED_HOSTS = _csv_list(_allowed_hosts)
+CSRF_TRUSTED_ORIGINS = _csv_list(
+    _env_str("DJANGO_CSRF_TRUSTED_ORIGINS", default="")
+)
 
 
 # Application definition
@@ -38,11 +54,16 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",
+    "allauth",
+    "allauth.account",
+    "allauth.socialaccount",
+    "allauth.socialaccount.providers.openid_connect",
     "leaflet",
     "django.contrib.gis",
     "rpsd_config.app1",
     #"rpsd_config.exchange_agreement",
-    "rpsd_config.exchange_agreement.apps.ExchangeAgreementConfig",    
+    "rpsd_config.exchange_agreement.apps.ExchangeAgreementConfig",
     "rpsd_config.admin_stakeholders",
     "rpsd_config.admin_agreements",
     "rpsd_config.admin_dataset_exchange",
@@ -80,6 +101,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -110,11 +132,11 @@ WSGI_APPLICATION = "rpsd_config.server.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.contrib.gis.db.backends.postgis",
-        "NAME": os.environ.get("POSTGRES_DB", "rpsd"),
-        "USER": os.environ.get("POSTGRES_USER", "rpsd"),
-        "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "rpsd"),
-        "HOST": os.environ.get("POSTGRES_HOST", "postgis"),
-        "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+        "NAME": env("POSTGRES_DB", default="rpsd"),
+        "USER": env("POSTGRES_USER", default="rpsd"),
+        "PASSWORD": env("POSTGRES_PASSWORD", default="rpsd"),
+        "HOST": env("POSTGRES_HOST", default="postgis"),
+        "PORT": env("POSTGRES_PORT", default="5432"),
     }
 }
 
@@ -124,7 +146,10 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+        "NAME": (
+            "django.contrib.auth.password_validation."
+            "UserAttributeSimilarityValidator"
+        ),
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
@@ -159,3 +184,64 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Authentication / OIDC (Keycloak via django-allauth)
+SITE_ID = env("SITE_ID", default=1, cast=int)
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
+_oidc_provider_id = env("OIDC_PROVIDER_ID", default="keycloak")
+_oidc_discovery_url = env(
+    "KEYCLOAK_DISCOVERY_URL",
+    default=(
+        "http://keycloak:8080/realms/rapsodia/"
+        ".well-known/openid-configuration"
+    ),
+)
+_oidc_authorization_endpoint = _env_str(
+    "OIDC_AUTHORIZATION_ENDPOINT_URL",
+    default="",
+)
+_oidc_issuer = _env_str("OIDC_ISSUER_URL", default="")
+_oidc_client_id = env("OIDC_CLIENT_ID", default="django")
+_oidc_client_secret = env("OIDC_CLIENT_SECRET", default="django-secret")
+_oidc_fetch_userinfo = env("OIDC_FETCH_USERINFO", default=False, cast=bool)
+
+_oidc_apps = []
+if _oidc_discovery_url and _oidc_client_id and _oidc_client_secret:
+    _oidc_app_settings = {
+        "server_url": _oidc_discovery_url,
+        "fetch_userinfo": _oidc_fetch_userinfo,
+    }
+    if _oidc_authorization_endpoint:
+        _oidc_app_settings["authorization_endpoint"] = (
+            _oidc_authorization_endpoint
+        )
+    if _oidc_issuer:
+        _oidc_app_settings["issuer"] = _oidc_issuer
+
+    _oidc_apps = [
+        {
+            "provider_id": _oidc_provider_id,
+            "name": "Keycloak",
+            "client_id": _oidc_client_id,
+            "secret": _oidc_client_secret,
+            "settings": _oidc_app_settings,
+        }
+    ]
+
+SOCIALACCOUNT_PROVIDERS = {
+    "openid_connect": {
+        "APPS": _oidc_apps,
+    }
+}
+SOCIALACCOUNT_ADAPTER = "rpsd_config.server.socialaccount_adapter.RpsdSocialAccountAdapter"
+
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/"
+ACCOUNT_EMAIL_VERIFICATION = "none"
+ACCOUNT_SIGNUP_FIELDS = ["username*", "password1*", "password2*"]

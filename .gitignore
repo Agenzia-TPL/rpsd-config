@@ -55,3 +55,7 @@ mnt/
 ai-history.local.md
 CLAUDE.local.md
 .claude/settings.local.json
+CODEX.local.md
+codex-history.local.md
+.codex/settings.local.json
+.devcontainer/devcontainer.local.json

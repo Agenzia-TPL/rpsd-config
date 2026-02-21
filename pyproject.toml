@@ -49,7 +49,11 @@ dependencies = [
     # "gunicorn>=21.0.0",        # WSGI server
     # "whitenoise>=6.4.0",      # Static file serving
     # "psutil>=5.9.0",          # System and process utilities
-    ]
+    "django-allauth>=0.56.0",
+    "pyjwt>=2.8",
+    "cryptography>=41.0",
+    "django-ninja>=1.5.3",
+]
 
 
 [tool.uv.sources]

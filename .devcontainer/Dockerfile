@@ -9,6 +9,19 @@ FROM mcr.microsoft.com/devcontainers/python:1-${VARIANT} AS base
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Native GIS/Postgres dependencies required by django[gis] and PostGIS backend.
+RUN rm -f /etc/apt/sources.list.d/yarn.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gdal-bin \
+        libgdal-dev \
+        libproj-dev \
+        postgresql-client \
+        postgis \
+        binutils \
+        build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
 # Stage 2: for development (devcontainer)
 FROM base AS development
 

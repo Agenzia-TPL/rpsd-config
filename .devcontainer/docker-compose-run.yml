@@ -1,5 +1,6 @@
 include:
   - ./docker-compose-database.yml
+  - ./docker-compose-keycloak.yml
 
 services:
   rpsd-config:

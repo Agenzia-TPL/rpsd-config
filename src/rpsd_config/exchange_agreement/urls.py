@@ -1,14 +1,19 @@
-app_name = "exchange_agreement"  # Add this line
+from django.urls import path
+
+from .api import api
+from .views import (
+    invitation_landing,
+    onboarding_callback,
+    received_invitations,
+    user_area,
+)
+
+app_name = "exchange_agreement"
 
 urlpatterns = [
-    # Your app's URL patterns here
-    # path('', views.index, name='index'),
-]
-
-# Remove when not needed anymore
-from django.urls import path  # noqa: E402
-from django.views import debug  # noqa: E402
-
-urlpatterns += [
-    path("", debug.default_urlconf),
+    path("api/", api.urls),
+    path("invite/<uuid:token>/", invitation_landing, name="invitation-landing"),
+    path("onboarding/callback/", onboarding_callback, name="onboarding-callback"),
+    path("me/contracts/", user_area, name="user-area"),
+    path("me/invitations/", received_invitations, name="received-invitations"),
 ]

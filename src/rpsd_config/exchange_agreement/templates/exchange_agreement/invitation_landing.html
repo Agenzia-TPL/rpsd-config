@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invito Contratto</title>
+  <style>
+    :root {
+      --bg: #f2f5f7;
+      --card: #ffffff;
+      --ink: #1f2937;
+      --muted: #556172;
+      --primary: #0f4c81;
+      --ok: #0f766e;
+      --warn: #9a3412;
+      --err: #b91c1c;
+      --line: #d9e1e7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(180deg, #eef3f8 0%, #f9fbfd 100%);
+      color: var(--ink);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .panel {
+      width: min(680px, 100%);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 12px 28px rgba(15, 76, 129, 0.08);
+      overflow: hidden;
+    }
+    .header {
+      padding: 20px 22px 0;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.45rem;
+      line-height: 1.25;
+    }
+    .subtitle {
+      margin: 8px 0 18px;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+    .content {
+      padding: 0 22px 22px;
+    }
+    .box {
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .box h2 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+    .kv {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .state {
+      padding: 12px 14px;
+      border-radius: 10px;
+      margin-bottom: 16px;
+      border: 1px solid transparent;
+      font-weight: 600;
+    }
+    .valid { color: var(--ok); background: #ecfeff; border-color: #a5f3fc; }
+    .expired, .revoked { color: var(--warn); background: #fff7ed; border-color: #fed7aa; }
+    .accepted, .missing { color: var(--err); background: #fef2f2; border-color: #fecaca; }
+    .error {
+      color: var(--err);
+      margin-bottom: 14px;
+      font-weight: 600;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      background: var(--primary);
+      color: white;
+      padding: 10px 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .hint {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    code {
+      background: #eef2f7;
+      padding: 0.1rem 0.35rem;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <div class="header">
+      <h1>Invito a collaborare sul contratto</h1>
+      <p class="subtitle">Conferma l'invito e prosegui con l'accesso tramite identity provider.</p>
+    </div>
+
+    <div class="content">
+      {% if invitation %}
+        <section class="box" aria-label="Dettagli invito">
+          <h2>Dettagli</h2>
+          <p class="kv"><strong>Contratto:</strong> {{ invitation.contract.contract_code }}</p>
+          <p class="kv"><strong>Ruolo da assegnare:</strong> {{ invitation.get_role_to_assign_display }}</p>
+          <p class="kv"><strong>Scadenza invito:</strong> {{ invitation.expires_at|date:"d/m/Y H:i" }} UTC</p>
+          {% if invitation.email %}
+            <p class="kv"><strong>Email invitata:</strong> {{ invitation.email }}</p>
+          {% else %}
+            <p class="kv"><strong>Invito aperto:</strong> puo' essere usato dal primo utente autenticato.</p>
+          {% endif %}
+        </section>
+      {% endif %}
+
+      {% if state == "valid" %}
+        <div class="state valid">Invito valido. Puoi continuare con l'accesso.</div>
+      {% elif state == "accepted" %}
+        <div class="state accepted">Invito gia' accettato. Questo link non e' riutilizzabile.</div>
+      {% elif state == "revoked" %}
+        <div class="state revoked">Invito revocato. Richiedi un nuovo invito all'amministratore.</div>
+      {% elif state == "expired" %}
+        <div class="state expired">Invito scaduto. Richiedi un nuovo invito all'amministratore.</div>
+      {% else %}
+        <div class="state missing">Invito non trovato. Verifica il link ricevuto.</div>
+      {% endif %}
+
+      {% if submission_error %}
+        <div class="error">{{ submission_error }}</div>
+      {% endif %}
+
+      <form method="post" class="actions">
+        {% csrf_token %}
+        <button type="submit" {% if not can_continue %}disabled{% endif %}>
+          Continua con accesso
+        </button>
+        <span class="hint">Token: <code>{{ token }}</code></span>
+      </form>
+    </div>
+  </main>
+</body>
+</html>

@@ -4,6 +4,7 @@
 include:
   - ./docker-compose-dapr.yml
   - ./docker-compose-database.yml
+  - ./docker-compose-keycloak.yml
 
 services:
   rpsd-config:
@@ -12,6 +13,8 @@ services:
       service: rpsd-config
     depends_on:
       - postgis
+      - keycloak-db
+      - keycloak
       
   ############################
   # Dapr sidecar

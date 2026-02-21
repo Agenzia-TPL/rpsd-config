@@ -32,8 +32,8 @@ class RouteInline(admin.TabularInline):
 
 @admin.register(LotAdminProxy)
 class LotAdmin(admin.ModelAdmin):
-    list_display = ("id", "description")
-    search_fields = ("description",)
+    list_display = ("id", "short_description", "description")
+    search_fields = ("short_description", "description")
     inlines = (RouteInline,)
     ordering = ("id",)
 

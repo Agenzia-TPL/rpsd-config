@@ -17,13 +17,32 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import include, path
+from rpsd_config.exchange_agreement.views import invitation_landing
+from rpsd_config.server.oidc_views import oidc_callback, oidc_login
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path(
+        "accounts/oidc/<str:provider_id>/login/",
+        oidc_login,
+        name="openid_connect_login",
+    ),
+    path(
+        "accounts/oidc/<str:provider_id>/login/callback/",
+        oidc_callback,
+        name="openid_connect_callback",
+    ),
+    path("accounts/", include("allauth.urls")),
+    path("invite/<uuid:token>/", invitation_landing, name="invitation-landing-root"),
 ]
 
-urlpatterns += [path("app1/",include("rpsd_config.app1.urls",namespace="app1")),
-                path("exchange_agreement/",include("rpsd_config.exchange_agreement.urls",namespace="exchange_agreement"))]
+urlpatterns += [
+    path("app1/", include("rpsd_config.app1.urls", namespace="app1")),
+    path(
+        "exchange_agreement/",
+        include("rpsd_config.exchange_agreement.urls", namespace="exchange_agreement"),
+    ),
+]
 
 # Remove when not needed anymore
 from django.views import debug  # noqa: E402

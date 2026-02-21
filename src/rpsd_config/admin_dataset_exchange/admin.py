@@ -14,7 +14,7 @@ class DatasetAdmin(admin.ModelAdmin):
 
 @admin.register(StructureAdminProxy)
 class StructureAdmin(admin.ModelAdmin):
-    list_display = ("dataset", "name", "validation_schema", "created_at", "updated_at")
+    list_display = ("dataset", "name", "created_at", "updated_at")
     list_filter = ("dataset",)
     search_fields = ("name", "dataset__slug", "dataset__name")
     autocomplete_fields = ("dataset",)
@@ -22,9 +22,25 @@ class StructureAdmin(admin.ModelAdmin):
 
 @admin.register(IndicatorDefAdminProxy)
 class IndicatorDefAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "type", "structures_list", "created_at", "updated_at")
+    list_display = (
+        "code",
+        "name",
+        "type",
+        "sql_procedure_name",
+        "structures_list",
+        "created_at",
+        "updated_at",
+    )
     list_filter  = ("type", "structures__dataset")
-    search_fields = ("code", "name", "description", "structures__name", "structures__dataset__slug")
+    search_fields = (
+        "code",
+        "name",
+        "description",
+        "sql_procedure_name",
+        "sql_snippet",
+        "structures__name",
+        "structures__dataset__slug",
+    )
     autocomplete_fields = ("structures",)
     readonly_fields = ("created_at", "updated_at")
 

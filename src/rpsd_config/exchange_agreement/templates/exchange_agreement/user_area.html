@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Area Utente</title>
+  <style>
+    :root {
+      --bg: #f2f5f7;
+      --card: #ffffff;
+      --ink: #1f2937;
+      --muted: #556172;
+      --line: #d9e1e7;
+      --accent: #0f4c81;
+      --ok: #0f766e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(180deg, #eef3f8 0%, #f9fbfd 100%);
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .wrap {
+      width: min(920px, 100%);
+      margin: 0 auto;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 12px 28px rgba(15, 76, 129, 0.08);
+      overflow: hidden;
+    }
+    .head {
+      padding: 20px 22px;
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.45rem;
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+    }
+    .content {
+      padding: 18px 22px 22px;
+    }
+    .actions {
+      margin-bottom: 12px;
+    }
+    .link-btn {
+      display: inline-block;
+      text-decoration: none;
+      border-radius: 10px;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: #fff;
+      font-weight: 600;
+    }
+    .meta {
+      margin: 0 0 18px;
+      color: var(--muted);
+    }
+    .empty {
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 14px;
+      color: var(--muted);
+    }
+    .list {
+      display: grid;
+      gap: 12px;
+    }
+    .item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      padding: 14px;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .code {
+      font-size: 1.06rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .role {
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #bae6fd;
+      background: #ecfeff;
+      color: var(--ok);
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    .dates {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <main class="panel">
+      <header class="head">
+        <h1>Area Utente</h1>
+        <p class="subtitle">Contratti a cui il tuo account e' autorizzato.</p>
+      </header>
+
+      <section class="content">
+        <div class="actions">
+          <a class="link-btn" href="{% url 'exchange_agreement:received-invitations' %}">Vedi Inviti Ricevuti</a>
+        </div>
+
+        <p class="meta">
+          <strong>Utente:</strong> {{ request.user.username }}
+          {% if request.user.email %} ({{ request.user.email }}){% endif %}
+        </p>
+
+        {% if memberships %}
+          <div class="list">
+            {% for membership in memberships %}
+              <article class="item">
+                <div class="row">
+                  <div class="code">Contratto {{ membership.contract.contract_code }}</div>
+                  <div class="role">{{ membership.get_role_display }}</div>
+                </div>
+                <p class="dates">
+                  Accesso assegnato il {{ membership.created_at|date:"d/m/Y H:i" }} UTC
+                </p>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty">
+            Nessun contratto associato al tuo utente. Se hai ricevuto un invito, apri il link di onboarding.
+          </div>
+        {% endif %}
+      </section>
+    </main>
+  </div>
+</body>
+</html>
