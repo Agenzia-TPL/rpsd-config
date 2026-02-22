@@ -1,3 +1,4 @@
+from django.contrib import admin
 from django.urls import path
 
 from .views import (
@@ -8,6 +9,11 @@ from .views import (
 )
 
 app_name = "exchange_agreement"
+
+admin.site.site_header = "Rapsodia Config"
+admin.site.site_title = "Rapsodia Config"
+admin.site.index_title = "Admin"
+
 
 urlpatterns = [
     path("invite/<uuid:token>/", invitation_landing, name="invitation-landing"),

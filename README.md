@@ -67,3 +67,42 @@ http://client.localhost:12080/invite/6bf9bc71-45ca-4218-93bb-f4293a6f99b2/
 onboarding di un admin agenzia quando non ci sono contratti.
 va fatta sull'istanza di agenzia ?
 oppure si lascia preparare da admin un account specifico e lo si assegna ad un utente ?
+
+
+
+
+
+
+
+## Comandi Django per seed dummy completo.
+
+File creati:
+- `src/rpsd_config/exchange_agreement/management/__init__.py`
+- `src/rpsd_config/exchange_agreement/management/commands/__init__.py`
+- `src/rpsd_config/exchange_agreement/management/commands/seed_dummy_data.py`
+
+Cosa popola:
+- anagrafiche: `Agency`, `Company`, `Authority`, `Lot`
+- rete: `Stop`, `Route`, `Trip`, `TripStop`
+- catalogo dati: `Dataset`, `Structure`
+- indicatori: `IndicatorDef` + relazione `structures`
+- contratti: `Contract` + file programma + `ContractDocument`
+- mapping: `ContractIndicator`
+- accessi: `ContractMembership`
+- onboarding: `ContractInvitation`
+
+Uso:
+```bash
+uv run python src/rpsd_config/manage.py seed_dummy_data
+```
+
+Con reset totale prima del seed:
+```bash
+uv run python src/rpsd_config/manage.py seed_dummy_data --reset
+```
+
+Parametri utili:
+```bash
+uv run python src/rpsd_config/manage.py seed_dummy_data --lots 5 --routes-per-lot 4 --trips-per-route 3 --stops 30 --indicators 10 --seed 123
+```
+

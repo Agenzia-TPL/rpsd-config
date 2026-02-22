@@ -109,7 +109,11 @@ class Authority(TimeStampedModel):
 
 # ==========================
 # Service net: Lots, Lines, Stops, Trips
+# RIMUOVERE Lines, Stops, Trips
 # ==========================
+
+
+
 
 class Lot(TimeStampedModel):
     id = models.BigAutoField(primary_key=True)
