@@ -17,11 +17,13 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import include, path
+from rpsd_config.exchange_agreement.api import api
 from rpsd_config.exchange_agreement.views import invitation_landing
 from rpsd_config.server.oidc_views import oidc_callback, oidc_login
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("exchange_agreement/api/", api.urls),
     path(
         "accounts/oidc/<str:provider_id>/login/",
         oidc_login,

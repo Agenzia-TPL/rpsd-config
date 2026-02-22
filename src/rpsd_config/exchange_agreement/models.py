@@ -1,11 +1,11 @@
-from datetime import date, timedelta
 import uuid
+from datetime import date, timedelta
 
 # models.py (EN version)
 from django.conf import settings
+from django.contrib.gis.db import models as gis_models
 from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import DateRangeField, RangeOperators
-from django.contrib.gis.db import models as gis_models
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
@@ -96,6 +96,15 @@ class Authority(TimeStampedModel):
         except ValueError:
             label = self.authority_type or ""
         return f"{self.name} ({label})"
+
+
+
+# ====================================================================================
+# Da valutare se fare un modello per stoccare le chiavi api per la singola azienda
+# ====================================================================================
+
+
+
 
 
 # ==========================

@@ -1,6 +1,5 @@
 from django.urls import path
 
-from .api import api
 from .views import (
     invitation_landing,
     onboarding_callback,
@@ -11,7 +10,6 @@ from .views import (
 app_name = "exchange_agreement"
 
 urlpatterns = [
-    path("api/", api.urls),
     path("invite/<uuid:token>/", invitation_landing, name="invitation-landing"),
     path("onboarding/callback/", onboarding_callback, name="onboarding-callback"),
     path("me/contracts/", user_area, name="user-area"),
