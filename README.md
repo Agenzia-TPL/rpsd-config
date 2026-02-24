@@ -1,8 +1,12 @@
 descrizione applicativo:
 
+Nota (stato corrente): la rete di servizio (`Route`, `Stop`, `Trip`, `TripStop`) e'
+stata rimossa dal runtime Django e verra' gestita in un database PostgreSQL
+esterno. Il dominio Django mantiene `Lot` e la parte contratti/indicatori/strutture.
+
 L’applicazione exchange_agreement modella l’ecosistema dei contratti di servizio nel trasporto pubblico locale, mettendo in relazione i soggetti coinvolti, la rete di servizio, i dataset di riferimento e gli indicatori con cui viene monitorato l’andamento del contratto. Il punto di partenza è la distinzione tra i diversi stakeholder: le agenzie (Agency), che tipicamente rappresentano gli enti concedenti o clienti; le aziende (Company), che svolgono il ruolo di gestori o contraenti; e le autorità territoriali (Authority), che rappresentano il contesto amministrativo (Regioni, Comuni, altri enti) e ne descrivono anche l’estensione geografica tramite geometrie GIS. In questo modo il sistema riesce a contestualizzare ogni elemento del contratto sia dal punto di vista istituzionale che territoriale.
 
-Su questo sfondo si colloca la modellazione della rete di servizio. I lotti (Lot) rappresentano le unità contrattuali o territoriali su cui è organizzato il servizio. All’interno di ogni lotto vengono definite le linee (Line), ciascuna associata a una specifica autorità e identificata in maniera univoca da un codice. Le fermate (Stop) descrivono i punti fisici della rete, geolocalizzati in coordinate WGS84, mentre le corse (Trip) rappresentano i singoli viaggi previsti su una linea. La relazione tra corse e fermate è resa esplicita e ordinata attraverso il modello intermedio TripStop, che consente di ricostruire in modo preciso la sequenza delle fermate attraversate da ogni corsa. Questo insieme di modelli permette di rappresentare la rete non solo come elenco di entità, ma come grafo georeferenziato e navigabile.
+Su questo sfondo si colloca la modellazione della rete di servizio. Nel runtime Django corrente viene mantenuto il livello dei lotti (`Lot`) come contesto contrattuale, mentre linee, fermate e corse sono demandate a un database PostgreSQL esterno. Questo consente di mantenere in Django il dominio contratti/indicatori riducendo l'accoppiamento con il dettaglio della rete operativa.
 
 Parallelamente alla rete, il sistema gestisce i dataset e le loro strutture logiche. Il modello Dataset identifica le diverse famiglie di dati utilizzate (ad esempio NetEx, SIRI PT, SIRI VM), mentre Structure descrive le singole sezioni o segmenti di ciascun dataset, associando a ognuno un eventuale schema di validazione (XSD, XML, JSON, YAML). A partire da queste strutture vengono definite le metriche di monitoraggio tramite IndicatorDef, che descrive gli indicatori utilizzati per la valutazione del servizio (indicatori di qualità, quantità, puntualità, ecc.). Ogni indicatore è collegato a una struttura di dataset, rendendo esplicite le dipendenze informative necessarie per il suo calcolo.
 
@@ -83,7 +87,6 @@ File creati:
 
 Cosa popola:
 - anagrafiche: `Agency`, `Company`, `Authority`, `Lot`
-- rete: `Stop`, `Route`, `Trip`, `TripStop`
 - catalogo dati: `Dataset`, `Structure`
 - indicatori: `IndicatorDef` + relazione `structures`
 - contratti: `Contract` + file programma + `ContractDocument`
@@ -103,6 +106,5 @@ uv run python src/rpsd_config/manage.py seed_dummy_data --reset
 
 Parametri utili:
 ```bash
-uv run python src/rpsd_config/manage.py seed_dummy_data --lots 5 --routes-per-lot 4 --trips-per-route 3 --stops 30 --indicators 10 --seed 123
+uv run python src/rpsd_config/manage.py seed_dummy_data --lots 5 --indicators 10 --seed 123
 ```
-

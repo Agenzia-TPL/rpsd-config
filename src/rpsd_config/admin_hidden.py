@@ -12,10 +12,7 @@ from rpsd_config.exchange_agreement.models import (
     Dataset,
     IndicatorDef,
     Lot,
-    Route,
-    Stop,
     Structure,
-    Trip,
 )
 
 
@@ -40,18 +37,6 @@ class AuthorityHidden(_HiddenAdmin):
 @admin.register(Lot)
 class LotHidden(_HiddenAdmin):
     search_fields = ("description",)
-
-@admin.register(Route)
-class RouteHidden(_HiddenAdmin):
-    search_fields = ("code", "name")
-
-@admin.register(Stop)
-class StopHidden(_HiddenAdmin):
-    search_fields = ("code", "name")
-
-@admin.register(Trip)
-class TripHidden(_HiddenAdmin):
-    search_fields = ("code", "name")
 
 @admin.register(Dataset)
 class DatasetHidden(_HiddenAdmin):

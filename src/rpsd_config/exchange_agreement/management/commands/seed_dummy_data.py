@@ -4,7 +4,6 @@ import random
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.contrib.gis.geos import LineString, Point
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -23,11 +22,7 @@ from rpsd_config.exchange_agreement.models import (
     IndicatorDef,
     IndicatorType,
     Lot,
-    Route,
-    Stop,
     Structure,
-    Trip,
-    TripStop,
 )
 
 
@@ -38,15 +33,6 @@ class Command(BaseCommand):
         parser.add_argument("--seed", type=int, default=42, help="Random seed.")
         parser.add_argument(
             "--lots", type=int, default=3, help="How many lots/contracts to create."
-        )
-        parser.add_argument(
-            "--routes-per-lot", type=int, default=3, help="Routes per lot."
-        )
-        parser.add_argument(
-            "--trips-per-route", type=int, default=2, help="Trips per route."
-        )
-        parser.add_argument(
-            "--stops", type=int, default=15, help="Number of stops to create."
         )
         parser.add_argument(
             "--indicators", type=int, default=6, help="Number of indicator definitions."
@@ -70,10 +56,6 @@ class Command(BaseCommand):
         authorities = self._ensure_authorities()
         lots = self._ensure_lots(options["lots"])
 
-        stops = self._ensure_stops(options["stops"])
-        routes = self._ensure_routes(lots, authorities, options["routes_per_lot"])
-        trips = self._ensure_trips(routes, stops, options["trips_per_route"])
-
         datasets = self._ensure_datasets()
         structures = self._ensure_structures(datasets)
         indicators = self._ensure_indicators(structures, options["indicators"])
@@ -91,7 +73,6 @@ class Command(BaseCommand):
                     "Dummy data created:"
                     f" agencies={len(agencies)}, companies={len(companies)},"
                     f" authorities={len(authorities)}, lots={len(lots)},"
-                    f" routes={len(routes)}, trips={len(trips)}, stops={len(stops)},"
                     f" datasets={len(datasets)}, structures={len(structures)},"
                     f" indicators={len(indicators)}, contracts={len(contracts)}"
                 )
@@ -104,11 +85,6 @@ class Command(BaseCommand):
         ContractIndicator.objects.all().delete()
         ContractDocument.objects.all().delete()
         Contract.objects.all().delete()
-
-        TripStop.objects.all().delete()
-        Trip.objects.all().delete()
-        Route.objects.all().delete()
-        Stop.objects.all().delete()
 
         IndicatorDef.objects.all().delete()
         Structure.objects.all().delete()
@@ -187,69 +163,6 @@ class Command(BaseCommand):
                 description=f"Lot dummy {i}",
             )
             items.append(obj)
-        return items
-
-    def _ensure_stops(self, count: int):
-        items = []
-        base_lat = 45.4642
-        base_lon = 9.1900
-        for i in range(1, count + 1):
-            code = f"STP-{i:03d}"
-            lat = base_lat + (i * 0.002)
-            lon = base_lon + (i * 0.002)
-            obj, _ = Stop.objects.get_or_create(
-                code=code,
-                defaults={
-                    "name": f"Stop {i}",
-                    "geom": Point(lon, lat, srid=4326),
-                },
-            )
-            items.append(obj)
-        return items
-
-    def _ensure_routes(self, lots, authorities, routes_per_lot: int):
-        items = []
-        counter = 1
-        for lot in lots:
-            for _ in range(routes_per_lot):
-                code = f"R{counter:03d}"
-                authority = random.choice(authorities)
-                obj, _ = Route.objects.get_or_create(
-                    code=code,
-                    lot=lot,
-                    defaults={
-                        "name": f"Route {counter}",
-                        "authority": authority,
-                    },
-                )
-                items.append(obj)
-                counter += 1
-        return items
-
-    def _ensure_trips(self, routes, stops, trips_per_route: int):
-        items = []
-        trip_counter = 1
-        for route in routes:
-            for _ in range(trips_per_route):
-                code = f"T{trip_counter:04d}"
-                selected_stops = random.sample(stops, k=min(5, len(stops)))
-                line = LineString(
-                    *[(stop.geom.x, stop.geom.y) for stop in selected_stops],
-                    srid=4326,
-                )
-                trip, created = Trip.objects.get_or_create(
-                    code=code,
-                    defaults={
-                        "name": f"Trip {trip_counter}",
-                        "route": route,
-                        "geom": line,
-                    },
-                )
-                if created:
-                    for seq, stop in enumerate(selected_stops, start=1):
-                        TripStop.objects.create(trip=trip, stop=stop, sequence=seq)
-                items.append(trip)
-                trip_counter += 1
         return items
 
     def _ensure_datasets(self):

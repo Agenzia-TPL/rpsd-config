@@ -108,12 +108,8 @@ class Authority(TimeStampedModel):
 
 
 # ==========================
-# Service net: Lots, Lines, Stops, Trips
-# RIMUOVERE Lines, Stops, Trips
+# Service net: Lots
 # ==========================
-
-
-
 
 class Lot(TimeStampedModel):
     id = models.BigAutoField(primary_key=True)
@@ -134,90 +130,6 @@ class Lot(TimeStampedModel):
     def __str__(self) -> str:
         short = f" ({self.short_description})" if self.short_description else ""
         return f"Lot {self.id}{short} - {self.description}"
-
-
-# -----------------------------------------------
-# Consider that file validation cannot rely on the presence of all lines in
-# every transmission, because a partial upload may have been sent.
-# -----------------------------------------------
-
-class Route(TimeStampedModel):
-    # This allows multiple lots with different authorities, but each line can have only one authority.
-    code = models.CharField(max_length=64, help_text="Route identifier (unique within the lot)")
-    name = models.CharField(max_length=255)
-    authority = models.ForeignKey(
-        Authority, on_delete=models.PROTECT, related_name="routes",
-        help_text="Authority associated to the route (1:N)"
-    )
-    lot = models.ForeignKey(
-        Lot, on_delete=models.PROTECT, related_name="routes",
-        help_text="The route belongs to a lot (1:N)"
-    )
-
-    class Meta:
-        verbose_name = "Route"
-        verbose_name_plural = "Routes"
-        indexes = [models.Index(fields=["lot"]), models.Index(fields=["code"])]
-        constraints = [
-        #    models.UniqueConstraint(fields=["authority"], name="unique_line_authority")
-            models.UniqueConstraint(fields=['code', 'lot'], name='unique_route_lot_identifier')
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.code} - {self.name}"
-
-
-class Stop(TimeStampedModel):
-    code = models.CharField(max_length=64, unique=True, help_text="Unique stop identifier")
-    name = models.CharField(max_length=255, blank=True)
-    geom = gis_models.PointField(srid=4326, help_text="WGS84 coordinates (lon/lat)")
-
-    class Meta:
-        verbose_name = "Stop"
-        verbose_name_plural = "Stops"
-        indexes = [models.Index(fields=["code"])]
-
-    def __str__(self) -> str:
-        return self.code
-
-
-class Trip(TimeStampedModel):
-    code = models.CharField(max_length=64, unique=True, help_text="Unique trip identifier")
-    name = models.CharField(max_length=255, blank=True)
-    route = models.ForeignKey(Route, on_delete=models.PROTECT, related_name="trips")
-    geom = gis_models.LineStringField(
-        srid=4326, null=True, blank=True,
-        help_text="Trip path (polyline in WGS84)"
-    )
-    # Ordered relation to stops (through)
-    stops = models.ManyToManyField(Stop, through="TripStop", related_name="trips")
-
-    class Meta:
-        verbose_name = "Trip"
-        verbose_name_plural = "Trips"
-        indexes = [models.Index(fields=["route"]), models.Index(fields=["code"])]
-
-    def __str__(self) -> str:
-        return self.code
-
-
-class TripStop(models.Model):
-    trip = models.ForeignKey(Trip, on_delete=models.CASCADE)
-    stop = models.ForeignKey(Stop, on_delete=models.PROTECT)
-    sequence = models.PositiveIntegerField(help_text="Stop order within the trip")
-
-    class Meta:
-        verbose_name = "Trip stop"
-        verbose_name_plural = "Trip stops"
-        constraints = [
-            models.UniqueConstraint(fields=["trip", "stop"], name="unique_trip_stop"),
-            models.UniqueConstraint(fields=["trip", "sequence"], name="unique_trip_sequence"),
-        ]
-        ordering = ["trip__id", "sequence"]
-
-    def __str__(self) -> str:
-        return f"{self.trip.code}:{self.sequence} -> {self.stop.code}"
-
 
 # ==========================
 # Dataset & Structures

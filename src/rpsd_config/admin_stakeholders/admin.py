@@ -9,7 +9,6 @@ from django.contrib.gis.db.models import GeometryField
 from leaflet.admin import LeafletGeoAdmin
 from leaflet.forms.widgets import LeafletWidget
 
-from ..admin_service_net.proxies import Route
 from .proxies import AgencyAdminProxy, AuthorityAdminProxy, CompanyAdminProxy
 
 # oppure: from leaflet.forms.widgets import LeafletWidget
@@ -24,19 +23,6 @@ class GeomAdmin(LeafletGeoAdmin):
         })}
     }
 
-
-class RouteInline(admin.TabularInline):
-    model = Route
-    # Campi da mostrare nella tabella inline
-    # 'authority' non serve, perché è già l'autorità che stai modificando
-    list_display = ('code', 'name', 'lot')
-    # Rende i campi non modificabili da qui (opzionale)
-    # readonly_fields = ('code', 'name', 'lot')
-    # Se hai molti 'Lot', usa l'autocompletamento
-    autocomplete_fields = ['lot']
-    extra = 0
-    # Permette di cercare tra le linee (molto utile se un'autorità ne ha tante)
-    search_fields = ('code', 'name')
 
 @admin.register(AgencyAdminProxy)
 class AgencyAdmin(admin.ModelAdmin):
@@ -61,4 +47,3 @@ class AuthorityAdmin(GeomAdmin):
     #gis_widget_kwargs = {"lon": 0, "lat": 0, "zoom": 2}
     # Se continui ad avere problemi, prova a specificare il widget esplicitamente
     #gis_widget = OSMWidget
-    inlines = [RouteInline]
