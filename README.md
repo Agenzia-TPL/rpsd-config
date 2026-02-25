@@ -108,3 +108,30 @@ Parametri utili:
 ```bash
 uv run python src/rpsd_config/manage.py seed_dummy_data --lots 5 --indicators 10 --seed 123
 ```
+
+
+# 2do
+salvare gtfs in area condivisa bisogna importare libreria e aggiungere una azione customa l modello del contratto. 
+In modo che una volta salvato deve salvare o fare una copia i file nello spazio condiviso. 
+-------------------------------------
+Cambiare nome nel db da "dataset" a "tipi di dataset" o datasetType
+---------------------------------------------- 
+-----------------------------------------------------------------------------
+serve da rivalutare come si fa l'invito iniziale ad un admin agenzia che possa creare nuovi cotratti. 
+---------------------------------------------------------------------------------------
+Gli indicatori devono essere immutabili. Una volta salvato puoi solo cancellarli o crearne di nuovi o duplicarne uno (magari aggiungendo una versoine da mostrare anche nel nome)
+-----------------------------------------------------------------------------------------
+Un contratto è vincolato dal fatto che solo lui puo avere quel codice univoco.
+
+non ci possono essere contratti con codice diverso, ma associati allo stesso lotto, stessa azienda e stessa agenzia e stessa versione. 
+Se ne vuoi creare uno uguale deve incrementare la versione. 
+Inoltre non esiste il vincolo di sovrapposizione temporale sullo stesso lotto
+----------------------------------------------------------------------------------------------
+
+Aggiungere una funzione di pubblicaizone che genera una tabella con dentro 
+Un contratto pubblicato una seconda volta crea una versione 2. 
+Quando viene avviata una pubblicaizone si genera un record di una tabella contratti pubblicati con versione.
+Va aggiunto un range di pubblicazione in modo da sapere quando è stata pubblicata. 
+-------------------------------------------------------------------------------------
+si può anche rimuovere lo stato in modo da non dover mantenere questa informazione
+-------------------------------------------------------------------------------------- 
