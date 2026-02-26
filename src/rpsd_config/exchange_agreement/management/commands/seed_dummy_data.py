@@ -18,12 +18,15 @@ from rpsd_config.exchange_agreement.models import (
     ContractIndicator,
     ContractInvitation,
     ContractMembership,
+    ContractPublication,
     Dataset,
+    FlowProfile,
     IndicatorDef,
     IndicatorType,
     Lot,
     Structure,
 )
+from rpsd_config.exchange_agreement.services.publication import PublishContractError, publish_contract
 
 
 class Command(BaseCommand):
@@ -42,6 +45,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Delete existing data before seeding.",
         )
+        parser.add_argument(
+            "--publish-contracts",
+            action="store_true",
+            help="Publish seeded contracts after creating memberships and indicators.",
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -59,13 +67,17 @@ class Command(BaseCommand):
         datasets = self._ensure_datasets()
         structures = self._ensure_structures(datasets)
         indicators = self._ensure_indicators(structures, options["indicators"])
+        flow_profiles = self._ensure_flow_profiles()
 
-        contracts = self._ensure_contracts(lots, agencies, companies)
+        contracts = self._ensure_contracts(lots, agencies, companies, flow_profiles)
         self._ensure_contract_files(contracts)
         self._ensure_contract_docs(contracts)
         self._ensure_contract_indicators(contracts, indicators)
         self._ensure_memberships(contracts, admin_user, reader_user)
         self._ensure_invitations(contracts, admin_user)
+        published_count = 0
+        if options["publish_contracts"]:
+            published_count = self._ensure_publications(contracts, admin_user)
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -74,7 +86,8 @@ class Command(BaseCommand):
                     f" agencies={len(agencies)}, companies={len(companies)},"
                     f" authorities={len(authorities)}, lots={len(lots)},"
                     f" datasets={len(datasets)}, structures={len(structures)},"
-                    f" indicators={len(indicators)}, contracts={len(contracts)}"
+                    f" indicators={len(indicators)}, flow_profiles={len(flow_profiles)},"
+                    f" contracts={len(contracts)}, publications={published_count}"
                 )
             )
         )
@@ -82,11 +95,13 @@ class Command(BaseCommand):
     def _reset_data(self):
         ContractInvitation.objects.all().delete()
         ContractMembership.objects.all().delete()
+        ContractPublication.objects.all().delete()
         ContractIndicator.objects.all().delete()
         ContractDocument.objects.all().delete()
         Contract.objects.all().delete()
 
         IndicatorDef.objects.all().delete()
+        FlowProfile.objects.all().delete()
         Structure.objects.all().delete()
         Dataset.objects.all().delete()
 
@@ -227,7 +242,116 @@ class Command(BaseCommand):
             items.append(indicator)
         return items
 
-    def _ensure_contracts(self, lots, agencies, companies):
+    def _ensure_flow_profiles(self):
+        profiles = [
+            {
+                "code": "standard-it-v1",
+                "name": "Standard IT v1",
+                "description": "Profilo standard per import e retention base.",
+                "schema_version": "1.0",
+                "options": {
+                    "general_profile": "it",
+                    "planned_master": {
+                        "netex": {
+                            "active": True,
+                            "flow": "master-001",
+                            "description": "Carica il programmato master in formato NeTEx.",
+                        },
+                        "gtfs": {
+                            "active": True,
+                            "flow": "master-002",
+                            "description": "Importa GTFS e lo converte in NeTEx.",
+                        },
+                    },
+                    "data_ingestion": {
+                        "netex": {
+                            "active": True,
+                            "flow": "plnd-001",
+                            "description": "Carica il programmato da NeTEx.",
+                        },
+                        "gtfs": {
+                            "active": False,
+                            "flow": "plnd-002",
+                            "description": "Carica GTFS con step di trasformazione.",
+                        },
+                        "siri_pt": {
+                            "active": True,
+                            "flow": "rltm-spt-001",
+                            "description": "Acquisisce real time SIRI PT.",
+                        },
+                    },
+                    "data_retention": {
+                        "plnd": {
+                            "days": 100,
+                            "flow": "plnd-clr-001",
+                            "description": "Pulizia storico programmato.",
+                        },
+                        "rltm": {
+                            "days": 3,
+                            "flow": "rltm-clr-001",
+                            "description": "Pulizia storico real time.",
+                        },
+                    },
+                },
+            },
+            {
+                "code": "lightweight-it-v1",
+                "name": "Lightweight IT v1",
+                "description": "Profilo leggero con ridotte sorgenti attive.",
+                "schema_version": "1.0",
+                "options": {
+                    "general_profile": "it",
+                    "planned_master": {
+                        "netex": {
+                            "active": True,
+                            "flow": "master-010",
+                            "description": "Master NeTEx base.",
+                        }
+                    },
+                    "data_ingestion": {
+                        "netex": {
+                            "active": True,
+                            "flow": "plnd-010",
+                            "description": "Ingest programmato NeTEx.",
+                        },
+                        "siri_pt": {
+                            "active": False,
+                            "flow": "rltm-spt-010",
+                            "description": "Canale SIRI PT disabilitato.",
+                        },
+                    },
+                    "data_retention": {
+                        "plnd": {
+                            "days": 30,
+                            "flow": "plnd-clr-010",
+                            "description": "Pulizia programmato breve.",
+                        },
+                        "rltm": {
+                            "days": 1,
+                            "flow": "rltm-clr-010",
+                            "description": "Pulizia real time giornaliera.",
+                        },
+                    },
+                },
+            },
+        ]
+
+        items = []
+        for spec in profiles:
+            obj, _ = FlowProfile.objects.get_or_create(
+                code=spec["code"],
+                defaults={
+                    "name": spec["name"],
+                    "description": spec["description"],
+                    "schema_version": spec["schema_version"],
+                    "options": spec["options"],
+                    "is_active": True,
+                },
+            )
+            items.append(obj)
+        return items
+
+    def _ensure_contracts(self, lots, agencies, companies, flow_profiles):
         items = []
         today = timezone.now().date()
         for i, lot in enumerate(lots, start=1):
@@ -243,8 +367,12 @@ class Command(BaseCommand):
                     "status": Contract.ContractStatus.ACTIVE,
                     "tender_id": f"TENDER-{i:03d}",
                     "lot": lot,
+                    "flow_profile": flow_profiles[(i - 1) % len(flow_profiles)] if flow_profiles else None,
                 },
             )
+            if flow_profiles and contract.flow_profile_id is None:
+                contract.flow_profile = flow_profiles[(i - 1) % len(flow_profiles)]
+                contract.save(update_fields=["flow_profile", "updated_at"])
             items.append(contract)
         return items
 
@@ -331,3 +459,20 @@ class Command(BaseCommand):
                     "expires_at": timezone.now() + timedelta(days=7),
                 },
             )
+
+    def _ensure_publications(self, contracts, admin_user):
+        count = 0
+        for contract in contracts:
+            if ContractPublication.objects.filter(contract=contract).exists():
+                continue
+            try:
+                publish_contract(contract=contract, user=admin_user)
+            except PublishContractError as exc:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"Skipping publish for {contract.contract_code}: {exc.message}"
+                    )
+                )
+                continue
+            count += 1
+        return count

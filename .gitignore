@@ -57,5 +57,7 @@ CLAUDE.local.md
 .claude/settings.local.json
 CODEX.local.md
 codex-history.local.md
+.codex/
 .codex/settings.local.json
+.vscode-codex/
 .devcontainer/devcontainer.local.json

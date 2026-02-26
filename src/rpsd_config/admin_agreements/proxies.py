@@ -4,6 +4,8 @@ from rpsd_config.exchange_agreement.models import (
     ContractInvitation,
     ContractIndicator,
     ContractMembership,
+    ContractPublication,
+    FlowProfile,
 )
 
 
@@ -43,3 +45,19 @@ class ContractInvitationAdminProxy(ContractInvitation):
         app_label = "admin_agreements"
         verbose_name = "Contract invitation"
         verbose_name_plural = "Contract invitations"
+
+
+class FlowProfileAdminProxy(FlowProfile):
+    class Meta:
+        proxy = True
+        app_label = "admin_agreements"
+        verbose_name = "Flow profile"
+        verbose_name_plural = "Flow profiles"
+
+
+class ContractPublicationAdminProxy(ContractPublication):
+    class Meta:
+        proxy = True
+        app_label = "admin_agreements"
+        verbose_name = "Contract publication"
+        verbose_name_plural = "Contract publications"

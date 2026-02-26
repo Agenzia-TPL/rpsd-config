@@ -78,7 +78,7 @@ LEAFLET_CONFIG = {
     "DEFAULT_CENTER": (45.4642637, 9.1896343),
     "DEFAULT_ZOOM": 13,
     "MIN_ZOOM": 2,
-    "MAX_ZOOM": 19,   # <-- NON andare oltre 19 con OSM standard
+    "MAX_ZOOM": 19,   # Do not exceed 19 with standard OSM tiles
     "SCALE": "metric",
     "RESET_VIEW": True,
     "TILES": [
@@ -87,9 +87,9 @@ LEAFLET_CONFIG = {
             "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
             {
                 "attribution": "&copy; OpenStreetMap contributors",
-                "maxZoom": 19,          # zoom massimo consentito dalla mappa
-                "maxNativeZoom": 19,    # i tile esistono nativamente fino a 19
-                # "detectRetina": True, # opzionale
+                "maxZoom": 19,          # maximum zoom allowed by the map
+                "maxNativeZoom": 19,    # tiles are natively available up to 19
+                # "detectRetina": True, # optional
             },
         )
     ],

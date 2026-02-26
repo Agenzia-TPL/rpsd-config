@@ -2,7 +2,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-import requests  # noqa: F401  # se vuoi l’alternativa HTTP
+import requests  # noqa: F401  # kept for optional HTTP publish fallback
 from dapr.clients import DaprClient
 from django.db import transaction
 from django.db.models.signals import post_save
@@ -28,7 +28,7 @@ def _publish_contract_event(payload):
                 data=serialized_payload,
                 data_content_type="application/json",
             )
-        # Richiesta HTTP alternativa (lasciata commentata come riferimento)
+        # Alternative HTTP request (kept commented as reference)
         # requests.post(
         #     "http://127.0.0.1:3500/v1.0/publish/pubsub/contracts.created",
         #     data=serialized_payload,
@@ -36,7 +36,7 @@ def _publish_contract_event(payload):
         #     timeout=5,
         # )
     except Exception as exc:
-        logger.exception("Errore durante l'invio del contratto a Dapr: %s", exc)
+        logger.exception("Error while sending contract event to Dapr: %s", exc)
 
 @receiver(post_save, sender=Contract)
 @receiver(post_save, sender=ContractAdminProxy)
@@ -51,6 +51,6 @@ def notify_new_contract(sender, instance, created, **kwargs):
         "start_date": instance.start_date.isoformat(),
         "end_date": instance.end_date.isoformat() if instance.end_date else None,
     }
-    # 2do - modificare con la libreria dapr per postare il segnale
+    # TODO: replace the debug print with Dapr-based signaling only.
     print(f"[Contract created] {payload}")
     transaction.on_commit(lambda: _executor.submit(_publish_contract_event, payload))

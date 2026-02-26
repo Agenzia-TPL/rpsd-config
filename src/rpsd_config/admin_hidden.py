@@ -9,7 +9,9 @@ from rpsd_config.exchange_agreement.models import (
     ContractInvitation,
     ContractIndicator,
     ContractMembership,
+    ContractPublication,
     Dataset,
+    FlowProfile,
     IndicatorDef,
     Lot,
     Structure,
@@ -42,6 +44,10 @@ class LotHidden(_HiddenAdmin):
 class DatasetHidden(_HiddenAdmin):
     search_fields = ("slug", "name")
 
+@admin.register(FlowProfile)
+class FlowProfileHidden(_HiddenAdmin):
+    search_fields = ("code", "name")
+
 @admin.register(Structure)
 class StructureHidden(_HiddenAdmin):
     search_fields = ("name", "dataset__slug")
@@ -71,3 +77,8 @@ class ContractMembershipHidden(_HiddenAdmin):
 @admin.register(ContractInvitation)
 class ContractInvitationHidden(_HiddenAdmin):
     search_fields = ("contract__contract_code", "email", "token")
+
+
+@admin.register(ContractPublication)
+class ContractPublicationHidden(_HiddenAdmin):
+    search_fields = ("contract__contract_code", "snapshot_checksum")

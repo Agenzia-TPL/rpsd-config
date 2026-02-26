@@ -5,16 +5,20 @@ from django.conf import settings
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
-from ninja.errors import HttpError
 from ninja import NinjaAPI, Schema
+from ninja.errors import HttpError
 
 from .models import (
     Contract,
     ContractIndicator,
     ContractInvitation,
+    ContractMembership,
+    ContractPublication,
+    FlowProfile,
     IndicatorDef,
     Structure,
 )
+from .services.publication import PublishContractError, publish_contract
 
 
 class InvitationCheckResponse(Schema):
@@ -67,6 +71,18 @@ class ContractIndicatorSchema(Schema):
     contract_params: dict | None
 
 
+class FlowProfileRefSchema(Schema):
+    code: str
+    name: str
+    schema_version: str
+    is_active: bool
+
+
+class FlowProfileSchema(FlowProfileRefSchema):
+    description: str
+    options: dict
+
+
 class AgencyRefSchema(Schema):
     id: int
     name: str
@@ -95,6 +111,7 @@ class ContractSummarySchema(Schema):
     lot: LotRefSchema
     client_agency: AgencyRefSchema
     contractor_company: CompanyRefSchema
+    flow_profile: FlowProfileRefSchema | None
 
 
 class ContractDetailSchema(ContractSummarySchema):
@@ -114,6 +131,35 @@ class RequiredInputGroupSchema(Schema):
 class RequiredInputsResponse(Schema):
     contract_code: str
     required_inputs: list[RequiredInputGroupSchema]
+
+
+class ContractFlowProfileResponse(Schema):
+    contract_code: str
+    flow_profile: FlowProfileSchema | None
+
+
+class ContractFlowProfileUpdateRequest(Schema):
+    flow_profile_code: str
+
+
+class PublicationActorSchema(Schema):
+    username: str
+    email: str
+    display_name: str
+
+
+class ContractPublicationSummarySchema(Schema):
+    id: int
+    contract_code: str
+    publication_version: int
+    published_at: str
+    published_by: PublicationActorSchema | None
+    snapshot_schema_version: str
+    snapshot_checksum: str
+
+
+class ContractPublicationDetailSchema(ContractPublicationSummarySchema):
+    snapshot: dict
 
 
 api = NinjaAPI(title="RPSD Exchange Agreement API", version="1.0")
@@ -143,7 +189,7 @@ def _require_auth(request):
 def _authorized_contracts_qs(request):
     user = _require_auth(request)
     qs = Contract.objects.select_related(
-        "lot", "client_agency", "contractor_company", "replaced_by"
+        "lot", "client_agency", "contractor_company", "replaced_by", "flow_profile"
     )
     if user.is_superuser:
         return qs
@@ -162,6 +208,29 @@ def _dataset_ref(dataset) -> DatasetRefSchema:
         slug=dataset.slug,
         name=dataset.name,
         description=dataset.description,
+    )
+
+
+def _flow_profile_ref_schema(flow_profile: FlowProfile | None) -> FlowProfileRefSchema | None:
+    if flow_profile is None:
+        return None
+    return FlowProfileRefSchema(
+        code=flow_profile.code,
+        name=flow_profile.name,
+        schema_version=flow_profile.schema_version,
+        is_active=flow_profile.is_active,
+    )
+
+
+def _flow_profile_schema(flow_profile: FlowProfile) -> FlowProfileSchema:
+    options = flow_profile.options if isinstance(flow_profile.options, dict) else {}
+    return FlowProfileSchema(
+        code=flow_profile.code,
+        name=flow_profile.name,
+        schema_version=flow_profile.schema_version,
+        is_active=flow_profile.is_active,
+        description=flow_profile.description,
+        options=options,
     )
 
 
@@ -218,6 +287,7 @@ def _contract_summary_schema(contract: Contract) -> ContractSummarySchema:
             id=contract.contractor_company_id,
             name=contract.contractor_company.name,
         ),
+        flow_profile=_flow_profile_ref_schema(contract.flow_profile),
     )
 
 
@@ -250,11 +320,62 @@ def _contract_detail_schema(request, contract: Contract) -> ContractDetailSchema
             id=contract.contractor_company_id,
             name=contract.contractor_company.name,
         ),
+        flow_profile=_flow_profile_ref_schema(contract.flow_profile),
         contract_program_file=file_name,
         contract_program_file_url=file_url,
         replaced_by_contract_code=contract.replaced_by.contract_code if contract.replaced_by else None,
         closed_at=contract.closed_at.isoformat() if contract.closed_at else None,
         closed_reason=contract.closed_reason,
+    )
+
+
+def _require_contract_admin(request, contract: Contract):
+    user = _require_auth(request)
+    if user.is_superuser:
+        return user
+    if not ContractMembership.objects.filter(
+        contract=contract,
+        user=user,
+        role=ContractMembership.Role.CONTRACT_ADMIN,
+    ).exists():
+        raise HttpError(403, "Contract admin role required.")
+    return user
+
+
+def _publication_actor_schema(user) -> PublicationActorSchema | None:
+    if not user:
+        return None
+    display_name = getattr(user, "get_full_name", lambda: "")() or getattr(user, "username", "")
+    return PublicationActorSchema(
+        username=getattr(user, "username", ""),
+        email=getattr(user, "email", ""),
+        display_name=display_name,
+    )
+
+
+def _contract_publication_summary_schema(publication: ContractPublication) -> ContractPublicationSummarySchema:
+    return ContractPublicationSummarySchema(
+        id=publication.id,
+        contract_code=publication.contract.contract_code,
+        publication_version=publication.publication_version,
+        published_at=publication.published_at.isoformat(),
+        published_by=_publication_actor_schema(publication.published_by),
+        snapshot_schema_version=publication.snapshot_schema_version,
+        snapshot_checksum=publication.snapshot_checksum,
+    )
+
+
+def _contract_publication_detail_schema(publication: ContractPublication) -> ContractPublicationDetailSchema:
+    summary = _contract_publication_summary_schema(publication)
+    return ContractPublicationDetailSchema(
+        id=summary.id,
+        contract_code=summary.contract_code,
+        publication_version=summary.publication_version,
+        published_at=summary.published_at,
+        published_by=summary.published_by,
+        snapshot_schema_version=summary.snapshot_schema_version,
+        snapshot_checksum=summary.snapshot_checksum,
+        snapshot=publication.snapshot if isinstance(publication.snapshot, dict) else {},
     )
 
 
@@ -285,6 +406,76 @@ def list_contracts(
 def get_contract(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
     return _contract_detail_schema(request, contract)
+
+
+@api.get("/v1/contracts/{contract_code}/flow-profile", response=ContractFlowProfileResponse)
+def get_contract_flow_profile(request, contract_code: str):
+    contract = _get_authorized_contract(request, contract_code)
+    return ContractFlowProfileResponse(
+        contract_code=contract.contract_code,
+        flow_profile=_flow_profile_schema(contract.flow_profile) if contract.flow_profile else None,
+    )
+
+
+@api.put("/v1/contracts/{contract_code}/flow-profile", response=ContractFlowProfileResponse)
+def set_contract_flow_profile(request, contract_code: str, payload: ContractFlowProfileUpdateRequest):
+    contract = _get_authorized_contract(request, contract_code)
+    _require_contract_admin(request, contract)
+
+    if contract.status == Contract.ContractStatus.CLOSED:
+        raise HttpError(400, "Cannot modify flow profile on a closed contract.")
+
+    flow_profile = FlowProfile.objects.filter(code=payload.flow_profile_code, is_active=True).first()
+    if flow_profile is None:
+        raise HttpError(404, "Active flow profile not found.")
+
+    contract.flow_profile = flow_profile
+    contract.save(update_fields=["flow_profile", "updated_at"])
+    return ContractFlowProfileResponse(
+        contract_code=contract.contract_code,
+        flow_profile=_flow_profile_schema(flow_profile),
+    )
+
+
+@api.post("/v1/contracts/{contract_code}/publish", response=ContractPublicationDetailSchema)
+def publish_contract_endpoint(request, contract_code: str):
+    contract = _get_authorized_contract(request, contract_code)
+    try:
+        publication = publish_contract(contract=contract, user=_require_auth(request))
+    except PublishContractError as exc:
+        raise HttpError(exc.status_code, exc.message) from exc
+    publication = ContractPublication.objects.select_related("contract", "published_by").get(pk=publication.pk)
+    return _contract_publication_detail_schema(publication)
+
+
+@api.get(
+    "/v1/contracts/{contract_code}/publications",
+    response=list[ContractPublicationSummarySchema],
+)
+def list_contract_publications(request, contract_code: str):
+    contract = _get_authorized_contract(request, contract_code)
+    publications = (
+        ContractPublication.objects.select_related("contract", "published_by")
+        .filter(contract=contract)
+        .order_by("-publication_version")
+    )
+    return [_contract_publication_summary_schema(item) for item in publications]
+
+
+@api.get(
+    "/v1/contracts/{contract_code}/publications/{publication_version}",
+    response=ContractPublicationDetailSchema,
+)
+def get_contract_publication_by_version(request, contract_code: str, publication_version: int):
+    contract = _get_authorized_contract(request, contract_code)
+    publication = (
+        ContractPublication.objects.select_related("contract", "published_by")
+        .filter(contract=contract, publication_version=publication_version)
+        .first()
+    )
+    if publication is None:
+        raise HttpError(404, "Contract publication not found.")
+    return _contract_publication_detail_schema(publication)
 
 
 @api.get("/v1/contracts/{contract_code}/indicators", response=list[ContractIndicatorSchema])
@@ -412,6 +603,37 @@ def get_structure(request, structure_id: int):
     if structure is None:
         raise HttpError(404, "Structure not found.")
     return _structure_schema(structure)
+
+
+@api.get("/v1/flow-profiles", response=list[FlowProfileSchema])
+def list_flow_profiles(request, is_active: bool | None = None):
+    _require_auth(request)
+    qs = FlowProfile.objects.all().order_by("code")
+    if is_active is not None:
+        qs = qs.filter(is_active=is_active)
+    return [_flow_profile_schema(flow_profile) for flow_profile in qs]
+
+
+@api.get("/v1/flow-profiles/{flow_code}", response=FlowProfileSchema)
+def get_flow_profile(request, flow_code: str):
+    _require_auth(request)
+    flow_profile = FlowProfile.objects.filter(code=flow_code).first()
+    if flow_profile is None:
+        raise HttpError(404, "Flow profile not found.")
+    return _flow_profile_schema(flow_profile)
+
+
+@api.get("/v1/publications/{publication_id}", response=ContractPublicationDetailSchema)
+def get_publication(request, publication_id: int):
+    publication = (
+        ContractPublication.objects.select_related("contract", "published_by")
+        .filter(id=publication_id)
+        .first()
+    )
+    if publication is None:
+        raise HttpError(404, "Contract publication not found.")
+    _get_authorized_contract(request, publication.contract.contract_code)
+    return _contract_publication_detail_schema(publication)
 
 
 @api.get("/invitations/{token}/check", response=InvitationCheckResponse)

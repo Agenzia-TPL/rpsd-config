@@ -100,7 +100,7 @@ class Authority(TimeStampedModel):
 
 
 # ====================================================================================
-# Da valutare se fare un modello per stoccare le chiavi api per la singola azienda
+# Consider whether to add a model to store per-company API keys.
 # ====================================================================================
 
 
@@ -120,7 +120,7 @@ class Lot(TimeStampedModel):
         help_text="Optional short label for compact displays",
     )
     description = models.CharField(max_length=255)
-    # valutare se aggiunger il poligono del lotto
+    # Consider adding the lot polygon geometry in a future iteration.
 
     class Meta:
         verbose_name = "Lot"
@@ -146,7 +146,7 @@ class Dataset(TimeStampedModel):
     slug = models.SlugField(unique=True, help_text="e.g. netex, siri_pt, siri_vm, ...")
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True)
-    # valutare se aggiungere lo specifico validation schema .xsd del dataset
+    # Consider storing a dataset-level validation schema reference (e.g. XSD).
     class Meta:
         verbose_name = "Dataset"
         verbose_name_plural = "Datasets"
@@ -252,6 +252,111 @@ class IndicatorDef(TimeStampedModel):
         return f"[{self.code}] {self.name}"
 
 
+class FlowProfile(TimeStampedModel):
+    """
+    Reusable operational flow configuration assigned to contracts.
+
+    `options` stores structured flow configuration blocks (planned master,
+    ingestion, retention, ...). Validation is intentionally minimal and checks
+    only the required top-level sections and core field types.
+    """
+
+    code = models.CharField(max_length=64, unique=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    schema_version = models.CharField(max_length=16, default="1.0")
+    options = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Flow profile"
+        verbose_name_plural = "Flow profiles"
+        ordering = ["code"]
+        indexes = [models.Index(fields=["is_active"])]
+
+    def __str__(self) -> str:
+        return f"{self.code} ({self.schema_version})"
+
+    def clean(self):
+        super().clean()
+        if not isinstance(self.options, dict):
+            raise ValidationError({"options": _("options must be a JSON object.")})
+
+        required_keys = [
+            "general_profile",
+            "planned_master",
+            "data_ingestion",
+            "data_retention",
+        ]
+        option_errors: list[str] = []
+        for key in required_keys:
+            if key not in self.options:
+                option_errors.append(f"Missing required key: {key}")
+
+        if option_errors:
+            raise ValidationError({"options": option_errors})
+
+        general_profile = self.options.get("general_profile")
+        option_errors = []
+        if not isinstance(general_profile, str) or not general_profile.strip():
+            option_errors.append("general_profile must be a non-empty string.")
+
+        for block_key in ["planned_master", "data_ingestion"]:
+            block = self.options.get(block_key)
+            if not isinstance(block, dict):
+                option_errors.append(f"{block_key} must be a JSON object.")
+                continue
+            for item_key, item in block.items():
+                if not isinstance(item, dict):
+                    option_errors.append(
+                        f"{block_key}.{item_key} must be a JSON object."
+                    )
+                    continue
+                if not isinstance(item.get("active"), bool):
+                    option_errors.append(
+                        f"{block_key}.{item_key}.active must be a boolean."
+                    )
+                if not isinstance(item.get("flow"), str) or not item.get("flow", "").strip():
+                    option_errors.append(
+                        f"{block_key}.{item_key}.flow must be a non-empty string."
+                    )
+                if not isinstance(item.get("description"), str):
+                    option_errors.append(
+                        f"{block_key}.{item_key}.description must be a string."
+                    )
+
+        retention = self.options.get("data_retention")
+        if not isinstance(retention, dict):
+            option_errors.append("data_retention must be a JSON object.")
+        else:
+            for item_key, item in retention.items():
+                if not isinstance(item, dict):
+                    option_errors.append(
+                        f"data_retention.{item_key} must be a JSON object."
+                    )
+                    continue
+                days = item.get("days")
+                if not isinstance(days, int) or days < 0:
+                    option_errors.append(
+                        f"data_retention.{item_key}.days must be an integer >= 0."
+                    )
+                if not isinstance(item.get("flow"), str) or not item.get("flow", "").strip():
+                    option_errors.append(
+                        f"data_retention.{item_key}.flow must be a non-empty string."
+                    )
+                if not isinstance(item.get("description"), str):
+                    option_errors.append(
+                        f"data_retention.{item_key}.description must be a string."
+                    )
+
+        if option_errors:
+            raise ValidationError({"options": option_errors})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
 # ==========================
 # Contracts
 # ==========================
@@ -325,6 +430,14 @@ class Contract(TimeStampedModel):
         upload_to=contract_program_path, blank=True, null=True,
         validators=[FileExtensionValidator(allowed_extensions=["xml", "zip"])],
         help_text="NetEx file (XML/ZIP) with the contractual program"
+    )
+    flow_profile = models.ForeignKey(
+        FlowProfile,
+        on_delete=models.PROTECT,
+        related_name="contracts",
+        blank=True,
+        null=True,
+        help_text="Operational flow profile associated to this contract.",
     )
 
     lot = models.ForeignKey(Lot, on_delete=models.PROTECT, related_name="contracts")
@@ -459,6 +572,7 @@ class Contract(TimeStampedModel):
             "contract_type",
             "version",
             "contract_program_file",
+            "flow_profile_id",
             "lot_id",
             "status",
             "closed_at",
@@ -547,6 +661,69 @@ class ContractDocument(TimeStampedModel):
 
     def __str__(self) -> str:
         return self.name or self.file.name.split("/")[-1]
+
+
+class ContractPublication(TimeStampedModel):
+    """
+    Immutable publication snapshot for a contract.
+
+    Each publication stores a versioned JSON snapshot of the contract aggregate
+    as it existed at publication time.
+    """
+
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="publications",
+    )
+    publication_version = models.PositiveIntegerField()
+    published_at = models.DateTimeField(default=timezone.now, db_index=True)
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contract_publications_created",
+    )
+    snapshot_schema_version = models.CharField(max_length=16, default="1.0")
+    snapshot = models.JSONField(default=dict)
+    snapshot_checksum = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        verbose_name = "Contract publication"
+        verbose_name_plural = "Contract publications"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contract", "publication_version"],
+                name="unique_contract_publication_version",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["contract", "-published_at"]),
+            models.Index(fields=["snapshot_checksum"]),
+        ]
+        ordering = ["-published_at", "-publication_version"]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.publication_version is None or self.publication_version < 1:
+            errors["publication_version"] = _("Publication version must be >= 1.")
+        if not isinstance(self.snapshot, dict):
+            errors["snapshot"] = _("Snapshot must be a JSON object.")
+        if not self.snapshot_schema_version:
+            errors["snapshot_schema_version"] = _("Snapshot schema version is required.")
+        if self.snapshot_checksum and len(self.snapshot_checksum) != 64:
+            errors["snapshot_checksum"] = _("Snapshot checksum must be a SHA256 hex string.")
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.contract.contract_code} v{self.publication_version}"
 
 
 class ContractIndicator(models.Model):
