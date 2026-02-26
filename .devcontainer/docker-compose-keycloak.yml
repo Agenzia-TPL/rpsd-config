@@ -7,10 +7,6 @@ services:
       POSTGRES_PASSWORD: keycloak
     volumes:
       - ../mnt/keycloak-postgres-data:/var/lib/postgresql/data
-    networks:
-      rpsd-dapr:
-        aliases:
-          - keycloak-db
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
@@ -33,12 +29,3 @@ services:
     volumes:
       - ../mnt/keycloak-data:/opt/keycloak/data
       - ../mnt/keycloak-realm-import:/opt/keycloak/data/import
-    networks:
-      rpsd-dapr:
-        aliases:
-          - keycloak
-
-networks:
-  rpsd-dapr:
-    external: true
-    name: rpsd-dapr

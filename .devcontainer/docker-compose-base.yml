@@ -10,37 +10,3 @@ services:
     # Overrides default command so things don't shut down after the process ends.
     # It seems to be ignored, though!!!
     command: /bin/sh -c "while sleep 1000; do :; done"
-    depends_on:
-      - rpsd-config-dapr
-    network_mode: "service:rpsd-config-dapr"
-
-  ############################
-  # Dapr sidecar
-  ############################
-  rpsd-config-dapr:
-    image: "daprio/daprd:edge"
-    command: [
-      "./daprd",
-      "-app-id", "rpsd-config",
-      "-placement-host-address", "placement:50006",
-      "-scheduler-host-address", "scheduler:50007",
-      "-resources-path", "/components"]
-    volumes:
-      - "../src/rpsd_config/components/:/components"
-      - type: bind
-        source: ../src/rpsd_config/components/
-        target: /components
-        bind:
-          create_host_path: false
-    networks:
-      rpsd-dapr:
-        aliases:
-          - rpsd-config        # Alias for the app service
-          
-############################
-# Network between containers
-############################
-networks:
-  rpsd-dapr:
-    external: true
-    name: rpsd-dapr

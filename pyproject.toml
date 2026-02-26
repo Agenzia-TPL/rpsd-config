@@ -35,7 +35,6 @@ dependencies = [
     "pillow>=10.0.0",          # Image processing
     "django-extensions>=3.2.0", # Useful Django extensions
     "django-leaflet>=0.29.0",   # Leaflet maps integration
-    "dapr>=1.13.0",
     "requests>=2.32",
     # "djangorestframework>=3.15.0", # REST API framework
     # "djangorestframework-simplejwt>=5.0.0", # JWT authentication

@@ -1,8 +1,4 @@
-############################
-# Dapr platform
-############################
 include:
-  - ./docker-compose-dapr.yml
   - ./docker-compose-database.yml
   - ./docker-compose-keycloak.yml
 
@@ -15,17 +11,3 @@ services:
       - postgis
       - keycloak-db
       - keycloak
-      
-  ############################
-  # Dapr sidecar
-  ############################
-  rpsd-config-dapr:
-    extends:
-      file: ./docker-compose-base.yml
-      service: rpsd-config-dapr
-    depends_on:
-      - placement
-      - scheduler
-      - redis
-    ports:
-      - "12080:8000"
