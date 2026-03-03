@@ -22,7 +22,9 @@ db.sqlite3-journal
 
 # Django secret key and environment variables
 .env
+.env.base
 .env.local
+.env.development
 .env.production
 .env.staging
 
