@@ -23,7 +23,9 @@
         "keycloak-db",
         "keycloak"
     ],
-    "postCreateCommand": "bash scripts/setup-dev.sh",
+	// Uncomment the next line to run commands after the container is created.
+	// Remove empty placeholder lockfile, then generate real one
+	"postCreateCommand": "bash -c 'test -s uv.lock || rm -f uv.lock; uv sync --dev'",
     "customizations": {
         "vscode": {
             "settings": {
