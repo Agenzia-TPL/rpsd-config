@@ -18,7 +18,7 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list && \
         gdal-bin \
         libgdal-dev \
         libproj-dev \
-        postgresql-client-17 \
+        postgresql-client \
         postgis \
         binutils \
         build-essential && \
