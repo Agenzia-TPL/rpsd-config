@@ -5,7 +5,7 @@ services:
       dockerfile: ./.devcontainer/Dockerfile
       target: development
     volumes:
-      # Update this to wherever you want VS Code to mount the folder of your project
+      # Update this to wherever you want VS Code to mount the folder of your project      
       - ../../:/workspaces:cached
     # Overrides default command so things don't shut down after the process ends.
     # It seems to be ignored, though!!!

@@ -1,13 +1,7 @@
-include:
-  - ./docker-compose-database.yml
-  - ./docker-compose-keycloak.yml
-
 services:
   rpsd-config:
     extends:
       file: ./docker-compose-base.yml
       service: rpsd-config
     command: ["uv", "run", "--directory", "/workspaces/rpsd-config", "app"]
-    depends_on:
-      - postgis
     #command: /bin/sh -c "sleep 0s; echo 'PIPPO!!!'"

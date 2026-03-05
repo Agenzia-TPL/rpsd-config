@@ -1,68 +1,94 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-docker-compose
 {
-    "name": "Rapsodia config",
-    "dockerComposeFile": [
-        "docker-compose.yml"
-    ],
-    "service": "rpsd-config",
-    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-    
-    // Mappa le config di Codex/Copilot dal tuo Linux al container
-    // Nota: Ho usato la home dell'utente root nel container perché il tuo file specifica "remoteUser": "root"
-    "mounts": [
-        "source=${localEnv:HOME}/.config,target=/root/.config,type=bind",
-        "source=${localEnv:HOME}/.vscode-codex,target=/root/.vscode-codex,type=bind"
-    ],
-
-    "otherPortsAttributes": {
-        "onAutoForward": "ignore"
-    },
-    "features": {},
-    "runServices": [
-        "rpsd-config",
-        "postgis",
-        "keycloak-db",
-        "keycloak"
-    ],
+	"name": "Rapsodia Config",
+	"dockerComposeFile": [
+		"docker-compose.yml"
+	],
+	// The 'service' property is the name of the service for the container that VS Code should
+	// use. Update this value and .devcontainer/docker-compose.yml to the real service name.
+	"service": "rpsd-config",
+	// The optional 'workspaceFolder' property is the path VS Code should open by default when
+	// connected. This is typically a file mount in .devcontainer/docker-compose.yml
+	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+	//never auto forward ports
+	"otherPortsAttributes": {
+		"onAutoForward": "ignore"
+	},
+	/* 	"build": {
+		"args": {
+			"VARIANT": "3.13-bookworm"
+		}
+	}, */
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	"features": {
+	},
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+	// Uncomment the next line if you want start specific services in your Docker Compose config.
+	// "runServices": [],
+	// Uncomment the next line if you want to keep your containers running after VS Code shuts down.
+	// "shutdownAction": "none",
 	// Uncomment the next line to run commands after the container is created.
 	// Remove empty placeholder lockfile, then generate real one
 	"postCreateCommand": "bash -c 'test -s uv.lock || rm -f uv.lock; uv sync --dev'",
-    "customizations": {
-        "vscode": {
-            "settings": {
-                "remote.forwardOnOpen": false,
-                "remote.autoForwardPorts": false,
-                "remote.restoreForwardedPorts": false,
-                "python.defaultInterpreterPath": "/workspaces/${localWorkspaceFolderBasename}/.venv",
-                "python.analysis.autoImportCompletions": true,
-                "python.analysis.typeCheckingMode": "basic",
-                "python.testing.autoTestDiscoverOnSaveEnabled": false,
-                "python.testing.unittestEnabled": true,
-                "python.testing.unittestArgs": [
-                    "-v",
-                    "-s",
-                    ".",
-                    "-p",
-                    "test*.py"
-                ],
-                "editor.formatOnSave": true,
-                "editor.codeActionsOnSave": {
-                    "source.fixAll.ruff": "explicit",
-                    "source.organizeImports.ruff": "explicit"
-                },
-                "[python]": {
-                    "editor.formatOnSave": true
-                }
-            },
-            "extensions": [
-                "ms-python.python",
-                "ms-python.vscode-pylance",
-                "charliermarsh.ruff",
-                "rioj7.command-variable",
-                "openai.codex",          // L'estensione Codex che cercavi
-                "github.copilot",        // Spesso necessaria se Codex è inteso come motore Copilot
-                "github.copilot-chat"    // Già che ci siamo, la chat è utile
-            ]
-        }
-    },
-    "remoteUser": "root"
+	// Configure tool-specific properties.
+	"customizations": {
+		// Configure properties specific to VS Code.
+		"vscode": {
+			// Set *default* container specific settings.json values on container create.
+			"settings": {
+				//never auto forward ports
+				"remote.forwardOnOpen": false,
+				"remote.autoForwardPorts": false,
+				"remote.restoreForwardedPorts": false,
+				//"python.defaultInterpreterPath": "/usr/local/bin/python"
+				//"python.defaultInterpreterPath": "${containerEnv:VIRTUAL_ENV}/bin/python",
+				//"python.defaultInterpreterPath": "/workspaces/${localWorkspaceFolderBasename}/.venv/bin/python",
+				"python.defaultInterpreterPath": "/workspaces/${localWorkspaceFolderBasename}/.venv",
+				//"python.languageServer": "Jedi",
+				"python.analysis.autoImportCompletions": true,
+				"python.analysis.typeCheckingMode": "basic",
+				"python.testing.autoTestDiscoverOnSaveEnabled": false,
+				"python.testing.unittestEnabled": true,
+				"python.testing.unittestArgs": [
+					"-v",
+					"-s",
+					".",
+					"-p",
+					"test*.py"
+				],
+				// Ruff configuration
+				"editor.formatOnSave": true,
+				"editor.codeActionsOnSave": {
+					"source.fixAll.ruff": "explicit",
+					"source.organizeImports.ruff": "explicit"
+				},
+				"[python]": {
+					"editor.formatOnSave": true
+				}
+				/* 				"python.linting.enabled": true,
+				"python.linting.pylintEnabled": true,
+				"python.formatting.autopep8Path": "/usr/local/py-utils/bin/autopep8",
+				"python.formatting.blackPath": "/usr/local/py-utils/bin/black",
+				"python.formatting.yapfPath": "/usr/local/py-utils/bin/yapf",
+				"python.linting.banditPath": "/usr/local/py-utils/bin/bandit",
+				"python.linting.flake8Path": "/usr/local/py-utils/bin/flake8",
+				"python.linting.mypyPath": "/usr/local/py-utils/bin/mypy",
+				"python.linting.pycodestylePath": "/usr/local/py-utils/bin/pycodestyle",
+				"python.linting.pydocstylePath": "/usr/local/py-utils/bin/pydocstyle",
+				"python.linting.pylintPath": "/usr/local/py-utils/bin/pylint" */
+			},
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"charliermarsh.ruff",
+				"rioj7.command-variable"
+			]
+		}
+	},
+	// Uncomment to connect as an existing user other than the container default. More info: https://aka.ms/dev-containers-non-root.
+	"remoteUser": "root"
+	//"containerUser": "appuser"
 }
