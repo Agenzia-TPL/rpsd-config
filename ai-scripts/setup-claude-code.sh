@@ -247,10 +247,10 @@ if [ ! -f "CLAUDE.local.md" ]; then
 # Personal Claude Code Context
 
 ## Shared Project Context
-Read @ai-context.md for shared project context and development guidelines.
+Read @AGENTS.md for shared project context and development guidelines.
 
 ## Personal Instructions for Claude Code
-- **FIRST:** Always read @ai-context.md for current project guidelines
+- **FIRST:** Always read @AGENTS.md for current project guidelines
 - Follow all instructions in the shared context file
 
 ## Personal Notes
@@ -264,7 +264,7 @@ Read @ai-context.md for shared project context and development guidelines.
 
 ---
 *This file is personal to you and git-ignored. Add your own customizations above.*
-*All shared project context is in ai-context.md (which may or may not be committed).*
+*Shared project context chain: AGENTS.md -> ai-context.md -> ai-project.md*
 EOF
 
     print_success "Created CLAUDE.local.md (personal, git-ignored)"
@@ -294,61 +294,71 @@ if [ ! -f "ai-context.md" ]; then
     cat > ai-context.md << 'EOF'
 # AI Development Assistant Context
 
-This file provides context for AI development assistants (Claude Code, GitHub Copilot, etc.) working on this project.
+This file provides context for AI development assistants working on this project.
 
 ## Project Overview
-<!-- Brief description of your project -->
-This is a Python project using uv for package management...
 
-## Technology Stack
-- **Language:** Python 3.11+
-- **Package Manager:** uv
-- **Project Structure:** uv workspace with packages in `packages/` folder
-- **Testing:** pytest
-- **Linting/Formatting:** ruff
-
-## Development Environment
-- **Containerization:** Docker + devcontainers
-- **Package Management:** uv (not pip/poetry/conda)
-
-## Coding Standards
-- Follow PEP 8 for Python code style
-- Use type hints where applicable
-- Use ruff for formatting and linting
-- Write docstrings for all public functions and classes
-
-## Common Development Commands (for AI assistants)
-- `uv sync` - Install/update all dependencies
-- `uv add <package>` - Add a dependency
-- `uv run pytest` - Run tests
-- `uv run ruff format` - Format code
-- `uv run ruff check --fix` - Auto-fix linting issues
-
-## Project Structure (uv workspace)
-```
-project-root/
-├── pyproject.toml       # Workspace configuration
-├── uv.lock             # Lock file
-├── packages/           # Workspace members
-│   ├── package-a/      # Individual package
-│   └── package-b/      # Another package
-├── tests/              # Test files
-└── README.md           # Project documentation
-```
+See `ai-project.md` for project description, technology stack, and conventions.
 
 ## Guidelines for AI Assistants
-- **IMPORTANT:** Always use `uv` commands, never `pip`, `poetry`, or `conda`
-- Run `uv sync` after adding/removing dependencies
-- Use `uv run pytest` to run tests after making changes
-- Use `uv run ruff format` and `uv run ruff check --fix` for code quality
-- For workspace projects, use `--package <member>` when targeting specific packages
+
+### Optional Documentation Files
+
+The project may include these optional documentation files. When present, AI assistants **MUST keep them updated** with relevant changes:
+
+#### `ai-project.md` - Project Planning Document (Optional)
+If this file exists:
+- Treat it as a **project planning and decision document**, not implementation documentation
+- It documents **problems, proposed solutions, and expected outcomes** BEFORE implementation
+- When updating it after implementing features, use **planning language**:
+  - "**Problem**" (present tense, not "Original Problem")
+  - "**Proposed Solution**" (not "Implemented Solution")
+  - "we'll do X" or "create Y" (future/intent, not past tense)
+  - "**Expected outcome**" (not "Result")
+- Keep entries **succinct** - this is a decision log, not detailed documentation
+- This file captures **what** and **why**, not **how** (implementation details go in code/docs)
+
+#### `ARCHITECTURE.md` - Technical Architecture Documentation (Optional)
+If this file exists:
+- Documents the **system architecture** and technical design decisions
+- **Must be updated** when adding components, changing data flow, or modifying core abstractions
+
+#### `USAGE.md` - User Guide and Usage Documentation (Optional)
+If this file exists:
+- Documents **how to use** the application from a user's perspective
+- **Must be updated** when adding commands, changing behavior, or modifying configuration
+
+### Git Commit Policy
+**CRITICAL: NEVER create git commits without EXPLICIT user permission!**
+
+- **ALWAYS** stage changes with `git add` but STOP before committing
+- **ALWAYS** show the user what will be committed using `git status` and `git diff --cached`
+- **ALWAYS** present a proposed commit message for review
+- **WAIT** for explicit user approval before running `git commit`
+- If user says "commit this" or "create a commit", that counts as explicit permission
+
+### Development Guidelines
 - Follow existing code patterns and structure
 - Consider security implications of changes
-- Write comprehensive documentation
+- Write documentation for non-obvious decisions
+- Add trailing newlines to all files
+
+### Research Guidelines
+Always do a web search if your knowledge of a specific subject is old or uncertain — never guess or invent.
+If doubts persist, ask the user for guidance on how to proceed.
+
+### Session Start
+- Read `ai-project.md` for project-specific context, conventions, and current scope
+
+### Before Finishing a Session
+- **`ai-project.md`** — May propose updates but must respect planning language; always ask for approval
+- **`ARCHITECTURE.md`** — If implementation details changed significantly, suggest updating
+- Do NOT update any of these files silently — show proposed changes and ask for approval
 
 ---
-*This file can be used by any AI coding assistant to understand the project context.*
-*Individual developers may have their own tool-specific context files (e.g., CLAUDE.local.md)*
+*This file is generic and reusable across projects.*
+*Project-specific context (stack, commands, conventions) is in `ai-project.md`.*
+*Individual developers may have their own tool-specific context files (e.g., `CLAUDE.local.md`).*
 EOF
 
     print_success "Created ai-context.md (optional team documentation)"
@@ -381,6 +391,8 @@ print_warning "You may need to re-authenticate if you rebuild the container."
 echo
 print_status "Quick tips:"
 echo "• Claude automatically finds CLAUDE.local.md files (git-ignored)"
+echo "• CLAUDE.local.md -> AGENTS.md -> ai-context.md -> ai-project.md"
+echo "• Edit ai-project.md to describe your project (committed, shared)"
 echo "• Use /init command to let Claude analyze your project"
 echo "• Use /clear command to start fresh conversations"
 echo "• Use /config to manage Claude Code settings"

@@ -57,6 +57,7 @@ mnt/
 ai-history.local.md
 CLAUDE.local.md
 .claude/settings.local.json
+AGENTS.override.md
 CODEX.local.md
 codex-history.local.md
 .codex/

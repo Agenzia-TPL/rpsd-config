@@ -14,7 +14,17 @@ This directory contains setup scripts for various AI-powered development assista
 ./scripts/setup-claude-code.sh
 ```
 
-### 🐙 GitHub Copilot CLI
+### OpenAI Codex CLI
+**File:** `setup-openai-codex.sh`
+**What it does:** Installs the OpenAI Codex CLI and creates `AGENTS.md` and `ai-project.md` context files
+**Requirements:** OpenAI account (ChatGPT Plus/Pro/Team/Edu/Enterprise)
+**Best for:** Agentic coding, multi-step tasks, code generation in the terminal
+
+```bash
+./ai-scripts/setup-openai-codex.sh
+```
+
+### GitHub Copilot CLI
 **File:** `setup-github-copilot.sh`
 **What it does:** Installs GitHub CLI and Copilot CLI extension
 **Requirements:** GitHub Copilot subscription
@@ -40,27 +50,25 @@ These scripts are **completely optional** and designed for individual developer 
 3. **Start coding:** Tools integrate with your existing workflow
 4. **Optional sharing:** Share your `ai-context.md` file for better AI assistance
 
-## Creating AI Context
+## AI Context File Chain
 
-Consider creating an `ai-context.md` file (or similar) that helps AI assistants understand your project:
+The project uses a three-layer context chain (all files committed, all reusable):
 
-```markdown
-# Project Development Context
-
-## Overview
-[Brief description of your project]
-
-## Architecture
-[Key architectural decisions and patterns]
-
-## Coding Standards
-[Style guides, conventions, best practices]
-
-## Common Tasks
-[Frequent development workflows]
+```
+AGENTS.md        <- entry point for agent-based tools (generic, no project specifics)
+    |
+    v
+ai-context.md    <- development guidelines for this project type (generic, reusable)
+    |
+    v
+ai-project.md    <- project-specific overview and architecture (edit per repository)
 ```
 
-This file can benefit any team member using any AI assistant.
+Personal/tool-specific adapters (gitignored, developer-specific):
+- `CLAUDE.local.md` — references `@AGENTS.md` for Claude Code users
+
+**To set up a new repository:** run any assistant setup script, then edit `ai-project.md`
+to describe your specific project. The other two files can be copied unchanged.
 
 ## Adding New Assistants
 
