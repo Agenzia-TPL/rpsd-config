@@ -57,8 +57,8 @@ Republishing creates a new publication version and preserves history.
 ### Local URLs
 
 - Browser (host) -> Django: `http://client.localhost:12080`
-- Browser (host) -> Keycloak: `http://keycloak.localhost:18080`
-- Django (container) -> Keycloak: `http://keycloak.localhost:18080` (recommended local default)
+- Browser (host) -> Keycloak: `http://keycloak.localhost:19300`
+- Django (container) -> Keycloak: `http://keycloak.localhost:19300` (recommended local default)
 
 Example `/etc/hosts` entries:
 
@@ -89,7 +89,7 @@ python src/rpsd_config/manage.py shell -c "from django.conf import settings; pri
 2. Keycloak token endpoint acceptance of `client_id` / `client_secret`
 
 ```bash
-curl -X POST "http://keycloak.localhost:18080/realms/rapsodia/protocol/openid-connect/token" \
+curl -X POST "http://keycloak.localhost:19300/realms/rapsodia/protocol/openid-connect/token" \
   -H "content-type: application/x-www-form-urlencoded" \
   --data "grant_type=client_credentials&client_id=django&client_secret=django-secret"
 ```

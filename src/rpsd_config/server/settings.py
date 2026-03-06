@@ -300,12 +300,12 @@ class AppSettings(BaseSettings):
 
     # Application server configuration (internal)
     APP_HOST: str = Field(default="0.0.0.0")
-    APP_PORT: int = Field(default=8989)
+    APP_PORT: int = Field(default=8000)
 
     # External access configuration (how users access the application)
     APP_EXTERNAL_SCHEME: str = Field(default="http")
     APP_EXTERNAL_HOST: str = Field(default="localhost")
-    APP_EXTERNAL_PORT: int = Field(default=8989)
+    APP_EXTERNAL_PORT: int = Field(default=20100)
 
     # Gunicorn process settings (read by gunicorn.conf.py via os.getenv, not by Django)
     GUNICORN_WORKERS: int = Field(default=2)
