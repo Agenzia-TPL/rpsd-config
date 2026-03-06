@@ -41,7 +41,7 @@ rpsd-config:
     dockerfile: ./Dockerfile      # use project root Dockerfile, NOT .devcontainer/Dockerfile
   command: ["gunicorn", "rpsd_config.server.asgi:application"]
   ports:
-    - "${APP_PORT:-8989}:8989"
+    - "${APP_EXTERNAL_PORT:-8989}:${APP_PORT:-8989}"
   volumes:
     - ./rpsd-config/.env.base:/app/.env.base:ro
     - ./rpsd-config/.env:/app/.env:ro
@@ -64,10 +64,15 @@ as read-only volumes and are also read directly by Pydantic Settings.
 | Variable | Default | Used by | Description |
 |---|---|---|---|
 | `APP_HOST` | `0.0.0.0` | Django devserver | Bind host for devserver |
-| `APP_PORT` | `8989` | gunicorn, Django devserver | Bind port |
+| `APP_PORT` | `8989` | gunicorn, Django devserver | **Internal** bind port — where Gunicorn/Django listens inside the container. Rarely needs changing. |
 | `APP_EXTERNAL_SCHEME` | `http` | Django | Scheme for CSRF trusted origins |
 | `APP_EXTERNAL_HOST` | `localhost` | Django | External hostname |
-| `APP_EXTERNAL_PORT` | `8989` | Django | External port |
+| `APP_EXTERNAL_PORT` | `8989` | Django | **External** port users access in their browser. Drives CSRF trusted origins. Set this per deployment (e.g. `7080`, `443`). |
+
+> **NOTE — do not confuse `APP_PORT` and `APP_EXTERNAL_PORT`:**
+> - `APP_PORT` is the port Gunicorn/Django binds to *inside the container*. The default (`8989`) is almost always correct — leave it alone unless you have a specific reason to change it.
+> - `APP_EXTERNAL_PORT` is the port that appears in the URL users type in their browser. This is the one to customise per deployment scenario (e.g. `7080` for intranet HTTP, `443` for HTTPS via an external gateway).
+> - In the Docker Compose port mapping `HOST:CONTAINER`, `APP_EXTERNAL_PORT` goes on the **host side** and `APP_PORT` goes on the **container side**.
 | `GUNICORN_WORKERS` | `2` | gunicorn | Number of worker processes per container |
 | `GUNICORN_TIMEOUT` | `30` | gunicorn | Worker timeout in seconds |
 | `DJANGO_SECRET_KEY` | insecure default | Django | **Set this in production** |
