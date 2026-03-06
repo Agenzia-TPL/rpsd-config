@@ -30,9 +30,9 @@ requires-python = ">=3.13"
 
 dependencies = [
     "django[gis]>=5.2.0",  # ---> rimuovo "django>=5.2.0",
-    "psycopg[binary]>=3.1.0",  # Modern PostgreSQL adapter
-    "python-decouple>=3.8",    # Environment variables
+    "psycopg[binary]>=3.1.0",    # Environment variables
     "pillow>=10.0.0",          # Image processing
+    "pydantic-settings>=2.12.0",
     "django-extensions>=3.2.0", # Useful Django extensions
     "django-leaflet>=0.29.0",   # Leaflet maps integration
     "requests>=2.32",
