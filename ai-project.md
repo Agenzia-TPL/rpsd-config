@@ -33,8 +33,9 @@ project-root/
 ## Technology Stack
 
 - **Language:** Python 3.13+
-- **Framework:** Django (REST API)
+- **Framework:** Django (REST API) + Django-ninja (async API support)
 - **Package Manager:** uv (not pip/poetry/conda)
+- **Production server:** Gunicorn (process manager) + UvicornWorker (ASGI)
 - **Testing:** pytest
 - **Linting/Formatting:** ruff
 
@@ -50,6 +51,9 @@ project-root/
 - `uv run ruff format` - Format code
 - `uv run ruff check --fix` - Auto-fix linting issues
 - `uv run python` - Execute Python code on the fly
+- `uv run devserver` - Run Django dev server with configured host/port (devcontainer)
+
+See `USAGE.md` for running with Docker (integration tests, staging, production).
 
 ## Development Guidelines
 
