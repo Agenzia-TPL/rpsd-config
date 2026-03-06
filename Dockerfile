@@ -38,9 +38,9 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Collect static files
 RUN uv run manage collectstatic --noinput
 
-# Copy entrypoint script
-COPY entrypoint.sh ./
+# Copy entrypoint script and gunicorn config
+COPY entrypoint.sh gunicorn.conf.py ./
 RUN chmod +x entrypoint.sh
 
-# Set entrypoint (command comes from docker-compose.yml)
+# Set entrypoint (command comes from deployment configs: compose, swarm, k8s)
 ENTRYPOINT ["./entrypoint.sh"]

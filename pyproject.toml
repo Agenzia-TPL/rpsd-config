@@ -44,8 +44,8 @@ dependencies = [
     # "celery>=5.4.0",           # Asynchronous task queue
     # "redis>=5.0.0",            # Redis client for Celery
     # "flower>=1.0.0",           # Celery monitoring tool
-    # "uvicorn>=0.23.0",         # ASGI server
-    # "gunicorn>=21.0.0",        # WSGI server
+    "uvicorn>=0.23.0",         # ASGI server
+    "gunicorn>=21.0.0",        # WSGI/ASGI process manager
     # "whitenoise>=6.4.0",      # Static file serving
     # "psutil>=5.9.0",          # System and process utilities
     "django-allauth>=0.56.0",
@@ -54,14 +54,13 @@ dependencies = [
     "django-ninja>=1.5.3",
 ]
 
-
 [tool.uv.sources]
 # Example: pin to specific git commit or branch if needed
 # django = { git = "https://github.com/django/django.git", branch = "main" }
 
 [project.scripts]
 manage = "rpsd_config.manage:main"
-server = "rpsd_config.manage:server"
+devserver = "rpsd_config.manage:devserver"
 
 [build-system]
 requires = ["hatchling"]

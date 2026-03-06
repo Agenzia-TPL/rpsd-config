@@ -5,15 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "server",
+            "name": "devserver",
             "type": "debugpy",
             "request": "launch",
             "python": "${workspaceFolder}/.venv/bin/python",
             "cwd": "${workspaceFolder}/src/rpsd_config",
             "program": "manage.py",
             "args": [
-                "runserver",
-                "0.0.0.0:8000"
+                "devserver"
             ],
             "justMyCode": false
         },

@@ -21,12 +21,21 @@ def _execute(argv):
 
 # Run Django management command (used in pyproject.toml)
 def main():
+    """Execute Django management commands."""
+    # Intercept custom devserver command
+    if len(sys.argv) > 1 and sys.argv[1] == "devserver":
+        return devserver()
     return _execute(sys.argv)
 
 
-# Run Django development server with default arguments (used in pyproject.toml)
-def server():
-    return _execute([sys.argv[0], "runserver", "0.0.0.0:8000"])
+# Run Django development server with configured host and port
+def devserver():
+    """Run Django development server with configured host and port."""
+    from rpsd_config.server.settings import ProjectSettings
+
+    settings = ProjectSettings()
+    bind_address = f"{settings.APP_HOST}:{settings.APP_PORT}"
+    return _execute([sys.argv[0], "runserver", bind_address])
 
 
 if __name__ == "__main__":

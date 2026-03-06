@@ -307,6 +307,10 @@ class AppSettings(BaseSettings):
     APP_EXTERNAL_HOST: str = Field(default="localhost")
     APP_EXTERNAL_PORT: int = Field(default=8989)
 
+    # Gunicorn process settings (read by gunicorn.conf.py via os.getenv, not by Django)
+    GUNICORN_WORKERS: int = Field(default=2)
+    GUNICORN_TIMEOUT: int = Field(default=30)
+
 
 class ProjectSettings(
     GeneralSettings,

@@ -3,5 +3,4 @@ services:
     extends:
       file: ./docker-compose-base.yml
       service: rpsd-config
-    command: ["uv", "run", "--directory", "/workspaces/rpsd-config", "app"]
-    #command: /bin/sh -c "sleep 0s; echo 'PIPPO!!!'"
+    command: ["devserver"]
