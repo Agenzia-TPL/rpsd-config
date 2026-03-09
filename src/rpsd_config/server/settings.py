@@ -115,7 +115,7 @@ class GeneralSettings(BaseSettings):
         "rpsd_config.admin_stakeholders",
         "rpsd_config.admin_agreements",
         "rpsd_config.admin_dataset_exchange",
-        "rpsd_config.admin_service_net",
+        #        "rpsd_config.admin_service_net",
     ]
 
     MIDDLEWARE: list[str] = [
