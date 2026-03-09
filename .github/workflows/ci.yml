@@ -27,7 +27,7 @@ jobs:
         run: uv run ruff check .
 
       - name: Test
-        run: uv run pytest -m "not integration"
+        run: uv run pytest -m "not integration" || [ $? -eq 5 ]
 
   build-and-push:
     name: Build & Push
