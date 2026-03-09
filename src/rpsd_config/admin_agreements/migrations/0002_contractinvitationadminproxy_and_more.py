@@ -4,7 +4,6 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("admin_agreements", "0001_initial"),
         ("exchange_agreement", "0012_contractinvitation_contractmembership"),

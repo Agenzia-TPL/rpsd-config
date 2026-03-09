@@ -8,7 +8,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0015_flowprofile_contract_flow_profile"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

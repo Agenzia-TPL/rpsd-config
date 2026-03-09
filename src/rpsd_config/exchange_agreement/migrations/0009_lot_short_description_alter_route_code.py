@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0008_backfill_contract_end_date_defaults"),
     ]

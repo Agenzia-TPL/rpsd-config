@@ -12,6 +12,7 @@ class DatasetAdmin(admin.ModelAdmin):
     ordering = ("slug",)
     readonly_fields = ("created_at", "updated_at")
 
+
 @admin.register(StructureAdminProxy)
 class StructureAdmin(admin.ModelAdmin):
     list_display = ("dataset", "name", "created_at", "updated_at")
@@ -19,6 +20,7 @@ class StructureAdmin(admin.ModelAdmin):
     search_fields = ("name", "dataset__slug", "dataset__name")
     autocomplete_fields = ("dataset",)
     readonly_fields = ("created_at", "updated_at")
+
 
 @admin.register(IndicatorDefAdminProxy)
 class IndicatorDefAdmin(admin.ModelAdmin):
@@ -31,7 +33,7 @@ class IndicatorDefAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     )
-    list_filter  = ("type", "structures__dataset")
+    list_filter = ("type", "structures__dataset")
     search_fields = (
         "code",
         "name",

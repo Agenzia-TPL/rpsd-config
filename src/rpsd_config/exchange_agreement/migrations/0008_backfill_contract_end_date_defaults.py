@@ -23,7 +23,6 @@ def noop_reverse(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         (
             "exchange_agreement",
@@ -34,4 +33,3 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(backfill_contract_end_dates, noop_reverse),
     ]
-

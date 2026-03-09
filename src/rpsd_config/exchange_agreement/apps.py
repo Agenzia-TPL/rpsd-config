@@ -14,7 +14,5 @@ class ExchangeAgreementConfig(AppConfig):
             RpsdOpenIDConnectOAuth2Adapter,
         )
 
-        OpenIDConnectProvider.oauth2_adapter_class = (
-            RpsdOpenIDConnectOAuth2Adapter
-        )
+        OpenIDConnectProvider.oauth2_adapter_class = RpsdOpenIDConnectOAuth2Adapter
         import rpsd_config.exchange_agreement.signals  # noqa: F401

@@ -18,12 +18,16 @@ from django.utils.translation import gettext_lazy as _
 # Common base
 # ==========================
 
+
 class TimeStampedModel(models.Model):
     """
     Abstract base model adding automatic timestamp fields.
     Uses Now() + db_default for better write performance on Django 5.x.
     """
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True, db_default=Now())
+
+    created_at = models.DateTimeField(
+        auto_now_add=True, db_index=True, db_default=Now()
+    )
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
 
     class Meta:
@@ -33,6 +37,7 @@ class TimeStampedModel(models.Model):
 # ==========================
 # Stakeholders
 # ==========================
+
 
 class Agency(TimeStampedModel):
     name = models.CharField(max_length=255, unique=True)
@@ -66,7 +71,6 @@ class Company(TimeStampedModel):
 # -----------------------------------------------
 
 
-
 class Authority(TimeStampedModel):
     class AuthorityType(models.TextChoices):
         REGION = "region", _("Region")
@@ -76,8 +80,7 @@ class Authority(TimeStampedModel):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     geographic_extent = gis_models.MultiPolygonField(
-        null=True, blank=True, srid=4326,
-        help_text="Geographic extent in WGS84"
+        null=True, blank=True, srid=4326, help_text="Geographic extent in WGS84"
     )
     authority_type = models.CharField(max_length=20, choices=AuthorityType.choices)
 
@@ -85,7 +88,9 @@ class Authority(TimeStampedModel):
         verbose_name = "Authority"
         verbose_name_plural = "Authorities"
         constraints = [
-            models.UniqueConstraint(fields=["name", "authority_type"], name="uniq_authority_name_type"),
+            models.UniqueConstraint(
+                fields=["name", "authority_type"], name="uniq_authority_name_type"
+            ),
         ]
         ordering = ["name"]
 
@@ -98,18 +103,15 @@ class Authority(TimeStampedModel):
         return f"{self.name} ({label})"
 
 
-
 # ====================================================================================
 # Consider whether to add a model to store per-company API keys.
 # ====================================================================================
 
 
-
-
-
 # ==========================
 # Service net: Lots
 # ==========================
+
 
 class Lot(TimeStampedModel):
     id = models.BigAutoField(primary_key=True)
@@ -131,9 +133,11 @@ class Lot(TimeStampedModel):
         short = f" ({self.short_description})" if self.short_description else ""
         return f"Lot {self.id}{short} - {self.description}"
 
+
 # ==========================
 # Dataset & Structures
 # ==========================
+
 
 def structure_validation_path(instance, filename):
     """
@@ -146,6 +150,7 @@ class Dataset(TimeStampedModel):
     slug = models.SlugField(unique=True, help_text="e.g. netex, siri_pt, siri_vm, ...")
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True)
+
     # Consider storing a dataset-level validation schema reference (e.g. XSD).
     class Meta:
         verbose_name = "Dataset"
@@ -164,7 +169,10 @@ class Structure(TimeStampedModel):
     describing where data is located (e.g. XPath selector) and which fields
     are mandatory for merit/quality calculations.
     """
-    dataset = models.ForeignKey(Dataset, on_delete=models.PROTECT, related_name="structures")
+
+    dataset = models.ForeignKey(
+        Dataset, on_delete=models.PROTECT, related_name="structures"
+    )
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True)
     definition = models.JSONField(
@@ -172,8 +180,10 @@ class Structure(TimeStampedModel):
         blank=True,
         help_text=_(
             "Structured mandatory-field definition used by external processors. "
-            "Example: {'xpath': '//EstimatedVehicleJourney', 'fields': ['LineRef', 'DirectionRef']}.\n\n"
-            "Technical note: '//' in XPath means descendant-or-self and matches nodes at any depth."
+            "Example: {'xpath': '//EstimatedVehicleJourney', 'fields': "
+            "['LineRef', 'DirectionRef']}.\n\n"
+            "Technical note: '//' in XPath means descendant-or-self"
+            " and matches nodes at any depth."
         ),
     )
 
@@ -181,7 +191,9 @@ class Structure(TimeStampedModel):
         verbose_name = "Structure"
         verbose_name_plural = "Structures"
         constraints = [
-            models.UniqueConstraint(fields=["dataset", "name"], name="unique_structure_dataset_name")
+            models.UniqueConstraint(
+                fields=["dataset", "name"], name="unique_structure_dataset_name"
+            )
         ]
         ordering = ["dataset__slug", "name"]
 
@@ -207,11 +219,13 @@ class Structure(TimeStampedModel):
 # Indicators (definitions) & Contract association
 # ==========================
 
+
 class IndicatorType(models.TextChoices):
     QUALITY = "QUALITY", _("Quality")
     QUANTITY = "QUANTITY", _("Quantity")
     PUNCTUALITY = "PUNCTUALITY", _("Punctuality")
     OTHER = "OTHER", _("Other")
+
 
 class IndicatorDef(TimeStampedModel):
     """
@@ -222,6 +236,7 @@ class IndicatorDef(TimeStampedModel):
     - `sql_procedure_name` is the stable reference to the external procedure.
     - `sql_snippet` is optional documentation and is not executed by Django.
     """
+
     code = models.CharField(max_length=64, unique=True)
     type = models.CharField(max_length=16, choices=IndicatorType.choices)
     name = models.CharField(max_length=255, help_text="Indicator name")
@@ -316,7 +331,10 @@ class FlowProfile(TimeStampedModel):
                     option_errors.append(
                         f"{block_key}.{item_key}.active must be a boolean."
                     )
-                if not isinstance(item.get("flow"), str) or not item.get("flow", "").strip():
+                if (
+                    not isinstance(item.get("flow"), str)
+                    or not item.get("flow", "").strip()
+                ):
                     option_errors.append(
                         f"{block_key}.{item_key}.flow must be a non-empty string."
                     )
@@ -340,7 +358,10 @@ class FlowProfile(TimeStampedModel):
                     option_errors.append(
                         f"data_retention.{item_key}.days must be an integer >= 0."
                     )
-                if not isinstance(item.get("flow"), str) or not item.get("flow", "").strip():
+                if (
+                    not isinstance(item.get("flow"), str)
+                    or not item.get("flow", "").strip()
+                ):
                     option_errors.append(
                         f"data_retention.{item_key}.flow must be a non-empty string."
                     )
@@ -361,9 +382,11 @@ class FlowProfile(TimeStampedModel):
 # Contracts
 # ==========================
 
+
 def contract_program_path(instance, filename):
     # Use contract_code for folder
     return f"contracts/{instance.contract_code}/program/{filename}"
+
 
 def contract_doc_path(instance, filename):
     # Use related contract code
@@ -386,7 +409,8 @@ class Contract(TimeStampedModel):
     """
     Contract lifecycle model.
 
-    - A contract belongs to exactly one lot, one client agency and one contractor company.
+    - A contract belongs to exactly one lot, one client agency and one
+      contractor company.
     - `version` and `contract_type` are auto-managed on create:
       first contract for the tuple (lot, agency, company) => version 0 + start,
       next contracts => incremental version + renewal.
@@ -394,6 +418,7 @@ class Contract(TimeStampedModel):
     - Overlaps on the same lot are forbidden.
     - Closed contracts are immutable (except automatic audit timestamps).
     """
+
     class ContractType(models.TextChoices):
         START = "start", _("Start")
         RENEWAL = "renewal", _("Renewal")
@@ -405,19 +430,27 @@ class Contract(TimeStampedModel):
 
     contract_code = models.CharField(max_length=64, unique=True)
     client_agency = models.ForeignKey(
-        Agency, on_delete=models.PROTECT, related_name="contracts_as_client",
-        help_text="Client agency"
+        Agency,
+        on_delete=models.PROTECT,
+        related_name="contracts_as_client",
+        help_text="Client agency",
     )
     contractor_company = models.ForeignKey(
-        Company, on_delete=models.PROTECT, related_name="contracts_as_contractor",
-        help_text="Contractor company"
+        Company,
+        on_delete=models.PROTECT,
+        related_name="contracts_as_contractor",
+        help_text="Contractor company",
     )
     start_date = models.DateField()
     end_date = models.DateField(blank=True, null=True)
 
     tender_id = models.CharField(
-        max_length=64, blank=True,
-        help_text="Associated tender/procurement identifier (optional; no dedicated table)"
+        max_length=64,
+        blank=True,
+        help_text=(
+            "Associated tender/procurement identifier"
+            " (optional; no dedicated table)"
+        ),
     )
 
     contract_type = models.CharField(max_length=7, choices=ContractType.choices)
@@ -427,9 +460,11 @@ class Contract(TimeStampedModel):
 
     # Program (es. NetEx)
     contract_program_file = models.FileField(
-        upload_to=contract_program_path, blank=True, null=True,
+        upload_to=contract_program_path,
+        blank=True,
+        null=True,
         validators=[FileExtensionValidator(allowed_extensions=["xml", "zip"])],
-        help_text="NetEx file (XML/ZIP) with the contractual program"
+        help_text="NetEx file (XML/ZIP) with the contractual program",
     )
     flow_profile = models.ForeignKey(
         FlowProfile,
@@ -465,7 +500,8 @@ class Contract(TimeStampedModel):
                 name="unique_contract_version_per_lot_pair",
             ),
             models.CheckConstraint(
-                check=models.Q(end_date__gte=models.F("start_date")) | models.Q(end_date__isnull=True),
+                check=models.Q(end_date__gte=models.F("start_date"))
+                | models.Q(end_date__isnull=True),
                 name="contract_date_range_ok",
             ),
             ExclusionConstraint(
@@ -517,22 +553,38 @@ class Contract(TimeStampedModel):
             effective_end_date = _add_years_safe(self.start_date, 6)
 
         if effective_end_date is not None and effective_end_date < self.start_date:
-            errors["end_date"] = _("End date must be greater than or equal to start date.")
+            errors["end_date"] = _(
+                "End date must be greater than or equal to start date."
+            )
 
         if self.status == self.ContractStatus.CLOSED:
             if self.closed_at is None:
-                errors["closed_at"] = _("Closed contracts must have a closing timestamp.")
+                errors["closed_at"] = _(
+                    "Closed contracts must have a closing timestamp."
+                )
             if not self.closed_reason:
-                errors["closed_reason"] = _("Closed contracts must include a closing reason.")
+                errors["closed_reason"] = _(
+                    "Closed contracts must include a closing reason."
+                )
         else:
             if self.closed_at is not None:
-                errors["closed_at"] = _("closed_at must be empty unless contract is closed.")
+                errors["closed_at"] = _(
+                    "closed_at must be empty unless contract is closed."
+                )
             if self.closed_reason:
-                errors["closed_reason"] = _("closed_reason must be empty unless contract is closed.")
+                errors["closed_reason"] = _(
+                    "closed_reason must be empty unless contract is closed."
+                )
             if replaced_by_id is not None:
-                errors["replaced_by"] = _("Only closed contracts can reference a replacement.")
+                errors["replaced_by"] = _(
+                    "Only closed contracts can reference a replacement."
+                )
 
-        if replaced_by_id is not None and self.pk is not None and replaced_by_id == self.pk:
+        if (
+            replaced_by_id is not None
+            and self.pk is not None
+            and replaced_by_id == self.pk
+        ):
             errors["replaced_by"] = _("A contract cannot replace itself.")
 
         if lot_id and self.start_date and effective_end_date:
@@ -541,13 +593,15 @@ class Contract(TimeStampedModel):
                 start_date__lte=effective_end_date,
             )
             overlaps = overlaps.filter(
-                models.Q(end_date__isnull=True) | models.Q(end_date__gte=self.start_date)
+                models.Q(end_date__isnull=True)
+                | models.Q(end_date__gte=self.start_date)
             )
             if self.pk:
                 overlaps = overlaps.exclude(pk=self.pk)
             if overlaps.exists():
                 errors["lot"] = _(
-                    "Another contract already exists for this lot in the selected period. "
+                    "Another contract already exists for this lot"
+                    " in the selected period. "
                     "Close/update the existing contract first."
                 )
 
@@ -620,10 +674,16 @@ class Contract(TimeStampedModel):
 
         original = type(self).objects.get(pk=self.pk)
         if self.version != original.version:
-            raise ValidationError({"version": _("Version is auto-managed and cannot be edited.")})
+            raise ValidationError(
+                {"version": _("Version is auto-managed and cannot be edited.")}
+            )
         if self.contract_type != original.contract_type:
             raise ValidationError(
-                {"contract_type": _("Contract type is auto-managed and cannot be edited.")}
+                {
+                    "contract_type": _(
+                        "Contract type is auto-managed and cannot be edited."
+                    )
+                }
             )
 
     def save(self, *args, **kwargs):
@@ -640,18 +700,24 @@ class Contract(TimeStampedModel):
         return f"{self.contract_code} ({self.contract_type_label})"
 
 
-
 # 2do
-# evaluate how to associate, to a contract, the users/emails that will be allowed to access the contract’s admin sections
+# evaluate how to associate, to a contract, the users/emails that will be
+# allowed to access the contract’s admin sections
 # evaluate possible integrations with IAM to provision the new users
 
 
 class ContractDocument(TimeStampedModel):
-    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="documents")
+    contract = models.ForeignKey(
+        Contract, on_delete=models.CASCADE, related_name="documents"
+    )
     name = models.CharField(max_length=255, blank=True)
     file = models.FileField(
         upload_to=contract_doc_path,
-        validators=[FileExtensionValidator(allowed_extensions=["pdf", "doc", "docx", "odt", "zip"])]
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=["pdf", "doc", "docx", "odt", "zip"]
+            )
+        ],
     )
 
     class Meta:
@@ -712,9 +778,13 @@ class ContractPublication(TimeStampedModel):
         if not isinstance(self.snapshot, dict):
             errors["snapshot"] = _("Snapshot must be a JSON object.")
         if not self.snapshot_schema_version:
-            errors["snapshot_schema_version"] = _("Snapshot schema version is required.")
+            errors["snapshot_schema_version"] = _(
+                "Snapshot schema version is required."
+            )
         if self.snapshot_checksum and len(self.snapshot_checksum) != 64:
-            errors["snapshot_checksum"] = _("Snapshot checksum must be a SHA256 hex string.")
+            errors["snapshot_checksum"] = _(
+                "Snapshot checksum must be a SHA256 hex string."
+            )
         if errors:
             raise ValidationError(errors)
 
@@ -728,17 +798,29 @@ class ContractPublication(TimeStampedModel):
 
 class ContractIndicator(models.Model):
     """
-    Contract ↔ IndicatorDef association with optional JSON parameters (thresholds/weights/etc.).
+    Contract ↔ IndicatorDef association with optional JSON parameters
+    (thresholds/weights/etc.).
     """
-    contract = models.ForeignKey(Contract, on_delete=models.CASCADE, related_name="indicators")
-    indicator = models.ForeignKey(IndicatorDef, on_delete=models.PROTECT, related_name="contracts")
-    params = models.JSONField(blank=True, null=True, help_text="Thresholds/weights/domain-specific configuration")
+
+    contract = models.ForeignKey(
+        Contract, on_delete=models.CASCADE, related_name="indicators"
+    )
+    indicator = models.ForeignKey(
+        IndicatorDef, on_delete=models.PROTECT, related_name="contracts"
+    )
+    params = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="Thresholds/weights/domain-specific configuration",
+    )
 
     class Meta:
         verbose_name = "Contract indicator"
         verbose_name_plural = "Contract indicators"
         constraints = [
-            models.UniqueConstraint(fields=["contract", "indicator"], name="unique_contract_indicator")
+            models.UniqueConstraint(
+                fields=["contract", "indicator"], name="unique_contract_indicator"
+            )
         ]
 
     def __str__(self) -> str:
@@ -761,7 +843,9 @@ class ContractMembership(TimeStampedModel):
         Contract, on_delete=models.CASCADE, related_name="memberships"
     )
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="contract_memberships"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="contract_memberships",
     )
     role = models.CharField(max_length=32, choices=Role.choices)
     created_by = models.ForeignKey(
@@ -825,7 +909,9 @@ class ContractInvitation(TimeStampedModel):
             "by the first user who accepts the token."
         ),
     )
-    role_to_assign = models.CharField(max_length=32, choices=ContractMembership.Role.choices)
+    role_to_assign = models.CharField(
+        max_length=32, choices=ContractMembership.Role.choices
+    )
     invited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -861,7 +947,7 @@ class ContractInvitation(TimeStampedModel):
                 fields=["contract", "role_to_assign"],
                 condition=models.Q(status="pending", email__isnull=True),
                 name="unique_pending_open_contract_invitation_per_role",
-            )
+            ),
         ]
         indexes = [
             models.Index(fields=["contract", "status"]),
@@ -881,7 +967,8 @@ class ContractInvitation(TimeStampedModel):
                 accepted_email = getattr(self.accepted_by, "email", "")
                 if accepted_email.lower() != self.email.lower():
                     errors["accepted_by"] = _(
-                        "Accepted user email does not match the invitation target email."
+                        "Accepted user email does not match"
+                        " the invitation target email."
                     )
         else:
             if self.accepted_at is not None:

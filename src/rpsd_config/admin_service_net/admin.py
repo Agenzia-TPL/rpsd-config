@@ -4,6 +4,7 @@ from rpsd_config import admin_hidden  # noqa: F401
 
 from .proxies import LotAdminProxy
 
+
 @admin.register(LotAdminProxy)
 class LotAdmin(admin.ModelAdmin):
     list_display = ("id", "short_description", "description")

@@ -1,11 +1,10 @@
-from django.http import Http404
-
 from allauth.account.internal.decorators import login_not_required
 from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount.providers.oauth2.views import (
     OAuth2CallbackView,
     OAuth2LoginView,
 )
+from django.http import Http404
 
 from rpsd_config.server.oidc_adapter import RpsdOpenIDConnectOAuth2Adapter
 

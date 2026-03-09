@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0010_indicatordef_sql_procedure_name_and_more"),
     ]
@@ -20,7 +19,14 @@ class Migration(migrations.Migration):
             field=models.JSONField(
                 blank=True,
                 default=dict,
-                help_text="Structured mandatory-field definition used by external processors. Example: {'xpath': '//EstimatedVehicleJourney', 'fields': ['LineRef', 'DirectionRef']}.\n\nTechnical note: '//' in XPath means descendant-or-self and matches nodes at any depth.",
+                help_text=(
+                    "Structured mandatory-field definition used"
+                    " by external processors. "
+                    "Example: {'xpath': '//EstimatedVehicleJourney', 'fields': "
+                    "['LineRef', 'DirectionRef']}.\n\n"
+                    "Technical note: '//' in XPath means descendant-or-self"
+                    " and matches nodes at any depth."
+                ),
             ),
         ),
     ]

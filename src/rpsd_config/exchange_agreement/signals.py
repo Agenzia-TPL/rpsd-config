@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 
 _executor = ThreadPoolExecutor(max_workers=2)
 
+
 def _publish_contract_event(payload):
     try:
-        serialized_payload = json.dumps(payload).encode("utf-8")
+        _serialized_payload = json.dumps(payload).encode("utf-8")
 
         # Alternative HTTP request (kept commented as reference)
         # requests.post(
@@ -29,6 +30,7 @@ def _publish_contract_event(payload):
         # )
     except Exception as exc:
         logger.exception("Error while sending contract event to PubSub: %s", exc)
+
 
 @receiver(post_save, sender=Contract)
 @receiver(post_save, sender=ContractAdminProxy)

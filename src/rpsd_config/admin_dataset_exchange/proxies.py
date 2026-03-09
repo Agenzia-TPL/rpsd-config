@@ -8,12 +8,14 @@ class DatasetAdminProxy(Dataset):
         verbose_name = "Dataset"
         verbose_name_plural = "Datasets"
 
+
 class StructureAdminProxy(Structure):
     class Meta:
         proxy = True
         app_label = "admin_dataset_exchange"
         verbose_name = "Structure"
         verbose_name_plural = "Structures"
+
 
 class IndicatorDefAdminProxy(IndicatorDef):
     class Meta:
