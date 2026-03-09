@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0014_remove_trip_route_remove_trip_stops_and_more"),
     ]

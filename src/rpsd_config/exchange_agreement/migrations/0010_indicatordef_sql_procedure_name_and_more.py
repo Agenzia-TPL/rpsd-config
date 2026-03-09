@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0009_lot_short_description_alter_route_code"),
     ]
@@ -24,7 +23,10 @@ class Migration(migrations.Migration):
             name="sql_snippet",
             field=models.TextField(
                 blank=True,
-                help_text="Optional SQL documentation snippet (not executed by this service).",
+                help_text=(
+                    "Optional SQL documentation snippet"
+                    " (not executed by this service)."
+                ),
             ),
         ),
     ]

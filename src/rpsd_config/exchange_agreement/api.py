@@ -1,5 +1,5 @@
-from urllib.parse import urlencode
 from datetime import date
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.db.models import Q
@@ -197,7 +197,9 @@ def _authorized_contracts_qs(request):
 
 
 def _get_authorized_contract(request, contract_code: str) -> Contract:
-    contract = _authorized_contracts_qs(request).filter(contract_code=contract_code).first()
+    contract = (
+        _authorized_contracts_qs(request).filter(contract_code=contract_code).first()
+    )
     if contract is None:
         raise HttpError(404, "Contract not found.")
     return contract
@@ -211,7 +213,9 @@ def _dataset_ref(dataset) -> DatasetRefSchema:
     )
 
 
-def _flow_profile_ref_schema(flow_profile: FlowProfile | None) -> FlowProfileRefSchema | None:
+def _flow_profile_ref_schema(
+    flow_profile: FlowProfile | None,
+) -> FlowProfileRefSchema | None:
     if flow_profile is None:
         return None
     return FlowProfileRefSchema(
@@ -292,7 +296,9 @@ def _contract_summary_schema(contract: Contract) -> ContractSummarySchema:
 
 
 def _contract_detail_schema(request, contract: Contract) -> ContractDetailSchema:
-    file_name = contract.contract_program_file.name if contract.contract_program_file else None
+    file_name = (
+        contract.contract_program_file.name if contract.contract_program_file else None
+    )
     file_url = (
         request.build_absolute_uri(contract.contract_program_file.url)
         if contract.contract_program_file
@@ -323,7 +329,9 @@ def _contract_detail_schema(request, contract: Contract) -> ContractDetailSchema
         flow_profile=_flow_profile_ref_schema(contract.flow_profile),
         contract_program_file=file_name,
         contract_program_file_url=file_url,
-        replaced_by_contract_code=contract.replaced_by.contract_code if contract.replaced_by else None,
+        replaced_by_contract_code=contract.replaced_by.contract_code
+        if contract.replaced_by
+        else None,
         closed_at=contract.closed_at.isoformat() if contract.closed_at else None,
         closed_reason=contract.closed_reason,
     )
@@ -345,7 +353,9 @@ def _require_contract_admin(request, contract: Contract):
 def _publication_actor_schema(user) -> PublicationActorSchema | None:
     if not user:
         return None
-    display_name = getattr(user, "get_full_name", lambda: "")() or getattr(user, "username", "")
+    display_name = getattr(user, "get_full_name", lambda: "")() or getattr(
+        user, "username", ""
+    )
     return PublicationActorSchema(
         username=getattr(user, "username", ""),
         email=getattr(user, "email", ""),
@@ -353,7 +363,9 @@ def _publication_actor_schema(user) -> PublicationActorSchema | None:
     )
 
 
-def _contract_publication_summary_schema(publication: ContractPublication) -> ContractPublicationSummarySchema:
+def _contract_publication_summary_schema(
+    publication: ContractPublication,
+) -> ContractPublicationSummarySchema:
     return ContractPublicationSummarySchema(
         id=publication.id,
         contract_code=publication.contract.contract_code,
@@ -365,7 +377,9 @@ def _contract_publication_summary_schema(publication: ContractPublication) -> Co
     )
 
 
-def _contract_publication_detail_schema(publication: ContractPublication) -> ContractPublicationDetailSchema:
+def _contract_publication_detail_schema(
+    publication: ContractPublication,
+) -> ContractPublicationDetailSchema:
     summary = _contract_publication_summary_schema(publication)
     return ContractPublicationDetailSchema(
         id=summary.id,
@@ -398,8 +412,13 @@ def list_contracts(
     if contractor_company_id:
         qs = qs.filter(contractor_company_id=contractor_company_id)
     if active_on:
-        qs = qs.filter(start_date__lte=active_on).filter(Q(end_date__isnull=True) | Q(end_date__gte=active_on))
-    return [_contract_summary_schema(contract) for contract in qs.order_by("-start_date", "contract_code")]
+        qs = qs.filter(start_date__lte=active_on).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=active_on)
+        )
+    return [
+        _contract_summary_schema(contract)
+        for contract in qs.order_by("-start_date", "contract_code")
+    ]
 
 
 @api.get("/v1/contracts/{contract_code}", response=ContractDetailSchema)
@@ -408,24 +427,34 @@ def get_contract(request, contract_code: str):
     return _contract_detail_schema(request, contract)
 
 
-@api.get("/v1/contracts/{contract_code}/flow-profile", response=ContractFlowProfileResponse)
+@api.get(
+    "/v1/contracts/{contract_code}/flow-profile", response=ContractFlowProfileResponse
+)
 def get_contract_flow_profile(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
     return ContractFlowProfileResponse(
         contract_code=contract.contract_code,
-        flow_profile=_flow_profile_schema(contract.flow_profile) if contract.flow_profile else None,
+        flow_profile=_flow_profile_schema(contract.flow_profile)
+        if contract.flow_profile
+        else None,
     )
 
 
-@api.put("/v1/contracts/{contract_code}/flow-profile", response=ContractFlowProfileResponse)
-def set_contract_flow_profile(request, contract_code: str, payload: ContractFlowProfileUpdateRequest):
+@api.put(
+    "/v1/contracts/{contract_code}/flow-profile", response=ContractFlowProfileResponse
+)
+def set_contract_flow_profile(
+    request, contract_code: str, payload: ContractFlowProfileUpdateRequest
+):
     contract = _get_authorized_contract(request, contract_code)
     _require_contract_admin(request, contract)
 
     if contract.status == Contract.ContractStatus.CLOSED:
         raise HttpError(400, "Cannot modify flow profile on a closed contract.")
 
-    flow_profile = FlowProfile.objects.filter(code=payload.flow_profile_code, is_active=True).first()
+    flow_profile = FlowProfile.objects.filter(
+        code=payload.flow_profile_code, is_active=True
+    ).first()
     if flow_profile is None:
         raise HttpError(404, "Active flow profile not found.")
 
@@ -437,14 +466,18 @@ def set_contract_flow_profile(request, contract_code: str, payload: ContractFlow
     )
 
 
-@api.post("/v1/contracts/{contract_code}/publish", response=ContractPublicationDetailSchema)
+@api.post(
+    "/v1/contracts/{contract_code}/publish", response=ContractPublicationDetailSchema
+)
 def publish_contract_endpoint(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
     try:
         publication = publish_contract(contract=contract, user=_require_auth(request))
     except PublishContractError as exc:
         raise HttpError(exc.status_code, exc.message) from exc
-    publication = ContractPublication.objects.select_related("contract", "published_by").get(pk=publication.pk)
+    publication = ContractPublication.objects.select_related(
+        "contract", "published_by"
+    ).get(pk=publication.pk)
     return _contract_publication_detail_schema(publication)
 
 
@@ -466,7 +499,9 @@ def list_contract_publications(request, contract_code: str):
     "/v1/contracts/{contract_code}/publications/{publication_version}",
     response=ContractPublicationDetailSchema,
 )
-def get_contract_publication_by_version(request, contract_code: str, publication_version: int):
+def get_contract_publication_by_version(
+    request, contract_code: str, publication_version: int
+):
     contract = _get_authorized_contract(request, contract_code)
     publication = (
         ContractPublication.objects.select_related("contract", "published_by")
@@ -478,7 +513,9 @@ def get_contract_publication_by_version(request, contract_code: str, publication
     return _contract_publication_detail_schema(publication)
 
 
-@api.get("/v1/contracts/{contract_code}/indicators", response=list[ContractIndicatorSchema])
+@api.get(
+    "/v1/contracts/{contract_code}/indicators", response=list[ContractIndicatorSchema]
+)
 def list_contract_indicators(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
     links = (
@@ -496,7 +533,10 @@ def list_contract_indicators(request, contract_code: str):
     ]
 
 
-@api.get("/v1/contracts/{contract_code}/indicators/{indicator_code}", response=ContractIndicatorSchema)
+@api.get(
+    "/v1/contracts/{contract_code}/indicators/{indicator_code}",
+    response=ContractIndicatorSchema,
+)
 def get_contract_indicator(request, contract_code: str, indicator_code: str):
     contract = _get_authorized_contract(request, contract_code)
     link = (
@@ -513,7 +553,9 @@ def get_contract_indicator(request, contract_code: str, indicator_code: str):
     )
 
 
-@api.get("/v1/contracts/{contract_code}/required-inputs", response=RequiredInputsResponse)
+@api.get(
+    "/v1/contracts/{contract_code}/required-inputs", response=RequiredInputsResponse
+)
 def get_contract_required_inputs(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
     links = (
@@ -548,13 +590,19 @@ def get_contract_required_inputs(request, contract_code: str):
         )
         for _, group in sorted(groups.items())
     ]
-    return RequiredInputsResponse(contract_code=contract.contract_code, required_inputs=required_inputs)
+    return RequiredInputsResponse(
+        contract_code=contract.contract_code, required_inputs=required_inputs
+    )
 
 
 @api.get("/v1/indicators", response=list[IndicatorSchema])
 def list_indicators(request):
     _require_auth(request)
-    indicators = IndicatorDef.objects.prefetch_related("structures__dataset").all().order_by("code")
+    indicators = (
+        IndicatorDef.objects.prefetch_related("structures__dataset")
+        .all()
+        .order_by("code")
+    )
     return [_indicator_schema(indicator) for indicator in indicators]
 
 
@@ -583,7 +631,9 @@ def get_indicator_structures(request, indicator_code: str):
         raise HttpError(404, "Indicator not found.")
     return [
         _structure_schema(s)
-        for s in indicator.structures.select_related("dataset").all().order_by("dataset__slug", "name")
+        for s in indicator.structures.select_related("dataset")
+        .all()
+        .order_by("dataset__slug", "name")
     ]
 
 
@@ -593,13 +643,18 @@ def list_structures(request, dataset_slug: str | None = None):
     qs = Structure.objects.select_related("dataset").all()
     if dataset_slug:
         qs = qs.filter(dataset__slug=dataset_slug)
-    return [_structure_schema(structure) for structure in qs.order_by("dataset__slug", "name")]
+    return [
+        _structure_schema(structure)
+        for structure in qs.order_by("dataset__slug", "name")
+    ]
 
 
 @api.get("/v1/structures/{structure_id}", response=StructureSchema)
 def get_structure(request, structure_id: int):
     _require_auth(request)
-    structure = Structure.objects.select_related("dataset").filter(id=structure_id).first()
+    structure = (
+        Structure.objects.select_related("dataset").filter(id=structure_id).first()
+    )
     if structure is None:
         raise HttpError(404, "Structure not found.")
     return _structure_schema(structure)
@@ -639,7 +694,9 @@ def get_publication(request, publication_id: int):
 @api.get("/invitations/{token}/check", response=InvitationCheckResponse)
 def check_invitation(request, token: str):
     try:
-        invitation = ContractInvitation.objects.select_related("contract").get(token=token)
+        invitation = ContractInvitation.objects.select_related("contract").get(
+            token=token
+        )
     except ContractInvitation.DoesNotExist:
         return InvitationCheckResponse(
             valid=False,
@@ -652,7 +709,10 @@ def check_invitation(request, token: str):
         )
 
     now = timezone.now()
-    valid = invitation.status == ContractInvitation.Status.PENDING and invitation.expires_at > now
+    valid = (
+        invitation.status == ContractInvitation.Status.PENDING
+        and invitation.expires_at > now
+    )
     return InvitationCheckResponse(
         valid=valid,
         status=invitation.status,

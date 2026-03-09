@@ -4,12 +4,12 @@ import django.contrib.gis.db.models.fields
 import django.core.validators
 import django.db.models.deletion
 import django.db.models.functions.datetime
-import rpsd_config.exchange_agreement.models
 from django.db import migrations, models
+
+import rpsd_config.exchange_agreement.models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = []
@@ -216,7 +216,10 @@ class Migration(migrations.Migration):
                     "tender_id",
                     models.CharField(
                         blank=True,
-                        help_text="Associated tender/procurement identifier (optional; no dedicated table)",
+                        help_text=(
+                            "Associated tender/procurement identifier"
+                            " (optional; no dedicated table)"
+                        ),
                         max_length=64,
                     ),
                 ),
@@ -230,7 +233,10 @@ class Migration(migrations.Migration):
                 (
                     "version",
                     models.PositiveIntegerField(
-                        help_text="Progressive serial for the pair (client_agency, contractor_company)"
+                        help_text=(
+                            "Progressive serial for the pair"
+                            " (client_agency, contractor_company)"
+                        )
                     ),
                 ),
                 (
@@ -450,7 +456,10 @@ class Migration(migrations.Migration):
                     "validation_schema",
                     models.FileField(
                         blank=True,
-                        help_text="Validation schema for the section (XSD/XML/JSON/YAML)",
+                        help_text=(
+                            "Validation schema for the section"
+                            " (XSD/XML/JSON/YAML)"
+                        ),
                         null=True,
                         upload_to=rpsd_config.exchange_agreement.models.structure_validation_path,
                         validators=[

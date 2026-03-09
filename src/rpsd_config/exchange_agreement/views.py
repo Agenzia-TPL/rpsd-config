@@ -6,8 +6,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
-from django.urls import NoReverseMatch
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
@@ -15,7 +14,9 @@ from .models import ContractInvitation, ContractMembership
 
 
 @transaction.atomic
-def accept_invitation_for_user(*, token: str, user) -> tuple[ContractInvitation, ContractMembership]:
+def accept_invitation_for_user(
+    *, token: str, user
+) -> tuple[ContractInvitation, ContractMembership]:
     invitation = (
         ContractInvitation.objects.select_for_update()
         .select_related("contract")
@@ -33,7 +34,9 @@ def accept_invitation_for_user(*, token: str, user) -> tuple[ContractInvitation,
     if invitation.email:
         user_email = (user.email or "").lower()
         if user_email != invitation.email.lower():
-            raise ValueError("Authenticated user email does not match invitation target.")
+            raise ValueError(
+                "Authenticated user email does not match invitation target."
+            )
 
     membership, _ = ContractMembership.objects.get_or_create(
         contract=invitation.contract,
@@ -86,7 +89,9 @@ def onboarding_callback(request: HttpRequest) -> HttpResponse:
         )
 
     try:
-        invitation, membership = accept_invitation_for_user(token=token, user=request.user)
+        invitation, membership = accept_invitation_for_user(
+            token=token, user=request.user
+        )
     except ContractInvitation.DoesNotExist:
         return render(
             request,
@@ -164,7 +169,9 @@ def received_invitations(request: HttpRequest) -> HttpResponse:
         base_query = base_query | Q(email__iexact=user_email)
 
     invitations = (
-        ContractInvitation.objects.select_related("contract", "invited_by", "accepted_by")
+        ContractInvitation.objects.select_related(
+            "contract", "invited_by", "accepted_by"
+        )
         .filter(base_query)
         .order_by("-created_at")
     )
@@ -209,7 +216,10 @@ def invitation_landing(request: HttpRequest, token: str) -> HttpResponse:
     if invitation is None:
         return render(request, "exchange_agreement/invitation_landing.html", context)
 
-    if invitation.status == ContractInvitation.Status.PENDING and invitation.expires_at > now:
+    if (
+        invitation.status == ContractInvitation.Status.PENDING
+        and invitation.expires_at > now
+    ):
         state = "valid"
         can_continue = True
     elif invitation.status == ContractInvitation.Status.ACCEPTED:
@@ -232,10 +242,10 @@ def invitation_landing(request: HttpRequest, token: str) -> HttpResponse:
 
     if request.method == "POST":
         if not can_continue:
-            context["submission_error"] = (
-                "Questo invito non e' piu' utilizzabile."
+            context["submission_error"] = "Questo invito non e' piu' utilizzabile."
+            return render(
+                request, "exchange_agreement/invitation_landing.html", context
             )
-            return render(request, "exchange_agreement/invitation_landing.html", context)
 
         request.session["onboarding_invitation_token"] = str(invitation.token)
         callback_url = reverse("exchange_agreement:onboarding-callback")

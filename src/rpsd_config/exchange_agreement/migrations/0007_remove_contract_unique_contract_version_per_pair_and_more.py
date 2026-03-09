@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0006_contract_exclude_contract_overlap_per_lot"),
     ]
@@ -18,7 +17,10 @@ class Migration(migrations.Migration):
             model_name="contract",
             name="version",
             field=models.PositiveIntegerField(
-                help_text="Auto progressive serial for (lot, client_agency, contractor_company)"
+                help_text=(
+                    "Auto progressive serial for"
+                    " (lot, client_agency, contractor_company)"
+                )
             ),
         ),
         migrations.AddConstraint(

@@ -26,7 +26,10 @@ from rpsd_config.exchange_agreement.models import (
     Lot,
     Structure,
 )
-from rpsd_config.exchange_agreement.services.publication import PublishContractError, publish_contract
+from rpsd_config.exchange_agreement.services.publication import (
+    PublishContractError,
+    publish_contract,
+)
 
 
 class Command(BaseCommand):
@@ -81,14 +84,12 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                (
-                    "Dummy data created:"
-                    f" agencies={len(agencies)}, companies={len(companies)},"
-                    f" authorities={len(authorities)}, lots={len(lots)},"
-                    f" datasets={len(datasets)}, structures={len(structures)},"
-                    f" indicators={len(indicators)}, flow_profiles={len(flow_profiles)},"
-                    f" contracts={len(contracts)}, publications={published_count}"
-                )
+                "Dummy data created:"
+                f" agencies={len(agencies)}, companies={len(companies)},"
+                f" authorities={len(authorities)}, lots={len(lots)},"
+                f" datasets={len(datasets)}, structures={len(structures)},"
+                f" indicators={len(indicators)}, flow_profiles={len(flow_profiles)},"
+                f" contracts={len(contracts)}, publications={published_count}"
             )
         )
 
@@ -255,7 +256,9 @@ class Command(BaseCommand):
                         "netex": {
                             "active": True,
                             "flow": "master-001",
-                            "description": "Carica il programmato master in formato NeTEx.",
+                            "description": (
+                                "Carica il programmato master in formato NeTEx."
+                            ),
                         },
                         "gtfs": {
                             "active": True,
@@ -367,10 +370,12 @@ class Command(BaseCommand):
                     "status": Contract.ContractStatus.ACTIVE,
                     "tender_id": f"TENDER-{i:03d}",
                     "lot": lot,
-                    "flow_profile": flow_profiles[(i - 1) % len(flow_profiles)] if flow_profiles else None,
+                    "flow_profile": flow_profiles[(i - 1) % len(flow_profiles)]
+                    if flow_profiles
+                    else None,
                 },
             )
-            if flow_profiles and contract.flow_profile_id is None:
+            if flow_profiles and contract.flow_profile is None:
                 contract.flow_profile = flow_profiles[(i - 1) % len(flow_profiles)]
                 contract.save(update_fields=["flow_profile", "updated_at"])
             items.append(contract)
@@ -393,7 +398,9 @@ class Command(BaseCommand):
     def _ensure_contract_docs(self, contracts):
         for contract in contracts:
             name = f"Documento {contract.contract_code}"
-            existing = ContractDocument.objects.filter(contract=contract, name=name).first()
+            existing = ContractDocument.objects.filter(
+                contract=contract, name=name
+            ).first()
             if existing:
                 continue
             doc = ContractDocument(contract=contract, name=name)

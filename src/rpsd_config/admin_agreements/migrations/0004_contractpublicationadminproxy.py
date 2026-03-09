@@ -4,7 +4,6 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("admin_agreements", "0003_flowprofileadminproxy"),
         ("exchange_agreement", "0016_contractpublication"),

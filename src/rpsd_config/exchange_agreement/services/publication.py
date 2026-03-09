@@ -11,7 +11,6 @@ from django.utils import timezone
 
 from rpsd_config.exchange_agreement.models import (
     Contract,
-    ContractDocument,
     ContractIndicator,
     ContractMembership,
     ContractPublication,
@@ -54,7 +53,8 @@ def _file_sha256(file_field) -> str | None:
                 hasher.update(chunk)
         return hasher.hexdigest()
     except Exception:
-        # Snapshot generation should be resilient if the storage backend/file is missing.
+        # Snapshot generation should be resilient if the storage
+        # backend/file is missing.
         return None
 
 
@@ -69,7 +69,9 @@ def _file_metadata(file_field) -> dict[str, Any] | None:
         size_bytes = None
 
     return {
-        "file_name": file_field.name.split("/")[-1] if getattr(file_field, "name", "") else "",
+        "file_name": file_field.name.split("/")[-1]
+        if getattr(file_field, "name", "")
+        else "",
         "storage_path": getattr(file_field, "name", ""),
         "size_bytes": size_bytes,
         "sha256": _file_sha256(file_field),
@@ -100,7 +102,9 @@ def _indicator_snapshot(link: ContractIndicator) -> dict[str, Any]:
         "code": indicator.code,
         "type": indicator.type,
         "type_label": str(
-            indicator.get_type_display() if hasattr(indicator, "get_type_display") else indicator.type
+            indicator.get_type_display()
+            if hasattr(indicator, "get_type_display")
+            else indicator.type
         ),
         "name": indicator.name,
         "description": indicator.description,
@@ -108,7 +112,9 @@ def _indicator_snapshot(link: ContractIndicator) -> dict[str, Any]:
         "notes": indicator.notes,
         "sql_procedure_name": indicator.sql_procedure_name,
         "sql_snippet": indicator.sql_snippet,
-        "contract_params": link.params if isinstance(link.params, dict) else link.params,
+        "contract_params": link.params
+        if isinstance(link.params, dict)
+        else link.params,
         "structures": [_structure_snapshot(s) for s in structures],
     }
 
@@ -116,7 +122,9 @@ def _indicator_snapshot(link: ContractIndicator) -> dict[str, Any]:
 def _published_by_snapshot(user) -> dict[str, Any] | None:
     if not user or not getattr(user, "is_authenticated", False):
         return None
-    display = getattr(user, "get_full_name", lambda: "")() or getattr(user, "username", "")
+    display = getattr(user, "get_full_name", lambda: "")() or getattr(
+        user, "username", ""
+    )
     return {
         "username": getattr(user, "username", ""),
         "email": getattr(user, "email", ""),
@@ -178,7 +186,9 @@ def build_contract_snapshot(
             "end_date": contract.end_date.isoformat() if contract.end_date else None,
             "closed_at": contract.closed_at.isoformat() if contract.closed_at else None,
             "closed_reason": contract.closed_reason,
-            "replaced_by_contract_code": contract.replaced_by.contract_code if contract.replaced_by else None,
+            "replaced_by_contract_code": contract.replaced_by.contract_code
+            if contract.replaced_by
+            else None,
             "program_file": _file_metadata(contract.contract_program_file),
         },
         "client_agency": {
@@ -208,14 +218,18 @@ def build_contract_snapshot(
     snapshot["computed_summary"] = {
         "documents_count": len(snapshot["documents"]),
         "indicators_count": len(snapshot["indicators"]),
-        "structures_count": sum(len(item["structures"]) for item in snapshot["indicators"]),
+        "structures_count": sum(
+            len(item["structures"]) for item in snapshot["indicators"]
+        ),
         "has_program_file": bool(snapshot["contract"]["program_file"]),
     }
     return snapshot
 
 
 def compute_snapshot_checksum(snapshot: dict[str, Any]) -> str:
-    payload = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    payload = json.dumps(
+        snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -227,10 +241,7 @@ def publish_contract(*, contract: Contract, user) -> ContractPublication:
     - first publish moves status draft -> active
     - subsequent publishes on active create a new publication version
     """
-    locked_contract = (
-        Contract.objects.select_for_update()
-        .get(pk=contract.pk)
-    )
+    locked_contract = Contract.objects.select_for_update().get(pk=contract.pk)
 
     _require_publish_permission(user, locked_contract)
 
@@ -239,7 +250,9 @@ def publish_contract(*, contract: Contract, user) -> ContractPublication:
     if locked_contract.flow_profile_id is None:
         raise PublishContractError(400, "A flow profile is required before publishing.")
     if not ContractIndicator.objects.filter(contract=locked_contract).exists():
-        raise PublishContractError(400, "At least one contract indicator is required before publishing.")
+        raise PublishContractError(
+            400, "At least one contract indicator is required before publishing."
+        )
 
     next_version = (
         ContractPublication.objects.filter(contract=locked_contract).aggregate(

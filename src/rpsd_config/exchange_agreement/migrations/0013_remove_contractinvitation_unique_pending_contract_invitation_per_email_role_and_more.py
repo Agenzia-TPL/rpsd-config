@@ -5,7 +5,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0012_contractinvitation_contractmembership"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
@@ -21,7 +20,10 @@ class Migration(migrations.Migration):
             name="email",
             field=models.EmailField(
                 blank=True,
-                help_text="Optional target email. If empty, the invitation is open and can be used by the first user who accepts the token.",
+                help_text=(
+                    "Optional target email. If empty, the invitation is open"
+                    " and can be used by the first user who accepts the token."
+                ),
                 max_length=254,
                 null=True,
             ),

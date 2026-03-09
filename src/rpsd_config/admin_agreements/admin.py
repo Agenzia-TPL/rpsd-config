@@ -1,5 +1,4 @@
-from django.contrib import admin
-from django.contrib import messages
+from django.contrib import admin, messages
 
 from rpsd_config import admin_hidden  # noqa: F401
 from rpsd_config.exchange_agreement.models import Contract
@@ -11,11 +10,11 @@ from rpsd_config.exchange_agreement.services.publication import (
 from .proxies import (
     ContractAdminProxy,
     ContractDocumentAdminProxy,
-    FlowProfileAdminProxy,
-    ContractInvitationAdminProxy,
     ContractIndicatorAdminProxy,
+    ContractInvitationAdminProxy,
     ContractMembershipAdminProxy,
     ContractPublicationAdminProxy,
+    FlowProfileAdminProxy,
 )
 
 
@@ -24,6 +23,7 @@ class ContractDocumentInline(admin.TabularInline):
     extra = 0
     fields = ("name", "file")
     show_change_link = True
+
 
 class ContractIndicatorInline(admin.TabularInline):
     model = ContractIndicatorAdminProxy
@@ -49,11 +49,20 @@ class ContractInvitationInline(admin.TabularInline):
     autocomplete_fields = ("invited_by",)
     show_change_link = True
 
+
 @admin.register(ContractAdminProxy)
 class ContractAdmin(admin.ModelAdmin):
     list_display = (
-        "contract_code", "client_agency", "contractor_company", "lot",
-        "status", "contract_type_label", "version", "start_date", "end_date", "is_active_today",
+        "contract_code",
+        "client_agency",
+        "contractor_company",
+        "lot",
+        "status",
+        "contract_type_label",
+        "version",
+        "start_date",
+        "end_date",
+        "is_active_today",
     )
     list_filter = (
         "status",
@@ -63,8 +72,13 @@ class ContractAdmin(admin.ModelAdmin):
         "lot",
         "start_date",
     )
-    search_fields = ("contract_code", "client_agency__name", "contractor_company__name",
-                     "lot__description", "tender_id")
+    search_fields = (
+        "contract_code",
+        "client_agency__name",
+        "contractor_company__name",
+        "lot__description",
+        "tender_id",
+    )
     date_hierarchy = "start_date"
     inlines = (
         ContractDocumentInline,
@@ -72,14 +86,29 @@ class ContractAdmin(admin.ModelAdmin):
         ContractMembershipInline,
         ContractInvitationInline,
     )
-    autocomplete_fields = ("client_agency", "contractor_company", "lot", "replaced_by", "flow_profile")
-    list_select_related = ("client_agency", "contractor_company", "lot", "replaced_by", "flow_profile")
+    autocomplete_fields = (
+        "client_agency",
+        "contractor_company",
+        "lot",
+        "replaced_by",
+        "flow_profile",
+    )
+    list_select_related = (
+        "client_agency",
+        "contractor_company",
+        "lot",
+        "replaced_by",
+        "flow_profile",
+    )
     readonly_fields = ("contract_type", "version", "created_at", "updated_at")
     fieldsets = (
         (None, {"fields": ("contract_code", "contract_type", "version")}),
         ("Parties", {"fields": ("client_agency", "contractor_company", "lot")}),
         ("Validity", {"fields": ("start_date", "end_date")}),
-        ("Lifecycle", {"fields": ("status", "closed_at", "closed_reason", "replaced_by")}),
+        (
+            "Lifecycle",
+            {"fields": ("status", "closed_at", "closed_reason", "replaced_by")},
+        ),
         ("Tender", {"fields": ("tender_id",)}),
         ("Program", {"fields": ("contract_program_file", "flow_profile")}),
         ("Audit", {"fields": ("created_at", "updated_at")}),
@@ -153,7 +182,8 @@ class ContractAdmin(admin.ModelAdmin):
         if skipped_draft:
             self.message_user(
                 request,
-                f"Skipped {skipped_draft} draft contract(s): drafts are not publishable from this action.",
+                f"Skipped {skipped_draft} draft contract(s):"
+                " drafts are not publishable from this action.",
                 level=messages.WARNING,
             )
         if skipped_other:
@@ -165,9 +195,11 @@ class ContractAdmin(admin.ModelAdmin):
         if failed:
             self.message_user(
                 request,
-                f"Failed to publish {failed} contract(s) due to validation/permission errors.",
+                f"Failed to publish {failed} contract(s)"
+                " due to validation/permission errors.",
                 level=messages.ERROR,
             )
+
 
 @admin.register(ContractDocumentAdminProxy)
 class ContractDocumentAdmin(admin.ModelAdmin):
@@ -176,10 +208,11 @@ class ContractDocumentAdmin(admin.ModelAdmin):
     autocomplete_fields = ("contract",)
     readonly_fields = ("created_at", "updated_at")
 
+
 @admin.register(ContractIndicatorAdminProxy)
 class ContractIndicatorAdmin(admin.ModelAdmin):
     list_display = ("contract", "indicator")
-    list_filter  = ("indicator__type", "indicator__structures__dataset")
+    list_filter = ("indicator__type", "indicator__structures__dataset")
     search_fields = ("contract__contract_code", "indicator__code", "indicator__name")
     autocomplete_fields = ("contract", "indicator")
 
@@ -195,7 +228,14 @@ class ContractMembershipAdmin(admin.ModelAdmin):
 
 @admin.register(ContractInvitationAdminProxy)
 class ContractInvitationAdmin(admin.ModelAdmin):
-    list_display = ("contract", "email", "role_to_assign", "status", "expires_at", "token")
+    list_display = (
+        "contract",
+        "email",
+        "role_to_assign",
+        "status",
+        "expires_at",
+        "token",
+    )
     list_filter = ("status", "role_to_assign", "contract")
     search_fields = ("contract__contract_code", "email", "token")
     autocomplete_fields = ("contract", "invited_by", "accepted_by")
@@ -220,7 +260,12 @@ class ContractPublicationAdmin(admin.ModelAdmin):
         "snapshot_schema_version",
     )
     list_filter = ("snapshot_schema_version", "published_at")
-    search_fields = ("contract__contract_code", "snapshot_checksum", "published_by__username", "published_by__email")
+    search_fields = (
+        "contract__contract_code",
+        "snapshot_checksum",
+        "published_by__username",
+        "published_by__email",
+    )
     autocomplete_fields = ("contract", "published_by")
     list_select_related = ("contract", "published_by")
     readonly_fields = (
