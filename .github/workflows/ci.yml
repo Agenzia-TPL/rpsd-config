@@ -5,7 +5,7 @@ on:
   pull_request:
 
 env:
-  IMAGE_NAME: ghcr.io/rapsodia/rpsd-config
+  IMAGE_NAME: ghcr.io/agenzia-tpl/rpsd-config
 
 jobs:
   test:
