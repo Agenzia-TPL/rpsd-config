@@ -95,10 +95,10 @@ indent-style = "space"
 
 # Pytest configuration
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "my_django_app.settings.test"  # Adjust path
+DJANGO_SETTINGS_MODULE = "rpsd_config.server.settings"
 addopts = [
     "--reuse-db",
-    "--cov=my_django_app",  # Replace with your app name
+    "--cov=rpsd_config",
     "--cov-report=term-missing",
     "--cov-report=html",
     "--strict-markers",
