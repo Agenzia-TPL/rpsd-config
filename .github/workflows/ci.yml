@@ -20,6 +20,9 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install GDAL
+        run: sudo apt-get update && sudo apt-get install -y gdal-bin libgdal-dev libproj-dev
+
       - name: Install dependencies
         run: uv sync --dev
 
