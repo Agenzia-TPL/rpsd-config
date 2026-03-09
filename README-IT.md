@@ -15,8 +15,8 @@ Infine, il modello ContractIndicator mette in relazione contratti e indicatori, 
 ## Setup devcontainer e Keycloak
 
 - Il devcontainer ora avvia esplicitamente anche `keycloak` e `keycloak-db`.
-- Variabili Django/OIDC sono lette da environment e, se presente, da file `.env` nella root progetto.
-- Puoi partire copiando `.env.example` in `.env` e adattando solo i campi che ti servono.
+- Variabili Django/OIDC sono lette da environment e, se presente, da file `.env.base` e `.env` nella root progetto.
+- Puoi partire copiando uno dei file `.env.XXX.example` in `.env.base` e adattando solo i campi che ti servono in `.env`.
 
 Riferimenti URL in locale:
 

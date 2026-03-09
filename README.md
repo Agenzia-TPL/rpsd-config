@@ -51,8 +51,8 @@ Republishing creates a new publication version and preserves history.
 ## Local Development (Devcontainer + Keycloak)
 
 - Use the `rpsd` repository ror running a local instance of Keycloak.
-- Django/OIDC settings are read from environment variables and, if present, from `.env` at the project root.
-- Start by copying `.env.example` to `.env` and adjusting the required values.
+- Django/OIDC settings are read from environment variables and, if present, from `.env.base` and `.env` at the project root.
+- Start by copying one of the `.env.XXX.example` to `.env.base` and adjusting the required values inside `.env`.
 
 ### Local URLs
 
