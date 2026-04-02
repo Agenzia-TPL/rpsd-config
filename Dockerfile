@@ -42,5 +42,10 @@ RUN uv run manage collectstatic --noinput
 COPY entrypoint.sh gunicorn.conf.py ./
 RUN chmod +x entrypoint.sh
 
-# Set entrypoint (command comes from deployment configs: compose, swarm, k8s)
+# Build sources label for smart rebuild detection
+ARG RPSD_BUILD_SOURCES="unknown"
+LABEL rpsd.build.sources="${RPSD_BUILD_SOURCES}"
+
+# Set entrypoint and default command
 ENTRYPOINT ["./entrypoint.sh"]
+CMD ["gunicorn", "rpsd_config.server.asgi:application", "-c", "gunicorn.conf.py"]
