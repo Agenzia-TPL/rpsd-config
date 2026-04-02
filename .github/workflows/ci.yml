@@ -14,6 +14,8 @@ jobs:
   test:
     name: Lint & Test
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/agenzia-tpl/rpsd-config-ci:latest
 
     steps:
       - name: Check out rpsd-config
@@ -31,9 +33,6 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - name: Install GDAL
-        run: sudo apt-get update && sudo apt-get install -y gdal-bin libgdal-dev libproj-dev
 
       - name: Install dependencies
         working-directory: rpsd-config
@@ -81,6 +80,8 @@ jobs:
   license-check:
     name: License Check
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/agenzia-tpl/rpsd-config-ci:latest
     permissions:
       contents: read
 
@@ -100,9 +101,6 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - name: Install GDAL
-        run: sudo apt-get update && sudo apt-get install -y gdal-bin libgdal-dev libproj-dev
 
       - name: Install dependencies
         working-directory: rpsd-config
