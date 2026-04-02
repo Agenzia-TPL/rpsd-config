@@ -1,14 +1,13 @@
 [project]
 name = "rpsd-config"
-version = "0.1.0"
+version = "0.2.1"
 description = "Config service of the Rapsodia platform"
 readme = "README.md"
 authors = [
-    { name = "Davide Nuccio" }
+    { name = "Agenzia TPL" }
 ]
-maintainers = [
-    { name = "Davide Nuccio" }
-]
+license = "EUPL-1.2"
+requires-python = ">=3.13"
 
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -16,7 +15,7 @@ classifiers = [
     "Framework :: Django",
     "Framework :: Django :: 5.2",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: European Union Public Licence 1.2 (EUPL 1.2)",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
@@ -25,8 +24,6 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
 ]
 keywords = ["django", "web", "framework"]
-
-requires-python = ">=3.13"
 
 dependencies = [
     "django[gis]>=5.2.0",  # ---> rimuovo "django>=5.2.0",
@@ -75,6 +72,7 @@ dev = [
     "pytest-xdist>=3.5.0",    # Parallel test execution
     "factory-boy>=3.3.0",
     "django-debug-toolbar>=4.2.0",
+    "pip-licenses>=5.5.1",
 ]
 
 [tool.ruff]

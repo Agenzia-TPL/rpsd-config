@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+  workflow_dispatch:
 
 env:
   IMAGE_NAME: ghcr.io/agenzia-tpl/rpsd-config
@@ -13,7 +16,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out rpsd-config
+        uses: actions/checkout@v4
+        with:
+          path: rpsd-config
+
+      - name: Check out rpsd-commons
+        uses: actions/checkout@v4
+        with:
+          repository: Agenzia-TPL/rpsd-commons
+          path: rpsd-commons
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
@@ -24,17 +36,125 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gdal-bin libgdal-dev libproj-dev
 
       - name: Install dependencies
+        working-directory: rpsd-config
         run: uv sync --dev
 
       - name: Lint
+        working-directory: rpsd-config
         run: uv run ruff check .
 
       - name: Test
+        working-directory: rpsd-config
+        # Exit code 5 = no tests collected — acceptable while the test suite is being built.
         run: uv run pytest -m "not integration" || [ $? -eq 5 ]
+
+  secrets-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out rpsd-config
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan PR diff for verified secrets
+        if: github.event_name == 'pull_request'
+        uses: trufflesecurity/trufflehog@6c64db94d5b2e09d7e0948fb6bd3166cc6fffbc7  # v3.94.0
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          extra_args: --only-verified
+
+      - name: Scan push for verified secrets
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        uses: trufflesecurity/trufflehog@6c64db94d5b2e09d7e0948fb6bd3166cc6fffbc7  # v3.94.0
+        with:
+          path: ./
+          base: ${{ github.event.before }}
+          head: ${{ github.event.after }}
+          extra_args: --only-verified
+
+  license-check:
+    name: License Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out rpsd-config
+        uses: actions/checkout@v4
+        with:
+          path: rpsd-config
+
+      - name: Check out rpsd-commons
+        uses: actions/checkout@v4
+        with:
+          repository: Agenzia-TPL/rpsd-commons
+          path: rpsd-commons
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install GDAL
+        run: sudo apt-get update && sudo apt-get install -y gdal-bin libgdal-dev libproj-dev
+
+      - name: Install dependencies
+        working-directory: rpsd-config
+        run: uv sync --dev
+
+      - name: Check dependency licenses
+        working-directory: rpsd-config
+        run: |
+          uv run pip-licenses \
+            --from=mixed \
+            --partial-match \
+            --allow-only="\
+          MIT;\
+          BSD;\
+          Apache;\
+          ISC;\
+          PSF;\
+          Python Software Foundation;\
+          Python-2.0;\
+          Unlicense;\
+          Public Domain;\
+          CC0;\
+          Artistic;\
+          Zlib;\
+          CNRI;\
+          WTFPL;\
+          Boost;\
+          BSL;\
+          Historical Permission Notice;\
+          HPND;\
+          X11;\
+          0BSD;\
+          SIL Open Font;\
+          MPL;\
+          Mozilla Public License;\
+          LGPL;\
+          Lesser General Public License;\
+          EPL;\
+          Eclipse Public License;\
+          EUPL;\
+          European Union Public License;\
+          CeCILL;\
+          CeCILL-B;\
+          CeCILL-C;\
+          GPL;\
+          GNU General Public License;\
+          AGPL;\
+          GNU Affero General Public License"
 
   build-and-push:
     name: Build & Push
-    needs: test
+    needs: [test, secrets-scan, license-check]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -42,7 +162,23 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out rpsd-config
+        uses: actions/checkout@v4
+        with:
+          path: rpsd-config
+
+      - name: Check out rpsd-commons
+        uses: actions/checkout@v4
+        with:
+          repository: Agenzia-TPL/rpsd-commons
+          path: rpsd-commons
+
+      - name: Read version
+        id: version
+        working-directory: rpsd-config
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -61,12 +197,13 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.version.outputs.version }}
             type=sha,prefix=sha-,format=short
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./rpsd-config
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

@@ -1,0 +1,50 @@
+name: Tag release
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  tag-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          python - <<'EOF'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          with Path("pyproject.toml").open("rb") as f:
+              version = tomllib.load(f)["project"]["version"]
+
+          print(f"Version: {version}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"version={version}\n")
+          EOF
+
+      - name: Create tag if it does not exist
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q "v$VERSION"; then
+            echo "ERROR — tag v$VERSION already exists. Bump the version before merging to main."
+            exit 1
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            git tag "v$VERSION"
+            git push origin "v$VERSION"
+            echo "Created and pushed tag v$VERSION."
+          else
+            echo "Tag v$VERSION does not exist yet — OK."
+          fi
