@@ -1,6 +1,6 @@
 [project]
 name = "rpsd-config"
-version = "0.2.1"
+version = "0.3.0"
 description = "Config service of the Rapsodia platform"
 readme = "README.md"
 authors = [
