@@ -4,6 +4,6 @@ services:
       file: ./docker-compose-base.yml
       service: rpsd-config
     ports:
-      - "${APP_EXTERNAL_PORT:-20100}:${APP_PORT:-8000}"
+      - "${EXTERNAL_PORT:-20100}:8000"
     # DO NOT add env_file or environment sections for Django service
     # Pydantic Settings reads .env directly inside container

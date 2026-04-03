@@ -28,14 +28,10 @@ def main():
     return _execute(sys.argv)
 
 
-# Run Django development server with configured host and port
+# Run Django development server
 def devserver():
-    """Run Django development server with configured host and port."""
-    from rpsd_config.server.settings import ProjectSettings
-
-    settings = ProjectSettings()
-    bind_address = f"{settings.APP_HOST}:{settings.APP_PORT}"
-    return _execute([sys.argv[0], "runserver", bind_address])
+    """Run Django development server on 0.0.0.0:8000."""
+    return _execute([sys.argv[0], "runserver", "0.0.0.0:8000"])
 
 
 if __name__ == "__main__":

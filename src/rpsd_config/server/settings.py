@@ -293,19 +293,13 @@ class OIDCSettings(BaseSettings):
 class AppSettings(BaseSettings):
     """Application-specific settings (non-Django framework settings).
 
-    These settings use APP_ prefix to distinguish from Django's built-in
-    settings.
     See: https://docs.djangoproject.com/en/5.2/ref/settings/
     """
 
-    # Application server configuration (internal)
-    APP_HOST: str = Field(default="0.0.0.0")
-    APP_PORT: int = Field(default=8000)
-
     # External access configuration (how users access the application)
-    APP_EXTERNAL_SCHEME: str = Field(default="http")
-    APP_EXTERNAL_HOST: str = Field(default="localhost")
-    APP_EXTERNAL_PORT: int = Field(default=20100)
+    EXTERNAL_SCHEME: str = Field(default="http")
+    EXTERNAL_HOST: str = Field(default="localhost")
+    EXTERNAL_PORT: int = Field(default=20100)
 
     # Gunicorn process settings (read by gunicorn.conf.py via os.getenv, not by Django)
     GUNICORN_WORKERS: int = Field(default=2)
@@ -321,10 +315,7 @@ class ProjectSettings(
     AppSettings,
 ):
     model_config = SettingsConfigDict(
-        env_file=[
-            resolve_path(".env.base"),  # Scenario defaults (lower priority)
-            resolve_path(".env"),  # User overrides (higher priority)
-        ],
+        env_file=resolve_path(".env"),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
@@ -333,21 +324,21 @@ class ProjectSettings(
 
     @model_validator(mode="after")
     def compute_external_urls(self) -> "ProjectSettings":
-        """Auto-compute and CSRF_TRUSTED_ORIGINS.
+        """Auto-compute CSRF_TRUSTED_ORIGINS.
 
-        Builds these values from APP_EXTERNAL_SCHEME, APP_EXTERNAL_HOST,
-        and APP_EXTERNAL_PORT to create a single source of truth for
+        Builds these values from EXTERNAL_SCHEME, EXTERNAL_HOST,
+        and EXTERNAL_PORT to create a single source of truth for
         external access configuration.
         """
-        # Build base URL from APP_EXTERNAL_*
+        # Build base URL from EXTERNAL_*
         # Omit port for standard HTTP (80) and HTTPS (443) ports
         port_str = ""
-        if (self.APP_EXTERNAL_SCHEME == "http" and self.APP_EXTERNAL_PORT != 80) or (
-            self.APP_EXTERNAL_SCHEME == "https" and self.APP_EXTERNAL_PORT != 443
+        if (self.EXTERNAL_SCHEME == "http" and self.EXTERNAL_PORT != 80) or (
+            self.EXTERNAL_SCHEME == "https" and self.EXTERNAL_PORT != 443
         ):
-            port_str = f":{self.APP_EXTERNAL_PORT}"
+            port_str = f":{self.EXTERNAL_PORT}"
 
-        base_url = f"{self.APP_EXTERNAL_SCHEME}://{self.APP_EXTERNAL_HOST}{port_str}"
+        base_url = f"{self.EXTERNAL_SCHEME}://{self.EXTERNAL_HOST}{port_str}"
 
         # Add base_url to CSRF_TRUSTED_ORIGINS if not already present
         if base_url not in self.CSRF_TRUSTED_ORIGINS:

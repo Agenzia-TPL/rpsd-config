@@ -24,8 +24,8 @@ db.sqlite3-journal
 .env
 .env.base
 .env.local
-.env.development
-.env.production
+!.env.development
+!.env.production
 .env.staging
 
 # Django migrations (optional - uncomment if you don't want to track them)
