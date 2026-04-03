@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RPSD Config</title>
+    <style>
+        :root {
+            --bg: #eef3f8;
+            --ink: #1f2937;
+            --muted: #596579;
+            --primary: #0f4c81;
+            --primary-hover: #0c3f6c;
+            --card: #ffffff;
+            --line: #d6dee7;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: radial-gradient(circle at top, #f7fbff 0%, var(--bg) 62%);
+            color: var(--ink);
+            display: grid;
+            place-items: center;
+            padding: 24px;
+        }
+
+        .card {
+            width: min(620px, 100%);
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            box-shadow: 0 12px 30px rgba(15, 76, 129, 0.08);
+            padding: 26px;
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 1.6rem;
+            line-height: 1.2;
+        }
+
+        p {
+            margin: 0 0 18px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-block;
+            border: 0;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 10px 16px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-ghost {
+            background: #f3f6fa;
+            color: var(--ink);
+            border: 1px solid var(--line);
+        }
+    </style>
+</head>
+
+<body>
+    <main class="card">
+        <h1>RPSD Config</h1>
+        <p>Servizio di configurazione della piattaforma Rapsodia. Per accedere alle funzionalita' applicative usa la
+            login federata.</p>
+        <div class="actions">
+            <a class="btn btn-primary" href="{{ login_page_url }}">Vai alla login</a>
+            <a class="btn btn-ghost" href="{{ admin_url }}">Admin Django</a>
+        </div>
+    </main>
+</body>
+
+</html>
