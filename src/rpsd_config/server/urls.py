@@ -15,14 +15,24 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from rpsd_config.exchange_agreement.api import api
 from rpsd_config.exchange_agreement.views import invitation_landing
 from rpsd_config.server.oidc_views import oidc_callback, oidc_login
+from rpsd_config.server.public_views import home, login_page
 
 urlpatterns = [
+    path(
+        "favicon.ico",
+        RedirectView.as_view(url=f"{settings.STATIC_URL}favicon.ico", permanent=False),
+    ),
+    path("", home, name="home"),
+    path("login/", login_page, name="login-page"),
     path("admin/", admin.site.urls),
     path("exchange_agreement/api/", api.urls),
     path(
@@ -47,9 +57,6 @@ urlpatterns += [
     ),
 ]
 
-# Remove when not needed anymore
-from django.views import debug  # noqa: E402
-
-urlpatterns += [
-    path("", debug.default_urlconf),
-]
+if settings.DEBUG:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
