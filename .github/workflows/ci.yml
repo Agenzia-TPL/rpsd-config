@@ -45,6 +45,8 @@ jobs:
       - name: Test
         working-directory: rpsd-config
         # Exit code 5 = no tests collected — acceptable while the test suite is being built.
+        # The || pattern is used instead of capturing $? because GitHub Actions runs bash
+        # with -e (exit on error), which would cause the shell to exit before $? is read.
         run: uv run pytest -m "not integration" || [ $? -eq 5 ]
 
   secrets-scan:
@@ -151,9 +153,24 @@ jobs:
           AGPL;\
           GNU Affero General Public License"
 
+  spdx-check:
+    name: SPDX Headers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out rpsd-config
+        uses: actions/checkout@v4
+
+      - name: Check SPDX headers
+        run: |
+          bash ai-skills/open-source-it-pa/scripts/check_headers.sh \
+            --check --ext py src/
+
   build-and-push:
     name: Build & Push
-    needs: [test, secrets-scan, license-check]
+    needs: [test, secrets-scan, license-check, spdx-check]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
