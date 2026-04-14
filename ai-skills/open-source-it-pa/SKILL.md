@@ -251,8 +251,22 @@ Create or update with:
 - How to submit changes (fork → branch → PR workflow).
 - Coding standards (style, linting, type hints, line length).
 - How to run tests.
-- Statement that contributions are accepted under the same licence.
 - Requirement to add SPDX headers to any new source file.
+- **Contributor License Agreement (CLA)** — include a section that, by
+  submitting a pull request, the contributor certifies:
+  1. They have the right to submit the contribution under the project licence.
+  2. Their contribution is their original work, or they have the necessary
+     rights to submit it.
+  3. They grant the project maintainer the right to redistribute their
+     contributions under any OSI-approved open source licence, including
+     future versions of EUPL or compatible licences such as AGPL-3.0-or-later.
+
+  This lightweight CLA (accepted implicitly by opening a PR, no signature
+  required) preserves the maintainer's ability to relicense future versions
+  — for example switching from EUPL-1.2 to AGPL-3.0-or-later — without
+  needing to obtain retroactive consent from each contributor. It is
+  especially important for Italian PA projects that may start under EUPL and
+  later need stronger copyleft protection against SaaS reuse by third parties.
 
 #### 4e. `publiccode.yml` *(only if the user chose "Yes" in Q2)*
 
