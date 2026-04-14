@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
+# SPDX-License-Identifier: EUPL-1.2
 from allauth.account.internal.decorators import login_not_required
 from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount.providers.oauth2.views import (
