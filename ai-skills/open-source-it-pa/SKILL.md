@@ -1,3 +1,19 @@
+---
+name: open-source-it-pa
+description: >
+  Bring a repository into compliance with Italian Public Administration
+  open-source publication requirements (CAD Art. 69, Developers Italia
+  guidelines). Creates or updates LICENSE, SPDX headers, README, CONTRIBUTING,
+  publiccode.yml, and security.txt. Supports two modes: implement mode (default,
+  applies all changes) and assessment mode (read-only compliance report with
+  traffic-light summary and prioritised gap list, no files modified). Use when a
+  user asks to publish a repository as open source under Italian PA rules, to
+  assess or audit compliance with those rules, or to check what is missing before
+  publication.
+license: see LICENSE in the repository root
+compatibility: Requires git and internet access (fetches licence texts and Developers Italia guidelines)
+---
+
 # SKILL: open-source-it-pa — Publish repository as open source (Italian PA guidelines)
 
 **Purpose:** Bring a repository into compliance with the Italian Public
