@@ -1,0 +1,69 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Django media and static files (if collected locally)
+/media/
+/static/
+/staticfiles/
+
+# Django secret key and environment variables
+.env
+.env.base
+.env.local
+!.env.development
+!.env.production
+.env.staging
+
+# Django migrations (optional - uncomment if you don't want to track them)
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# Django cache
+django_cache/
+
+# Celery (if using)
+celerybeat-schedule
+celerybeat.pid
+
+# Coverage reports (if using coverage.py)
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Translation files (if not tracking compiled translations)
+*.mo
+*.pot
+
+# Other
+mnt/
+
+# AI assistants local files (personal, not shared)
+ai-history.local.md
+CLAUDE.local.md
+.claude/settings.local.json
+AGENTS.override.md
+CODEX.local.md
+codex-history.local.md
+.codex/
+.codex/settings.local.json
+.vscode-codex/
+.devcontainer/devcontainer.local.json
+
+# macOS metadata
+**/.DS_Store

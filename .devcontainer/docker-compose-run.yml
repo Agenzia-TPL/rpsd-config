@@ -1,0 +1,6 @@
+services:
+  rpsd-config:
+    extends:
+      file: ./docker-compose-base.yml
+      service: rpsd-config
+    command: ["devserver"]

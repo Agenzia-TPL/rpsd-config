@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inviti Ricevuti</title>
+  <style>
+    :root {
+      --bg: #f2f5f7;
+      --card: #ffffff;
+      --ink: #1f2937;
+      --muted: #556172;
+      --line: #d9e1e7;
+      --accent: #0f4c81;
+      --ok: #0f766e;
+      --warn: #9a3412;
+      --err: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(180deg, #eef3f8 0%, #f9fbfd 100%);
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .wrap {
+      width: min(1020px, 100%);
+      margin: 0 auto;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 12px 28px rgba(15, 76, 129, 0.08);
+      overflow: hidden;
+    }
+    .head {
+      padding: 20px 22px;
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.45rem;
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+    }
+    .content {
+      padding: 18px 22px 22px;
+    }
+    .actions {
+      margin-bottom: 14px;
+    }
+    .link-btn {
+      display: inline-block;
+      text-decoration: none;
+      border-radius: 10px;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: #fff;
+      font-weight: 600;
+    }
+    .empty {
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 14px;
+      color: var(--muted);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .pending { color: var(--accent); background: #eff6ff; border-color: #bfdbfe; }
+    .accepted { color: var(--ok); background: #ecfeff; border-color: #a5f3fc; }
+    .expired { color: var(--warn); background: #fff7ed; border-color: #fed7aa; }
+    .revoked { color: var(--err); background: #fef2f2; border-color: #fecaca; }
+    .token {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85rem;
+      color: var(--muted);
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <main class="panel">
+      <header class="head">
+        <h1>Inviti Ricevuti</h1>
+        <p class="subtitle">Storico inviti associati al tuo account.</p>
+      </header>
+
+      <section class="content">
+        <div class="actions">
+          <a class="link-btn" href="{% url 'exchange_agreement:user-area' %}">Torna all'Area Utente</a>
+        </div>
+
+        {% if invitations %}
+          <table aria-label="Elenco inviti">
+            <thead>
+              <tr>
+                <th>Contratto</th>
+                <th>Ruolo</th>
+                <th>Stato</th>
+                <th>Scadenza</th>
+                <th>Token</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for invite in invitations %}
+                <tr>
+                  <td>{{ invite.contract.contract_code }}</td>
+                  <td>{{ invite.get_role_to_assign_display }}</td>
+                  <td>
+                    <span class="badge {{ invite.status }}">
+                      {{ invite.get_status_display }}
+                    </span>
+                  </td>
+                  <td>{{ invite.expires_at|date:"d/m/Y H:i" }} UTC</td>
+                  <td class="token">{{ invite.token }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="empty">
+            Nessun invito trovato per il tuo account.
+          </div>
+        {% endif %}
+      </section>
+    </main>
+  </div>
+</body>
+</html>
