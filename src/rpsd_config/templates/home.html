@@ -58,6 +58,20 @@
             flex-wrap: wrap;
         }
 
+        .status {
+            margin: 0 0 18px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            background: #f7f9fc;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        .status strong {
+            color: var(--ink);
+        }
+
         .btn {
             display: inline-block;
             border: 0;
@@ -89,9 +103,21 @@
         <h1>RPSD Config</h1>
         <p>Servizio di configurazione della piattaforma Rapsodia. Per accedere alle funzionalita' applicative usa la
             login federata.</p>
+
+        {% if user.is_authenticated %}
+        <p class="status">Stato accesso: <strong>Autenticato</strong> come <strong>{{ user.get_username }}</strong>.</p>
+        {% else %}
+        <p class="status">Stato accesso: <strong>Non autenticato</strong>.</p>
+        {% endif %}
+
         <div class="actions">
+            {% if user.is_authenticated %}
+            <a class="btn btn-primary" href="{{ admin_url }}">Admin Django</a>
+            <a class="btn btn-ghost" href="/accounts/logout/">Logout</a>
+            {% else %}
             <a class="btn btn-primary" href="{{ login_page_url }}">Vai alla login</a>
             <a class="btn btn-ghost" href="{{ admin_url }}">Admin Django</a>
+            {% endif %}
         </div>
     </main>
 </body>
