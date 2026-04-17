@@ -164,7 +164,15 @@ class ContractPublicationDetailSchema(ContractPublicationSummarySchema):
     snapshot: dict
 
 
-api = NinjaAPI(title="RPSD Exchange Agreement API", version="1.0")
+from ninja.security import SessionAuth
+
+from rpsd_config.server.bearer_auth import BearerTokenAuth
+
+api = NinjaAPI(
+    title="RPSD Exchange Agreement API",
+    version="1.0",
+    auth=[SessionAuth(), BearerTokenAuth()],
+)
 
 
 def _oidc_provider_id() -> str:
@@ -693,7 +701,7 @@ def get_publication(request, publication_id: int):
     return _contract_publication_detail_schema(publication)
 
 
-@api.get("/invitations/{token}/check", response=InvitationCheckResponse)
+@api.get("/invitations/{token}/check", response=InvitationCheckResponse, auth=None)
 def check_invitation(request, token: str):
     try:
         invitation = ContractInvitation.objects.select_related("contract").get(
@@ -726,7 +734,7 @@ def check_invitation(request, token: str):
     )
 
 
-@api.post("/invitations/{token}/start", response=InvitationStartResponse)
+@api.post("/invitations/{token}/start", response=InvitationStartResponse, auth=None)
 def start_onboarding(request, token: str):
     try:
         invitation = ContractInvitation.objects.get(token=token)
