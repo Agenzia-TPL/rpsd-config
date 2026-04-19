@@ -1,0 +1,5 @@
+{% if alert_message %}
+  <div class="alert alert-{{ alert_variant|default:'secondary' }}{% if alert_class %} {{ alert_class }}{% endif %}" role="{{ alert_role|default:'alert' }}">
+    {{ alert_message }}
+  </div>
+{% endif %}

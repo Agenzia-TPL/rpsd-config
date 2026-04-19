@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Dettaglio Contratto - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <div>
+    <h1 class="h3 mb-0">Contratto {{ contract.contract_code }}</h1>
+    <p class="text-body-secondary mb-0">{{ agency.name }} • <code>{{ agency.agency_key }}</code></p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agency-contracts' agency.agency_key %}">
+      Torna ai contratti agenzia
+    </a>
+    {% if can_create_contract_invites %}
+      <a
+        class="btn btn-outline-primary btn-sm"
+        href="{% url 'exchange_agreement:contract-invitation-create' %}?contract_code={{ contract.contract_code }}"
+      >
+        Crea invito contratto
+      </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12 col-xl-10">
+    <section class="card border-0 shadow-sm">
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-body-secondary">Codice contratto</dt>
+          <dd class="col-sm-8"><code>{{ contract.contract_code }}</code></dd>
+
+          <dt class="col-sm-4 text-body-secondary">Agenzia cliente</dt>
+          <dd class="col-sm-8">{{ contract.client_agency.name }}</dd>
+
+          <dt class="col-sm-4 text-body-secondary">Azienda TPL</dt>
+          <dd class="col-sm-8">{{ contract.contractor_company.name }}</dd>
+
+          <dt class="col-sm-4 text-body-secondary">Lotto</dt>
+          <dd class="col-sm-8">{{ contract.lot }}</dd>
+
+          <dt class="col-sm-4 text-body-secondary">Periodo</dt>
+          <dd class="col-sm-8">
+            {{ contract.start_date|date:"d/m/Y" }}
+            {% if contract.end_date %} - {{ contract.end_date|date:"d/m/Y" }}{% endif %}
+          </dd>
+
+          <dt class="col-sm-4 text-body-secondary">Stato</dt>
+          <dd class="col-sm-8">{{ contract.get_status_display }}</dd>
+
+          <dt class="col-sm-4 text-body-secondary">Tipo</dt>
+          <dd class="col-sm-8">{{ contract.contract_type_label }}</dd>
+
+          <dt class="col-sm-4 text-body-secondary">Versione</dt>
+          <dd class="col-sm-8">{{ contract.version }}</dd>
+
+          {% if contract.tender_id %}
+            <dt class="col-sm-4 text-body-secondary">Tender ID</dt>
+            <dd class="col-sm-8">{{ contract.tender_id }}</dd>
+          {% endif %}
+
+          {% if contract.flow_profile %}
+            <dt class="col-sm-4 text-body-secondary">Flow profile</dt>
+            <dd class="col-sm-8">{{ contract.flow_profile.code }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

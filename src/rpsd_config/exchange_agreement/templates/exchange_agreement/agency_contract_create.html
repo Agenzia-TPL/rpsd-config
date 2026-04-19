@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Nuovo Contratto Agenzia - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <div>
+    <h1 class="h3 mb-0">Nuovo Contratto</h1>
+    <p class="text-body-secondary mb-0">{{ agency.name }} • <code>{{ agency.agency_key }}</code></p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agency-contracts' agency.agency_key %}">
+    Torna ai contratti
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-xl-9 col-xxl-8">
+    {% if error_message %}
+      {% include "includes/ui_alert.html" with alert_variant="danger" alert_message=error_message %}
+    {% endif %}
+
+    {% if success_message %}
+      {% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}
+    {% endif %}
+
+    <form method="post" class="card border-0 shadow-sm mb-3">
+      {% csrf_token %}
+      <div class="card-body p-4">
+        <div class="mb-3">
+          <label class="form-label" for="contract_code">Codice contratto</label>
+          <input
+            class="form-control"
+            type="text"
+            id="contract_code"
+            name="contract_code"
+            required
+            value="{{ form_values.contract_code }}"
+            placeholder="MIL-ATM-2026"
+          >
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="contractor_company_id">Azienda TPL</label>
+          <select class="form-select" id="contractor_company_id" name="contractor_company_id" required>
+            <option value="">Seleziona azienda</option>
+            {% for company in companies %}
+              <option value="{{ company.id }}" {% if form_values.contractor_company_id == company.id|stringformat:"s" %}selected{% endif %}>
+                {{ company.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="lot_id">Lotto</label>
+          <select class="form-select" id="lot_id" name="lot_id" required>
+            <option value="">Seleziona lotto</option>
+            {% for lot in lots %}
+              <option value="{{ lot.id }}" {% if form_values.lot_id == lot.id|stringformat:"s" %}selected{% endif %}>
+                {{ lot }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label" for="start_date">Data inizio</label>
+            <input
+              class="form-control"
+              type="date"
+              id="start_date"
+              name="start_date"
+              required
+              value="{{ form_values.start_date }}"
+            >
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="end_date">Data fine (opzionale)</label>
+            <input
+              class="form-control"
+              type="date"
+              id="end_date"
+              name="end_date"
+              value="{{ form_values.end_date }}"
+            >
+          </div>
+        </div>
+
+        <div class="row g-3 mt-1">
+          <div class="col-md-6">
+            <label class="form-label" for="status">Stato</label>
+            <select class="form-select" id="status" name="status">
+              {% for status_value, status_label in status_choices %}
+                <option value="{{ status_value }}" {% if form_values.status == status_value %}selected{% endif %}>
+                  {{ status_label }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="tender_id">Tender ID (opzionale)</label>
+            <input
+              class="form-control"
+              type="text"
+              id="tender_id"
+              name="tender_id"
+              value="{{ form_values.tender_id }}"
+            >
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-4">Crea contratto</button>
+      </div>
+    </form>
+
+    {% if created_contract %}
+      <section class="card border-0 shadow-sm">
+        <div class="card-body p-4">
+          <h2 class="h5 mb-3">Contratto creato</h2>
+          <p class="mb-3">
+            Codice <strong>{{ created_contract.contract_code }}</strong> creato con successo.
+          </p>
+          <a
+            class="btn btn-outline-primary btn-sm"
+            href="{% url 'exchange_agreement:agency-contract-detail' agency.agency_key created_contract.contract_code %}"
+          >
+            Apri dettaglio contratto
+          </a>
+        </div>
+      </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

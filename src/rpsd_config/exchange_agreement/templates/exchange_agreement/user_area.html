@@ -1,155 +1,177 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Area Utente</title>
-  <style>
-    :root {
-      --bg: #f2f5f7;
-      --card: #ffffff;
-      --ink: #1f2937;
-      --muted: #556172;
-      --line: #d9e1e7;
-      --accent: #0f4c81;
-      --ok: #0f766e;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", Arial, sans-serif;
-      background: linear-gradient(180deg, #eef3f8 0%, #f9fbfd 100%);
-      color: var(--ink);
-      min-height: 100vh;
-      padding: 24px;
-    }
-    .wrap {
-      width: min(920px, 100%);
-      margin: 0 auto;
-    }
-    .panel {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      box-shadow: 0 12px 28px rgba(15, 76, 129, 0.08);
-      overflow: hidden;
-    }
-    .head {
-      padding: 20px 22px;
-      border-bottom: 1px solid var(--line);
-    }
-    h1 {
-      margin: 0 0 8px;
-      font-size: 1.45rem;
-    }
-    .subtitle {
-      margin: 0;
-      color: var(--muted);
-    }
-    .content {
-      padding: 18px 22px 22px;
-    }
-    .actions {
-      margin-bottom: 12px;
-    }
-    .link-btn {
-      display: inline-block;
-      text-decoration: none;
-      border-radius: 10px;
-      padding: 9px 12px;
-      border: 1px solid var(--line);
-      color: var(--ink);
-      background: #fff;
-      font-weight: 600;
-    }
-    .meta {
-      margin: 0 0 18px;
-      color: var(--muted);
-    }
-    .empty {
-      border: 1px solid var(--line);
-      background: #f8fafc;
-      border-radius: 10px;
-      padding: 14px;
-      color: var(--muted);
-    }
-    .list {
-      display: grid;
-      gap: 12px;
-    }
-    .item {
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fff;
-      padding: 14px;
-    }
-    .row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .code {
-      font-size: 1.06rem;
-      font-weight: 700;
-      color: var(--accent);
-    }
-    .role {
-      padding: 4px 10px;
-      border-radius: 999px;
-      border: 1px solid #bae6fd;
-      background: #ecfeff;
-      color: var(--ok);
-      font-size: 0.88rem;
-      font-weight: 600;
-    }
-    .dates {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <main class="panel">
-      <header class="head">
-        <h1>Area Utente</h1>
-        <p class="subtitle">Contratti a cui il tuo account e' autorizzato.</p>
-      </header>
+{% extends "base.html" %}
 
-      <section class="content">
-        <div class="actions">
-          <a class="link-btn" href="{% url 'exchange_agreement:received-invitations' %}">Vedi Inviti Ricevuti</a>
-        </div>
+{% block title %}Area Utente - RPSD Config{% endblock %}
 
-        <p class="meta">
-          <strong>Utente:</strong> {{ request.user.username }}
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h1 class="h3 mb-0">Area Utente</h1>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:received-invitations' %}">
+      Vedi Inviti Ricevuti
+    </a>
+    {% if can_create_contract_invites %}
+      <a class="btn btn-outline-primary btn-sm" href="{% url 'exchange_agreement:contract-invitation-create' %}">
+        Crea Invito Contratto
+      </a>
+    {% endif %}
+  </div>
+</div>
+<p class="text-body-secondary mb-0">
+  Contratti a cui il tuo account e' autorizzato.
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12 col-xl-10">
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <p class="mb-0 text-body-secondary">
+          <strong class="text-body">Utente:</strong> {{ request.user.username }}
           {% if request.user.email %} ({{ request.user.email }}){% endif %}
         </p>
+      </div>
+    </div>
 
-        {% if memberships %}
-          <div class="list">
-            {% for membership in memberships %}
-              <article class="item">
-                <div class="row">
-                  <div class="code">Contratto {{ membership.contract.contract_code }}</div>
-                  <div class="role">{{ membership.get_role_display }}</div>
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Privilegi utente</h2>
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-body-secondary">Fonte autenticazione</dt>
+          <dd class="col-sm-8">
+            {% if identity_privileges.auth_source == "OIDC" %}
+              OIDC ({{ identity_privileges.provider }})
+            {% else %}
+              Locale Django
+            {% endif %}
+          </dd>
+
+          <dt class="col-sm-4 text-body-secondary">Ruoli realm</dt>
+          <dd class="col-sm-8">
+            {% if identity_privileges.realm_roles %}
+              <div class="d-flex flex-wrap gap-1">
+                {% for role in identity_privileges.realm_roles %}
+                  <span class="badge rounded-pill text-bg-primary">{{ role }}</span>
+                {% endfor %}
+              </div>
+            {% else %}
+              <span class="text-body-secondary">Nessuno</span>
+            {% endif %}
+          </dd>
+
+          <dt class="col-sm-4 text-body-secondary">Gruppi</dt>
+          <dd class="col-sm-8">
+            {% if identity_privileges.groups %}
+              <div class="d-flex flex-wrap gap-1">
+                {% for group in identity_privileges.groups %}
+                  <span class="badge rounded-pill text-bg-info">{{ group }}</span>
+                {% endfor %}
+              </div>
+            {% else %}
+              <span class="text-body-secondary">Nessuno</span>
+            {% endif %}
+          </dd>
+
+          <dt class="col-sm-4 text-body-secondary">Ruoli applicativi derivati</dt>
+          <dd class="col-sm-8">
+            {% if identity_privileges.derived_roles %}
+              <div class="d-flex flex-wrap gap-1">
+                {% for role in identity_privileges.derived_roles %}
+                  <span class="badge rounded-pill text-bg-success">{{ role }}</span>
+                {% endfor %}
+              </div>
+            {% else %}
+              <span class="text-body-secondary">Nessuno</span>
+            {% endif %}
+          </dd>
+
+          <dt class="col-sm-4 text-body-secondary">Privilegi Django locali</dt>
+          <dd class="col-sm-8">
+            <div class="d-flex flex-wrap gap-1">
+              {% if identity_privileges.is_staff %}
+                <span class="badge rounded-pill text-bg-warning">staff</span>
+              {% endif %}
+              {% if identity_privileges.is_superuser %}
+                <span class="badge rounded-pill text-bg-danger">superuser</span>
+              {% endif %}
+              {% if not identity_privileges.is_staff and not identity_privileges.is_superuser %}
+                <span class="text-body-secondary">Nessuno</span>
+              {% endif %}
+            </div>
+          </dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+          <h2 class="h5 mb-2">Inviti</h2>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:received-invitations' %}">
+            Vedi inviti ricevuti
+          </a>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          <span class="badge rounded-pill text-bg-primary">
+            Pending: {{ invitation_summary.pending }}
+          </span>
+          <span class="badge rounded-pill text-bg-success">
+            Accettati: {{ invitation_summary.accepted }}
+          </span>
+          <span class="badge rounded-pill text-bg-danger">
+            Rifiutati: {{ invitation_summary.rejected }}
+          </span>
+          <span class="badge rounded-pill text-bg-dark">
+            Revocati: {{ invitation_summary.revoked }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Membership agenzia</h2>
+        {% if agency_memberships %}
+          <div class="vstack gap-2">
+            {% for membership in agency_memberships %}
+              <article class="border rounded-3 p-3 bg-body-tertiary">
+                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                  <div>
+                    <p class="fw-semibold mb-1">{{ membership.agency.name }}</p>
+                    <p class="small text-body-secondary mb-0">
+                      Chiave agenzia: <code>{{ membership.agency.agency_key }}</code>
+                    </p>
+                  </div>
+                  <span class="badge rounded-pill text-bg-info">{{ membership.get_role_display }}</span>
                 </div>
-                <p class="dates">
-                  Accesso assegnato il {{ membership.created_at|date:"d/m/Y H:i" }} UTC
-                </p>
               </article>
             {% endfor %}
           </div>
         {% else %}
-          <div class="empty">
-            Nessun contratto associato al tuo utente. Se hai ricevuto un invito, apri il link di onboarding.
-          </div>
+          {% include "includes/ui_alert.html" with alert_variant="secondary" alert_class="mb-0" alert_message="Nessuna membership agenzia associata al tuo utente." %}
         {% endif %}
-      </section>
-    </main>
+      </div>
+    </div>
+
+    {% if contract_memberships %}
+      <div class="vstack gap-3">
+        {% for membership in contract_memberships %}
+          <article class="card border-0 shadow-sm">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                <h2 class="h5 mb-0">Contratto {{ membership.contract.contract_code }}</h2>
+                <span class="badge rounded-pill text-bg-info">{{ membership.get_role_display }}</span>
+              </div>
+              <p class="small text-body-secondary mb-0 mt-2">
+                Accesso assegnato il {{ membership.created_at|date:"d/m/Y H:i" }} UTC
+              </p>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      {% include "includes/ui_alert.html" with alert_variant="secondary" alert_class="mb-0" alert_message="Nessun contratto associato al tuo utente. Se hai ricevuto un invito, apri il link di onboarding." %}
+    {% endif %}
   </div>
-</body>
-</html>
+</div>
+{% endblock %}

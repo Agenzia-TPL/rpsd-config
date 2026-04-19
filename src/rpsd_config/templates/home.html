@@ -1,125 +1,47 @@
-<!DOCTYPE html>
-<html lang="it">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>RPSD Config</title>
-    <style>
-        :root {
-            --bg: #eef3f8;
-            --ink: #1f2937;
-            --muted: #596579;
-            --primary: #0f4c81;
-            --primary-hover: #0c3f6c;
-            --card: #ffffff;
-            --line: #d6dee7;
-        }
+{% block title %}RPSD Config{% endblock %}
 
-        * {
-            box-sizing: border-box;
-        }
+{% block page_header %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0">RPSD Config</h1>
+  {% if user.is_authenticated %}
+    <span class="badge text-bg-success">Sessione attiva</span>
+  {% else %}
+    <span class="badge text-bg-secondary">Sessione non attiva</span>
+  {% endif %}
+</div>
+{% endblock %}
 
-        body {
-            margin: 0;
-            min-height: 100vh;
-            font-family: "Segoe UI", Arial, sans-serif;
-            background: radial-gradient(circle at top, #f7fbff 0%, var(--bg) 62%);
-            color: var(--ink);
-            display: grid;
-            place-items: center;
-            padding: 24px;
-        }
-
-        .card {
-            width: min(620px, 100%);
-            background: var(--card);
-            border: 1px solid var(--line);
-            border-radius: 14px;
-            box-shadow: 0 12px 30px rgba(15, 76, 129, 0.08);
-            padding: 26px;
-        }
-
-        h1 {
-            margin: 0 0 10px;
-            font-size: 1.6rem;
-            line-height: 1.2;
-        }
-
-        p {
-            margin: 0 0 18px;
-            color: var(--muted);
-            line-height: 1.5;
-        }
-
-        .actions {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .status {
-            margin: 0 0 18px;
-            padding: 10px 12px;
-            border-radius: 10px;
-            border: 1px solid var(--line);
-            background: #f7f9fc;
-            color: var(--muted);
-            font-size: 0.95rem;
-        }
-
-        .status strong {
-            color: var(--ink);
-        }
-
-        .btn {
-            display: inline-block;
-            border: 0;
-            border-radius: 10px;
-            text-decoration: none;
-            font-weight: 600;
-            padding: 10px 16px;
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            color: #fff;
-        }
-
-        .btn-primary:hover {
-            background: var(--primary-hover);
-        }
-
-        .btn-ghost {
-            background: #f3f6fa;
-            color: var(--ink);
-            border: 1px solid var(--line);
-        }
-    </style>
-</head>
-
-<body>
-    <main class="card">
-        <h1>RPSD Config</h1>
-        <p>Servizio di configurazione della piattaforma Rapsodia. Per accedere alle funzionalita' applicative usa la
-            login federata.</p>
-
+{% block content %}
+{% url 'exchange_agreement:user-area' as user_area_url %}
+<div class="row g-3">
+  <div class="col-12 col-xl-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <p class="text-body-secondary mb-3">
+          Servizio di configurazione della piattaforma Rapsodia.
+          Da qui puoi accedere ai flussi di login, area utente e strumenti di amministrazione.
+        </p>
         {% if user.is_authenticated %}
-        <p class="status">Stato accesso: <strong>Autenticato</strong> come <strong>{{ user.get_username }}</strong>.</p>
+          {% if user.is_staff or user.is_superuser %}
+            {% include "includes/action_bar.html" with primary_href=admin_url primary_label="Admin Django" secondary_href=user_area_url secondary_label="Area utente" danger_href="/accounts/logout/" danger_label="Logout" %}
+          {% else %}
+            {% include "includes/action_bar.html" with primary_href=user_area_url primary_label="Area utente" danger_href="/accounts/logout/" danger_label="Logout" %}
+          {% endif %}
         {% else %}
-        <p class="status">Stato accesso: <strong>Non autenticato</strong>.</p>
+          {% include "includes/action_bar.html" with primary_href=oidc_login_url primary_label="Accedi con Keycloak" secondary_href=admin_url secondary_label="Admin Django" %}
         {% endif %}
+      </div>
+    </div>
+  </div>
 
-        <div class="actions">
-            {% if user.is_authenticated %}
-            <a class="btn btn-primary" href="{{ admin_url }}">Admin Django</a>
-            <a class="btn btn-ghost" href="/accounts/logout/">Logout</a>
-            {% else %}
-            <a class="btn btn-primary" href="{{ login_page_url }}">Vai alla login</a>
-            <a class="btn btn-ghost" href="{{ admin_url }}">Admin Django</a>
-            {% endif %}
-        </div>
-    </main>
-</body>
-
-</html>
+  <div class="col-12 col-xl-4">
+    {% if user.is_authenticated %}
+      {% include "includes/info_card.html" with card_title="Stato accesso" card_text="Autenticato. Sessione utente attiva." %}
+    {% else %}
+      {% include "includes/info_card.html" with card_title="Stato accesso" card_text="Utente anonimo. Effettua login per accedere alle funzionalita' protette." %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

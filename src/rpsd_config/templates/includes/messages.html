@@ -1,0 +1,19 @@
+{% if messages %}
+  <div class="vstack gap-2 mb-3" aria-live="polite">
+    {% for message in messages %}
+      {% with tags=message.tags|default:'' %}
+        {% if 'error' in tags %}
+          {% include "includes/ui_alert.html" with alert_variant="danger" alert_message=message %}
+        {% elif 'success' in tags %}
+          {% include "includes/ui_alert.html" with alert_variant="success" alert_message=message %}
+        {% elif 'warning' in tags %}
+          {% include "includes/ui_alert.html" with alert_variant="warning" alert_message=message %}
+        {% elif 'info' in tags %}
+          {% include "includes/ui_alert.html" with alert_variant="info" alert_message=message %}
+        {% else %}
+          {% include "includes/ui_alert.html" with alert_variant="secondary" alert_message=message %}
+        {% endif %}
+      {% endwith %}
+    {% endfor %}
+  </div>
+{% endif %}

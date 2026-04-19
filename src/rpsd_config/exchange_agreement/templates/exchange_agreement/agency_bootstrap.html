@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Bootstrap Nuova Agenzia - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h1 class="h3 mb-0">Bootstrap Nuova Agenzia</h1>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:user-area' %}">
+    Torna all'Area Utente
+  </a>
+</div>
+<p class="text-body-secondary mb-0">
+  Crea una nuova agenzia e genera contestualmente il primo invito admin.
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-xl-9 col-xxl-8">
+    {% if error_message %}
+      {% include "includes/ui_alert.html" with alert_variant="danger" alert_message=error_message %}
+    {% endif %}
+
+    {% if success_message %}
+      {% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}
+    {% endif %}
+
+    <form method="post" class="card border-0 shadow-sm mb-3">
+      {% csrf_token %}
+      <div class="card-body p-4">
+        <div class="mb-3">
+          <label class="form-label" for="agency_name">Nome agenzia</label>
+          <input
+            class="form-control"
+            type="text"
+            id="agency_name"
+            name="agency_name"
+            required
+            placeholder="Agenzia TPL Milano"
+          >
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="agency_key">Chiave agenzia (opzionale)</label>
+          <input
+            class="form-control"
+            type="text"
+            id="agency_key"
+            name="agency_key"
+            placeholder="agenzia-tpl-milano"
+          >
+          <div class="form-text">
+            Se omessa, viene derivata dal nome.
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label" for="initial_admin_email">Email admin iniziale</label>
+          <input
+            class="form-control"
+            type="email"
+            id="initial_admin_email"
+            name="initial_admin_email"
+            required
+            placeholder="operatore1@example.com"
+          >
+          <div class="form-text">
+            Il sistema crea un invito agenzia con ruolo <code>agency_admin</code>.
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Esegui bootstrap</button>
+      </div>
+    </form>
+
+    {% if created_bootstrap %}
+      <section class="card border-0 shadow-sm" aria-label="Dettagli bootstrap agenzia">
+        <div class="card-body p-4">
+          <h2 class="h5 mb-3">Bootstrap completato</h2>
+          <dl class="row mb-0">
+            <dt class="col-sm-4 text-body-secondary">Agenzia</dt>
+            <dd class="col-sm-8">{{ created_bootstrap.agency_name }}</dd>
+
+            <dt class="col-sm-4 text-body-secondary">ID agenzia</dt>
+            <dd class="col-sm-8"><code>{{ created_bootstrap.agency_id }}</code></dd>
+
+            <dt class="col-sm-4 text-body-secondary">Chiave agenzia</dt>
+            <dd class="col-sm-8"><code>{{ created_bootstrap.agency_key }}</code></dd>
+
+            <dt class="col-sm-4 text-body-secondary">Gruppo IAM assegnato</dt>
+            <dd class="col-sm-8"><code>{{ created_bootstrap.assigned_group_path }}</code></dd>
+
+            <dt class="col-sm-4 text-body-secondary">Email admin invitato</dt>
+            <dd class="col-sm-8">{{ created_bootstrap.invitation_email }}</dd>
+
+            <dt class="col-sm-4 text-body-secondary">Scadenza invito</dt>
+            <dd class="col-sm-8">{{ created_bootstrap.invitation_expires_at|date:"d/m/Y H:i" }} UTC</dd>
+
+            <dt class="col-sm-4 text-body-secondary">Token invito</dt>
+            <dd class="col-sm-8"><code>{{ created_bootstrap.invitation_token }}</code></dd>
+
+            <dt class="col-sm-4 text-body-secondary">Link invito</dt>
+            <dd class="col-sm-8"><a href="{{ created_bootstrap.invitation_url }}">{{ created_bootstrap.invitation_url }}</a></dd>
+
+            {% if created_bootstrap.provisioned_user_id %}
+              <dt class="col-sm-4 text-body-secondary">User Keycloak</dt>
+              <dd class="col-sm-8"><code>{{ created_bootstrap.provisioned_user_id }}</code></dd>
+            {% endif %}
+          </dl>
+        </div>
+      </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

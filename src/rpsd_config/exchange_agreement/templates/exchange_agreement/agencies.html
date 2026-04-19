@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Agenzie - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h1 class="h3 mb-0">Agenzie</h1>
+  <div class="d-flex flex-wrap gap-2">
+    {% if can_bootstrap_agency %}
+      <a class="btn btn-outline-dark btn-sm" href="{% url 'exchange_agreement:agency-bootstrap' %}">
+        Bootstrap Nuova Agenzia
+      </a>
+    {% endif %}
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:user-area' %}">
+      Torna all'Area Utente
+    </a>
+  </div>
+</div>
+<p class="text-body-secondary mb-0">
+  Elenco delle agenzie disponibili nel tuo perimetro operativo.
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12 col-xl-10">
+    {% if is_platform_admin %}
+      {% include "includes/ui_alert.html" with alert_variant="info" alert_message="Sei platform admin (/rpsd/admin). Questa pagina mostra tutte le agenzie della piattaforma." %}
+    {% endif %}
+
+    {% if agency_rows %}
+      <div class="vstack gap-3">
+        {% for row in agency_rows %}
+          <article class="card border-0 shadow-sm">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                <div>
+                  <h2 class="h5 mb-1">{{ row.agency.name }}</h2>
+                  <p class="small text-body-secondary mb-0">
+                    Chiave agenzia: <code>{{ row.agency.agency_key }}</code>
+                  </p>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="badge rounded-pill text-bg-info">{{ row.role_label }}</span>
+                  <a
+                    class="btn btn-sm btn-outline-primary"
+                    href="{% url 'exchange_agreement:agency-detail' row.agency.agency_key %}"
+                  >
+                    Apri agenzia
+                  </a>
+                </div>
+              </div>
+              <p class="small text-body-secondary mb-0 mt-2">
+                {% if row.membership %}
+                  Membership locale creata il {{ row.membership.created_at|date:"d/m/Y H:i" }} UTC
+                {% else %}
+                  Accesso derivato dai gruppi IAM.
+                {% endif %}
+              </p>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      {% include "includes/ui_alert.html" with alert_variant="secondary" alert_class="mb-0" alert_message="Non risultano agenzie associate al tuo account." %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

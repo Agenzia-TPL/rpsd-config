@@ -1,0 +1,48 @@
+<table class="table align-middle mb-0" aria-label="Elenco inviti">
+  <thead class="table-light">
+    <tr>
+      <th>Contratto</th>
+      <th>Ruolo</th>
+      <th>Stato</th>
+      <th>Scadenza</th>
+      <th>Token</th>
+      <th>Azione</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for invite in invitations %}
+      <tr>
+        <td class="fw-semibold">{{ invite.contract.contract_code }}</td>
+        <td>{{ invite.get_role_to_assign_display }}</td>
+        <td>
+          {% if invite.status == "accepted" %}
+            <span class="badge rounded-pill text-bg-success">{{ invite.get_status_display }}</span>
+          {% elif invite.status == "pending" %}
+            <span class="badge rounded-pill text-bg-primary">{{ invite.get_status_display }}</span>
+          {% elif invite.status == "rejected" %}
+            <span class="badge rounded-pill text-bg-danger">{{ invite.get_status_display }}</span>
+          {% elif invite.status == "expired" %}
+            <span class="badge rounded-pill text-bg-warning">{{ invite.get_status_display }}</span>
+          {% elif invite.status == "revoked" %}
+            <span class="badge rounded-pill text-bg-dark">{{ invite.get_status_display }}</span>
+          {% else %}
+            <span class="badge rounded-pill text-bg-secondary">{{ invite.get_status_display }}</span>
+          {% endif %}
+        </td>
+        <td class="small text-body-secondary">{{ invite.expires_at|date:"d/m/Y H:i" }} UTC</td>
+        <td>
+          <code class="small">{{ invite.token }}</code>
+        </td>
+        <td class="text-nowrap">
+          <a class="btn btn-outline-primary btn-sm" href="{% url 'invitation-landing-root' token=invite.token %}">
+            {% if invite.status == "pending" %}
+              Apri invito
+            {% else %}
+              Apri dettaglio
+            {% endif %}
+          </a>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>

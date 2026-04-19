@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Nuovo Invito Agenzia - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h1 class="h3 mb-0">Nuovo Invito Agenzia</h1>
+  {% if selected_agency %}
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agency-detail' selected_agency.agency_key %}">
+      Torna al dettaglio agenzia
+    </a>
+  {% else %}
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:user-area' %}">
+      Torna all'Area Utente
+    </a>
+  {% endif %}
+</div>
+<p class="text-body-secondary mb-0">
+  Crea un invito agenzia e prepara automaticamente i gruppi IAM in Keycloak.
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-xl-9 col-xxl-8">
+    {% if error_message %}
+      {% include "includes/ui_alert.html" with alert_variant="danger" alert_message=error_message %}
+    {% endif %}
+
+    {% if success_message %}
+      {% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}
+    {% endif %}
+
+    {% if not agencies %}
+      {% include "includes/ui_alert.html" with alert_variant="warning" alert_message="Il tuo account non ha scope admin su alcuna agenzia." %}
+    {% else %}
+      <form method="post" class="card border-0 shadow-sm mb-3">
+        {% csrf_token %}
+        <div class="card-body p-4">
+          {% if selected_agency %}
+            <input type="hidden" name="selected_agency_key" value="{{ selected_agency.agency_key }}">
+            <input type="hidden" name="agency_id" value="{{ selected_agency.id }}">
+            <div class="mb-3">
+              <label class="form-label">Agenzia</label>
+              <input
+                class="form-control"
+                type="text"
+                value="{{ selected_agency.name }} ({{ selected_agency.agency_key }})"
+                readonly
+              >
+              <div class="form-text">
+                L'invito verra' creato nel perimetro di questa agenzia.
+              </div>
+            </div>
+          {% else %}
+            <div class="mb-3">
+              <label class="form-label" for="agency_id">Agenzia</label>
+              <select class="form-select" id="agency_id" name="agency_id" required>
+                {% for agency in agencies %}
+                  <option value="{{ agency.id }}">{{ agency.name }} ({{ agency.agency_key }})</option>
+                {% endfor %}
+              </select>
+            </div>
+          {% endif %}
+
+          <div class="mb-3">
+            <label class="form-label" for="role_to_assign">Ruolo da assegnare</label>
+            <select class="form-select" id="role_to_assign" name="role_to_assign" required>
+              {% for role_value, role_label in role_choices %}
+                <option value="{{ role_value }}">{{ role_label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="email">Email invitata (opzionale)</label>
+            <input class="form-control" type="email" id="email" name="email" placeholder="utente@example.com">
+            <div class="form-text">Se valorizzata, il sistema tenta il provisioning utente Keycloak se assente.</div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Crea invito agenzia</button>
+        </div>
+      </form>
+    {% endif %}
+
+    {% if created_invitation %}
+      <section class="card border-0 shadow-sm" aria-label="Dettagli invito creato">
+        <div class="card-body p-4">
+          <h2 class="h5 mb-3">Invito creato</h2>
+          <dl class="row mb-0">
+            <dt class="col-sm-4 text-body-secondary">Agenzia</dt>
+            <dd class="col-sm-8">{{ created_invitation.agency_name }} ({{ created_invitation.agency_key }})</dd>
+
+            <dt class="col-sm-4 text-body-secondary">Ruolo</dt>
+            <dd class="col-sm-8">{{ created_invitation.role }}</dd>
+
+            <dt class="col-sm-4 text-body-secondary">Gruppo IAM</dt>
+            <dd class="col-sm-8"><code>{{ created_invitation.group_path }}</code></dd>
+
+            <dt class="col-sm-4 text-body-secondary">Scadenza</dt>
+            <dd class="col-sm-8">{{ created_invitation.expires_at|date:"d/m/Y H:i" }} UTC</dd>
+
+            <dt class="col-sm-4 text-body-secondary">Token</dt>
+            <dd class="col-sm-8"><code>{{ created_invitation.token }}</code></dd>
+
+            <dt class="col-sm-4 text-body-secondary">Link invito</dt>
+            <dd class="col-sm-8"><a href="{{ created_invitation.invite_url }}">{{ created_invitation.invite_url }}</a></dd>
+
+            {% if created_invitation.email %}
+              <dt class="col-sm-4 text-body-secondary">Email target</dt>
+              <dd class="col-sm-8">{{ created_invitation.email }}</dd>
+            {% endif %}
+
+            {% if created_invitation.provisioned_user_id %}
+              <dt class="col-sm-4 text-body-secondary">User Keycloak</dt>
+              <dd class="col-sm-8"><code>{{ created_invitation.provisioned_user_id }}</code></dd>
+            {% endif %}
+          </dl>
+        </div>
+      </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

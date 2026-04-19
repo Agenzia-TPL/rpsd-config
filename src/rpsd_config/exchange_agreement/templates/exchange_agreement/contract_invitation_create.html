@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Nuovo Invito Contratto - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h1 class="h3 mb-0">Nuovo Invito Contratto</h1>
+  {% if selected_contract %}
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agency-contract-detail' selected_contract.client_agency.agency_key selected_contract.contract_code %}">
+      Torna al dettaglio contratto
+    </a>
+  {% else %}
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:user-area' %}">
+      Torna all'Area Utente
+    </a>
+  {% endif %}
+</div>
+<p class="text-body-secondary mb-0">
+  Crea un invito contratto con ruoli limitati a editor o reader.
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-xl-9 col-xxl-8">
+    {% if error_message %}
+      {% include "includes/ui_alert.html" with alert_variant="danger" alert_message=error_message %}
+    {% endif %}
+
+    {% if success_message %}
+      {% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}
+    {% endif %}
+
+    {% if not contracts %}
+      {% include "includes/ui_alert.html" with alert_variant="warning" alert_message="Il tuo account non puo' creare inviti contratto nel perimetro corrente." %}
+    {% else %}
+      <form method="post" class="card border-0 shadow-sm mb-3">
+        {% csrf_token %}
+        <div class="card-body p-4">
+          {% if selected_contract %}
+            <input type="hidden" name="contract_code" value="{{ selected_contract.contract_code }}">
+            <div class="mb-3">
+              <label class="form-label">Contratto</label>
+              <input
+                class="form-control"
+                type="text"
+                value="{{ selected_contract.contract_code }} · {{ selected_contract.client_agency.name }}"
+                readonly
+              >
+            </div>
+          {% else %}
+            <div class="mb-3">
+              <label class="form-label" for="contract_code">Contratto</label>
+              <select class="form-select" id="contract_code" name="contract_code" required>
+                {% for contract in contracts %}
+                  <option value="{{ contract.contract_code }}">
+                    {{ contract.contract_code }} · {{ contract.client_agency.name }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+          {% endif %}
+
+          <div class="mb-3">
+            <label class="form-label" for="role_to_assign">Ruolo da assegnare</label>
+            <select class="form-select" id="role_to_assign" name="role_to_assign" required>
+              {% for role_value, role_label in role_choices %}
+                <option value="{{ role_value }}">{{ role_label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="email">Email invitata (opzionale)</label>
+            <input class="form-control" type="email" id="email" name="email" placeholder="utente@example.com">
+            <div class="form-text">Se vuota, il token e' open invitation (monouso).</div>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Crea invito contratto</button>
+        </div>
+      </form>
+    {% endif %}
+
+    {% if created_invitation %}
+      <section class="card border-0 shadow-sm" aria-label="Dettagli invito contratto creato">
+        <div class="card-body p-4">
+          <h2 class="h5 mb-3">Invito contratto creato</h2>
+          <dl class="row mb-0">
+            <dt class="col-sm-4 text-body-secondary">Contratto</dt>
+            <dd class="col-sm-8">{{ created_invitation.contract_code }}</dd>
+
+            <dt class="col-sm-4 text-body-secondary">Ruolo</dt>
+            <dd class="col-sm-8">{{ created_invitation.role }}</dd>
+
+            <dt class="col-sm-4 text-body-secondary">Scadenza</dt>
+            <dd class="col-sm-8">{{ created_invitation.expires_at|date:"d/m/Y H:i" }} UTC</dd>
+
+            <dt class="col-sm-4 text-body-secondary">Token</dt>
+            <dd class="col-sm-8"><code>{{ created_invitation.token }}</code></dd>
+
+            <dt class="col-sm-4 text-body-secondary">Link invito</dt>
+            <dd class="col-sm-8"><a href="{{ created_invitation.invite_url }}">{{ created_invitation.invite_url }}</a></dd>
+
+            {% if created_invitation.email %}
+              <dt class="col-sm-4 text-body-secondary">Email target</dt>
+              <dd class="col-sm-8">{{ created_invitation.email }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+      </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

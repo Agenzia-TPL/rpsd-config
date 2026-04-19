@@ -4,6 +4,8 @@ from datetime import date
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
@@ -11,6 +13,9 @@ from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
 
 from .models import (
+    Agency,
+    AgencyInvitation,
+    Company,
     Contract,
     ContractIndicator,
     ContractInvitation,
@@ -18,17 +23,33 @@ from .models import (
     ContractPublication,
     FlowProfile,
     IndicatorDef,
+    Lot,
     Structure,
+)
+from .rbac import resolve_user_agency_scope
+from .services.agency_invitations import (
+    AgencyInvitationPermissionError,
+    AgencyInvitationProvisioningError,
+    AgencyInvitationValidationError,
+    create_agency_invitation,
+)
+from .services.agency_bootstrap import (
+    AgencyBootstrapPermissionError,
+    AgencyBootstrapProvisioningError,
+    AgencyBootstrapValidationError,
+    bootstrap_agency_with_admin_invitation,
 )
 from .services.publication import PublishContractError, publish_contract
 
 
 class InvitationCheckResponse(Schema):
     valid: bool
+    invitation_type: str
     status: str
     is_open_invitation: bool
     role_to_assign: str
     contract_code: str
+    agency_key: str
     expires_at: str
     message: str
 
@@ -37,7 +58,46 @@ class InvitationStartResponse(Schema):
     ok: bool
     redirect_url: str
     provider_id: str
+    invitation_type: str
     message: str
+
+
+class AgencyInvitationCreateRequest(Schema):
+    agency_id: int
+    role_to_assign: str
+    email: str | None = None
+    provision_user_if_missing: bool = True
+
+
+class AgencyInvitationCreateResponse(Schema):
+    token: str
+    invitation_url: str
+    agency_id: int
+    agency_key: str
+    role_to_assign: str
+    status: str
+    expires_at: str
+    assigned_group_path: str
+    provisioned_user_id: str | None
+
+
+class AgencyBootstrapRequest(Schema):
+    agency_name: str
+    initial_admin_email: str
+    agency_key: str | None = None
+    provision_user_if_missing: bool = True
+
+
+class AgencyBootstrapResponse(Schema):
+    agency_id: int
+    agency_name: str
+    agency_key: str
+    invitation_token: str
+    invitation_url: str
+    invitation_status: str
+    invitation_expires_at: str
+    assigned_group_path: str
+    provisioned_user_id: str | None
 
 
 class DatasetRefSchema(Schema):
@@ -144,6 +204,32 @@ class ContractFlowProfileUpdateRequest(Schema):
     flow_profile_code: str
 
 
+class ContractCreateRequest(Schema):
+    contract_code: str
+    client_agency_id: int
+    contractor_company_id: int
+    lot_id: int
+    start_date: date
+    end_date: date | None = None
+    tender_id: str = ""
+    status: str = Contract.ContractStatus.DRAFT
+
+
+class ContractInvitationCreateRequest(Schema):
+    role_to_assign: str
+    email: str | None = None
+
+
+class ContractInvitationCreateResponse(Schema):
+    token: str
+    invitation_url: str
+    contract_code: str
+    role_to_assign: str
+    status: str
+    expires_at: str
+    invitation_type: str = "contract"
+
+
 class PublicationActorSchema(Schema):
     username: str
     email: str
@@ -195,7 +281,19 @@ def _authorized_contracts_qs(request):
     )
     if user.is_superuser:
         return qs
-    return qs.filter(memberships__user=user).distinct()
+    scope = resolve_user_agency_scope(user)
+    if scope.is_platform_admin:
+        return qs
+
+    agency_keys = (
+        set(scope.admin_agency_keys)
+        | set(scope.editor_agency_keys)
+        | set(scope.reader_agency_keys)
+    )
+    contract_filter = Q(memberships__user=user)
+    if agency_keys:
+        contract_filter |= Q(client_agency__agency_key__in=agency_keys)
+    return qs.filter(contract_filter).distinct()
 
 
 def _get_authorized_contract(request, contract_code: str) -> Contract:
@@ -205,6 +303,69 @@ def _get_authorized_contract(request, contract_code: str) -> Contract:
     if contract is None:
         raise HttpError(404, "Contract not found.")
     return contract
+
+
+def _can_create_contract_for_agency(*, user, agency_key: str) -> bool:
+    if user.is_superuser:
+        return True
+    scope = resolve_user_agency_scope(user)
+    return scope.is_platform_admin or agency_key in scope.admin_agency_keys
+
+
+def _can_write_contract(*, user, contract: Contract) -> bool:
+    if user.is_superuser:
+        return True
+
+    scope = resolve_user_agency_scope(user)
+    agency_key = contract.client_agency.agency_key
+    if scope.is_platform_admin or agency_key in scope.admin_agency_keys:
+        return True
+    if agency_key in scope.editor_agency_keys:
+        return True
+
+    return ContractMembership.objects.filter(
+        contract=contract,
+        user=user,
+        role__in={
+            ContractMembership.Role.CONTRACT_ADMIN,
+            ContractMembership.Role.CONTRACT_EDITOR,
+        },
+    ).exists()
+
+
+def _can_create_contract_invitation(*, user, contract: Contract) -> bool:
+    if user.is_superuser:
+        return True
+
+    scope = resolve_user_agency_scope(user)
+    agency_key = contract.client_agency.agency_key
+    if scope.is_platform_admin:
+        return True
+    return (
+        agency_key in scope.admin_agency_keys
+        or agency_key in scope.editor_agency_keys
+    )
+
+
+def _require_contract_write(request, contract: Contract):
+    user = _require_auth(request)
+    if not _can_write_contract(user=user, contract=contract):
+        raise HttpError(403, "Contract write scope required.")
+    return user
+
+
+def _require_contract_create(request, agency: Agency):
+    user = _require_auth(request)
+    if not _can_create_contract_for_agency(user=user, agency_key=agency.agency_key):
+        raise HttpError(403, "Agency admin scope required to create contract.")
+    return user
+
+
+def _require_contract_invitation_creator(request, contract: Contract):
+    user = _require_auth(request)
+    if not _can_create_contract_invitation(user=user, contract=contract):
+        raise HttpError(403, "Contract invitation scope required.")
+    return user
 
 
 def _dataset_ref(dataset) -> DatasetRefSchema:
@@ -339,16 +500,21 @@ def _contract_detail_schema(request, contract: Contract) -> ContractDetailSchema
     )
 
 
-def _require_contract_admin(request, contract: Contract):
+def _require_agency_invitation_admin(request, agency: Agency):
+    user = _require_auth(request)
+    scope = resolve_user_agency_scope(user)
+    if not scope.can_manage_agency(agency.agency_key):
+        raise HttpError(403, "Agency admin scope required.")
+    return user
+
+
+def _require_platform_admin(request):
     user = _require_auth(request)
     if user.is_superuser:
         return user
-    if not ContractMembership.objects.filter(
-        contract=contract,
-        user=user,
-        role=ContractMembership.Role.CONTRACT_ADMIN,
-    ).exists():
-        raise HttpError(403, "Contract admin role required.")
+    scope = resolve_user_agency_scope(user)
+    if not scope.is_platform_admin:
+        raise HttpError(403, "Platform admin scope required.")
     return user
 
 
@@ -429,6 +595,100 @@ def get_contract(request, contract_code: str):
     return _contract_detail_schema(request, contract)
 
 
+@api.post("/v1/contracts", response=ContractDetailSchema)
+def create_contract(request, payload: ContractCreateRequest):
+    agency = Agency.objects.filter(id=payload.client_agency_id).first()
+    if agency is None:
+        raise HttpError(404, "Client agency not found.")
+    _require_contract_create(request, agency)
+
+    lot = Lot.objects.filter(id=payload.lot_id).first()
+    if lot is None:
+        raise HttpError(404, "Lot not found.")
+
+    company = Company.objects.filter(id=payload.contractor_company_id).first()
+    if company is None:
+        raise HttpError(404, "Contractor company not found.")
+
+    allowed_status = {choice[0] for choice in Contract.ContractStatus.choices}
+    if payload.status not in allowed_status:
+        raise HttpError(400, "Unsupported contract status.")
+    if payload.status == Contract.ContractStatus.CLOSED:
+        raise HttpError(400, "Closed contracts cannot be created directly.")
+
+    try:
+        contract = Contract.objects.create(
+            contract_code=payload.contract_code,
+            client_agency=agency,
+            contractor_company=company,
+            lot=lot,
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            tender_id=payload.tender_id,
+            status=payload.status,
+        )
+    except ValidationError as exc:
+        raise HttpError(400, f"Contract validation failed: {exc}") from exc
+    except IntegrityError as exc:
+        raise HttpError(
+            400,
+            "Unable to create contract due to constraint violation.",
+        ) from exc
+
+    return _contract_detail_schema(request, contract)
+
+
+@api.post(
+    "/v1/contracts/{contract_code}/invitations",
+    response=ContractInvitationCreateResponse,
+)
+def create_contract_invitation(
+    request, contract_code: str, payload: ContractInvitationCreateRequest
+):
+    contract = _get_authorized_contract(request, contract_code)
+    actor = _require_contract_invitation_creator(request, contract)
+
+    allowed_roles = {
+        ContractMembership.Role.CONTRACT_EDITOR,
+        ContractMembership.Role.CONTRACT_READER,
+    }
+    if payload.role_to_assign not in allowed_roles:
+        raise HttpError(
+            400,
+            "Contract invitations can assign only contract_editor or contract_reader.",
+        )
+
+    email = (payload.email or "").strip().lower() or None
+    try:
+        invitation = ContractInvitation.objects.create(
+            contract=contract,
+            email=email,
+            role_to_assign=payload.role_to_assign,
+            invited_by=actor,
+            status=ContractInvitation.Status.PENDING,
+        )
+    except ValidationError as exc:
+        raise HttpError(400, f"Invitation validation failed: {exc}") from exc
+    except IntegrityError as exc:
+        raise HttpError(
+            400,
+            "A pending invitation with the same target already exists "
+            "for this contract.",
+        ) from exc
+
+    invitation_url = request.build_absolute_uri(
+        reverse("invitation-landing-root", kwargs={"token": invitation.token})
+    )
+    return ContractInvitationCreateResponse(
+        token=str(invitation.token),
+        invitation_url=invitation_url,
+        contract_code=invitation.contract.contract_code,
+        role_to_assign=invitation.role_to_assign,
+        status=invitation.status,
+        expires_at=invitation.expires_at.isoformat(),
+    )
+
+
 @api.get(
     "/v1/contracts/{contract_code}/flow-profile", response=ContractFlowProfileResponse
 )
@@ -449,7 +709,7 @@ def set_contract_flow_profile(
     request, contract_code: str, payload: ContractFlowProfileUpdateRequest
 ):
     contract = _get_authorized_contract(request, contract_code)
-    _require_contract_admin(request, contract)
+    _require_contract_write(request, contract)
 
     if contract.status == Contract.ContractStatus.CLOSED:
         raise HttpError(400, "Cannot modify flow profile on a closed contract.")
@@ -473,8 +733,9 @@ def set_contract_flow_profile(
 )
 def publish_contract_endpoint(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
+    user = _require_contract_write(request, contract)
     try:
-        publication = publish_contract(contract=contract, user=_require_auth(request))
+        publication = publish_contract(contract=contract, user=user)
     except PublishContractError as exc:
         raise HttpError(exc.status_code, exc.message) from exc
     publication = ContractPublication.objects.select_related(
@@ -693,34 +954,117 @@ def get_publication(request, publication_id: int):
     return _contract_publication_detail_schema(publication)
 
 
+@api.post("/v1/agency-invitations", response=AgencyInvitationCreateResponse)
+def create_agency_invitation_endpoint(request, payload: AgencyInvitationCreateRequest):
+    agency = Agency.objects.filter(id=payload.agency_id).first()
+    if agency is None:
+        raise HttpError(404, "Agency not found.")
+
+    actor = _require_agency_invitation_admin(request, agency)
+    try:
+        created = create_agency_invitation(
+            actor=actor,
+            agency=agency,
+            role_to_assign=payload.role_to_assign,
+            email=payload.email,
+            provision_user_if_missing=payload.provision_user_if_missing,
+        )
+    except AgencyInvitationPermissionError as exc:
+        raise HttpError(403, str(exc)) from exc
+    except AgencyInvitationValidationError as exc:
+        raise HttpError(400, str(exc)) from exc
+    except AgencyInvitationProvisioningError as exc:
+        raise HttpError(502, str(exc)) from exc
+
+    invitation = created.invitation
+    invitation_url = request.build_absolute_uri(
+        reverse("invitation-landing-root", kwargs={"token": invitation.token})
+    )
+    return AgencyInvitationCreateResponse(
+        token=str(invitation.token),
+        invitation_url=invitation_url,
+        agency_id=invitation.agency_id,
+        agency_key=invitation.agency.agency_key,
+        role_to_assign=invitation.role_to_assign,
+        status=invitation.status,
+        expires_at=invitation.expires_at.isoformat(),
+        assigned_group_path=created.assigned_group_path,
+        provisioned_user_id=created.provisioned_user_id,
+    )
+
+
+@api.post("/v1/agencies/bootstrap", response=AgencyBootstrapResponse)
+def bootstrap_agency_endpoint(request, payload: AgencyBootstrapRequest):
+    actor = _require_platform_admin(request)
+    try:
+        created = bootstrap_agency_with_admin_invitation(
+            actor=actor,
+            agency_name=payload.agency_name,
+            initial_admin_email=payload.initial_admin_email,
+            agency_key=payload.agency_key,
+            provision_user_if_missing=payload.provision_user_if_missing,
+        )
+    except AgencyBootstrapPermissionError as exc:
+        raise HttpError(403, str(exc)) from exc
+    except AgencyBootstrapValidationError as exc:
+        raise HttpError(400, str(exc)) from exc
+    except AgencyBootstrapProvisioningError as exc:
+        raise HttpError(502, str(exc)) from exc
+
+    invitation_url = request.build_absolute_uri(
+        reverse("invitation-landing-root", kwargs={"token": created.invitation.token})
+    )
+    return AgencyBootstrapResponse(
+        agency_id=created.agency.id,
+        agency_name=created.agency.name,
+        agency_key=created.agency.agency_key,
+        invitation_token=str(created.invitation.token),
+        invitation_url=invitation_url,
+        invitation_status=created.invitation.status,
+        invitation_expires_at=created.invitation.expires_at.isoformat(),
+        assigned_group_path=created.assigned_group_path,
+        provisioned_user_id=created.provisioned_user_id,
+    )
+
+
 @api.get("/invitations/{token}/check", response=InvitationCheckResponse)
 def check_invitation(request, token: str):
-    try:
-        invitation = ContractInvitation.objects.select_related("contract").get(
-            token=token
-        )
-    except ContractInvitation.DoesNotExist:
+    contract_invitation = (
+        ContractInvitation.objects.select_related("contract").filter(token=token).first()
+    )
+    agency_invitation = (
+        AgencyInvitation.objects.select_related("agency").filter(token=token).first()
+    )
+    invitation = contract_invitation or agency_invitation
+    if invitation is None:
         return InvitationCheckResponse(
             valid=False,
+            invitation_type="missing",
             status="missing",
             is_open_invitation=False,
             role_to_assign="",
             contract_code="",
+            agency_key="",
             expires_at="",
             message="Invitation token not found.",
         )
 
     now = timezone.now()
     valid = (
-        invitation.status == ContractInvitation.Status.PENDING
+        invitation.status == invitation.Status.PENDING
         and invitation.expires_at > now
     )
+    invitation_type = "contract" if contract_invitation else "agency"
     return InvitationCheckResponse(
         valid=valid,
+        invitation_type=invitation_type,
         status=invitation.status,
         is_open_invitation=not bool(invitation.email),
         role_to_assign=invitation.role_to_assign,
-        contract_code=invitation.contract.contract_code,
+        contract_code=invitation.contract.contract_code
+        if invitation_type == "contract"
+        else "",
+        agency_key=invitation.agency.agency_key if invitation_type == "agency" else "",
         expires_at=invitation.expires_at.isoformat(),
         message="Invitation is valid." if valid else "Invitation is not valid anymore.",
     )
@@ -728,13 +1072,15 @@ def check_invitation(request, token: str):
 
 @api.post("/invitations/{token}/start", response=InvitationStartResponse)
 def start_onboarding(request, token: str):
-    try:
-        invitation = ContractInvitation.objects.get(token=token)
-    except ContractInvitation.DoesNotExist:
+    contract_invitation = ContractInvitation.objects.filter(token=token).first()
+    agency_invitation = AgencyInvitation.objects.filter(token=token).first()
+    invitation = contract_invitation or agency_invitation
+    if invitation is None:
         return InvitationStartResponse(
             ok=False,
             redirect_url="",
             provider_id="",
+            invitation_type="missing",
             message="Invitation token not found.",
         )
 
@@ -743,15 +1089,20 @@ def start_onboarding(request, token: str):
             ok=False,
             redirect_url="",
             provider_id="",
+            invitation_type="contract" if contract_invitation else "agency",
             message="Invitation is not valid anymore.",
         )
 
     request.session["onboarding_invitation_token"] = token
+    request.session["onboarding_invitation_kind"] = (
+        "contract" if contract_invitation else "agency"
+    )
     callback_url = reverse("exchange_agreement:onboarding-callback")
     redirect_url = _build_oidc_login_url(callback_url)
     return InvitationStartResponse(
         ok=True,
         redirect_url=redirect_url,
         provider_id=_oidc_provider_id(),
+        invitation_type="contract" if contract_invitation else "agency",
         message="Invitation accepted for onboarding. Continue with OIDC login.",
     )

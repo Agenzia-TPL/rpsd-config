@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Configurazione - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h1 class="h3 mb-0">Configurazione Piattaforma</h1>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:user-area' %}">
+    Torna all'Area Utente
+  </a>
+</div>
+<p class="text-body-secondary mb-0">
+  Sezione riservata ai membri del gruppo <code>/rpsd/admin</code> per i parametri globali.
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  {% for section in global_sections %}
+    <div class="col-12 col-xl-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <h2 class="h5 mb-2">{{ section }}</h2>
+          <p class="text-body-secondary mb-0">
+            Placeholder UI: qui verranno esposte opzioni operative e controlli di configurazione.
+          </p>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}
+

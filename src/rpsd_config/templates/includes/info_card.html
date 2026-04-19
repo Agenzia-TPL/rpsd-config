@@ -1,0 +1,10 @@
+<div class="card border-0 shadow-sm{% if card_class %} {{ card_class }}{% endif %}">
+  <div class="card-body{% if card_body_class %} {{ card_body_class }}{% endif %}">
+    {% if card_title %}
+      <h2 class="{{ card_title_class|default:'h6' }}">{{ card_title }}</h2>
+    {% endif %}
+    {% if card_text %}
+      <p class="{% if card_title %}mb-0{% else %}mb-0{% endif %}{% if card_text_class %} {{ card_text_class }}{% endif %}">{{ card_text }}</p>
+    {% endif %}
+  </div>
+</div>

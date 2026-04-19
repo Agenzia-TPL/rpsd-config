@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -165,6 +166,8 @@ class GeneralSettings(BaseSettings):
     LOGOUT_REDIRECT_URL: str | None = "/"
     ACCOUNT_EMAIL_VERIFICATION: str = "none"
     ACCOUNT_SIGNUP_FIELDS: list[str] = ["username*", "password1*", "password2*"]
+    ACCOUNT_ADAPTER: str = "rpsd_config.server.account_adapter.RpsdAccountAdapter"
+    SOCIALACCOUNT_LOGIN_ON_GET: bool = True
 
     SOCIALACCOUNT_ADAPTER: str = (
         "rpsd_config.server.socialaccount_adapter.RpsdSocialAccountAdapter"
@@ -210,6 +213,7 @@ class StaticSettings(BaseSettings):
                     "django.template.context_processors.request",
                     "django.contrib.auth.context_processors.auth",
                     "django.contrib.messages.context_processors.messages",
+                    "rpsd_config.server.context_processors.navigation_context",
                 ],
             },
         },
@@ -244,7 +248,7 @@ class OIDCSettings(BaseSettings):
     OIDC_PROVIDER_ID: str = Field(default="keycloak")
     KEYCLOAK_DISCOVERY_URL: str = Field(
         default=(
-            "http://keycloak:8080/realms/rapsodia/.well-known/openid-configuration"
+            "http://keycloak:8080/realms/rpsd/.well-known/openid-configuration"
         )
     )
     OIDC_AUTHORIZATION_ENDPOINT_URL: str = Field(default="")
@@ -292,6 +296,44 @@ class OIDCSettings(BaseSettings):
         return self
 
 
+class KeycloakAdminSettings(BaseSettings):
+    KEYCLOAK_ADMIN_BASE_URL: str = Field(default="")
+    KEYCLOAK_ADMIN_REALM: str = Field(default="")
+    KEYCLOAK_ADMIN_CLIENT_ID: str = Field(default="rpsd-config-admin-api")
+    KEYCLOAK_ADMIN_CLIENT_SECRET: str = Field(default="")
+    KEYCLOAK_ADMIN_REQUEST_TIMEOUT_SECONDS: float = Field(default=10.0)
+    KEYCLOAK_ADMIN_VERIFY_TLS: bool = Field(default=True)
+    KEYCLOAK_ADMIN_GROUP_ROOT: str = Field(default="/rpsd")
+
+    @model_validator(mode="after")
+    def compute_keycloak_admin_defaults(self) -> "KeycloakAdminSettings":
+        discovery = getattr(self, "KEYCLOAK_DISCOVERY_URL", "") or ""
+        parsed = urlparse(discovery)
+        if parsed.scheme and parsed.hostname:
+            if not self.KEYCLOAK_ADMIN_BASE_URL:
+                base_url = f"{parsed.scheme}://{parsed.hostname}"
+                if parsed.port:
+                    base_url = f"{base_url}:{parsed.port}"
+                self.KEYCLOAK_ADMIN_BASE_URL = base_url
+
+            if not self.KEYCLOAK_ADMIN_REALM:
+                segments = [part for part in parsed.path.split("/") if part]
+                for index, part in enumerate(segments):
+                    if part == "realms" and index + 1 < len(segments):
+                        self.KEYCLOAK_ADMIN_REALM = segments[index + 1]
+                        break
+
+        normalized_root = "/" + "/".join(
+            [
+                segment
+                for segment in self.KEYCLOAK_ADMIN_GROUP_ROOT.split("/")
+                if segment
+            ]
+        )
+        self.KEYCLOAK_ADMIN_GROUP_ROOT = normalized_root or "/rpsd"
+        return self
+
+
 class AppSettings(BaseSettings):
     """Application-specific settings (non-Django framework settings).
 
@@ -314,6 +356,7 @@ class ProjectSettings(
     StaticSettings,
     LeafletSettings,
     OIDCSettings,
+    KeycloakAdminSettings,
     AppSettings,
 ):
     model_config = SettingsConfigDict(
