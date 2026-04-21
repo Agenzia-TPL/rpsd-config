@@ -7,8 +7,11 @@ from .views import (
     agency_contract_detail_page,
     agency_contracts_page,
     agency_detail_page,
+    agency_lot_detail_page,
     agencies_page,
     bootstrap_agency_page,
+    company_detail_page,
+    company_list_page,
     create_agency_contract_page,
     create_agency_invitation_page,
     create_contract_invitation_page,
@@ -32,10 +35,21 @@ urlpatterns = [
     path("me/", user_area, name="user-area"),
     path("me/contracts/", user_area, name="user-area-legacy"),
     path("me/agencies/", agencies_page, name="agencies"),
+    path("me/companies/", company_list_page, name="company-list"),
+    path(
+        "me/companies/<int:company_id>/",
+        company_detail_page,
+        name="company-detail",
+    ),
     path(
         "me/agencies/<slug:agency_key>/",
         agency_detail_page,
         name="agency-detail",
+    ),
+    path(
+        "me/agencies/<slug:agency_key>/lots/<int:lot_id>/",
+        agency_lot_detail_page,
+        name="agency-lot-detail",
     ),
     path(
         "me/agencies/<slug:agency_key>/contracts/",

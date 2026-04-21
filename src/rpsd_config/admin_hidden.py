@@ -16,8 +16,11 @@ from rpsd_config.exchange_agreement.models import (
     ContractPublication,
     Dataset,
     FlowProfile,
+    IndicatorProfile,
     IndicatorDef,
     Lot,
+    NetexValidationProfile,
+    SiriValidationProfile,
     Structure,
 )
 
@@ -59,6 +62,21 @@ class DatasetHidden(_HiddenAdmin):
 @admin.register(FlowProfile)
 class FlowProfileHidden(_HiddenAdmin):
     search_fields = ("code", "name")
+
+
+@admin.register(NetexValidationProfile)
+class NetexValidationProfileHidden(_HiddenAdmin):
+    search_fields = ("label", "file")
+
+
+@admin.register(SiriValidationProfile)
+class SiriValidationProfileHidden(_HiddenAdmin):
+    search_fields = ("profile_type", "label", "file")
+
+
+@admin.register(IndicatorProfile)
+class IndicatorProfileHidden(_HiddenAdmin):
+    search_fields = ("label", "file")
 
 
 @admin.register(Structure)

@@ -45,6 +45,9 @@
           {% if app_navigation.is_authenticated %}
           <a class="nav-link" href="{% url 'exchange_agreement:user-area' %}">Area utente</a>
           <a class="nav-link" href="{% url 'exchange_agreement:agencies' %}">Agenzie</a>
+          {% if app_navigation.can_view_companies %}
+          <a class="nav-link" href="{% url 'exchange_agreement:company-list' %}">Aziende</a>
+          {% endif %}
           {% if app_navigation.can_view_configuration %}
           <a class="nav-link" href="{% url 'exchange_agreement:platform-configuration' %}">Configurazione</a>
           {% endif %}
@@ -75,6 +78,9 @@
         {% if app_navigation.is_authenticated %}
         <a class="nav-link" href="{% url 'exchange_agreement:user-area' %}">Area utente</a>
         <a class="nav-link" href="{% url 'exchange_agreement:agencies' %}">Agenzie</a>
+        {% if app_navigation.can_view_companies %}
+        <a class="nav-link" href="{% url 'exchange_agreement:company-list' %}">Aziende</a>
+        {% endif %}
         {% if app_navigation.can_view_configuration %}
         <a class="nav-link" href="{% url 'exchange_agreement:platform-configuration' %}">Configurazione</a>
         {% endif %}

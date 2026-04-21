@@ -25,151 +25,309 @@
 {% endblock %}
 
 {% block content %}
-<div class="row g-3">
-  <div class="col-12 col-xl-5">
-    <section class="card border-0 shadow-sm h-100">
-      <div class="card-body">
-        <h2 class="h5 mb-3">Descrizione Agenzia</h2>
-        {% if agency.description %}
-          <p class="mb-3">{{ agency.description }}</p>
-        {% else %}
-          <p class="text-body-secondary mb-3">Nessuna descrizione configurata.</p>
-        {% endif %}
-        <dl class="row mb-0">
-          <dt class="col-sm-5 text-body-secondary">Creata il</dt>
-          <dd class="col-sm-7">{{ agency.created_at|date:"d/m/Y H:i" }} UTC</dd>
-          <dt class="col-sm-5 text-body-secondary">Ultimo aggiornamento</dt>
-          <dd class="col-sm-7">{{ agency.updated_at|date:"d/m/Y H:i" }} UTC</dd>
-          {% if membership %}
-            <dt class="col-sm-5 text-body-secondary">Ruolo locale</dt>
-            <dd class="col-sm-7">{{ membership.get_role_display }}</dd>
-          {% elif is_platform_admin %}
-            <dt class="col-sm-5 text-body-secondary">Ruolo</dt>
-            <dd class="col-sm-7">Platform admin</dd>
-          {% endif %}
-        </dl>
-      </div>
-    </section>
-  </div>
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'descrizione' %}active{% endif %}" href="?tab=descrizione">
+      Descrizione
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'inviti' %}active{% endif %}" href="?tab=inviti">
+      Inviti
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'contratti' %}active{% endif %}" href="?tab=contratti">
+      Contratti
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'lotti' %}active{% endif %}" href="?tab=lotti">
+      Lotti
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'utenti' %}active{% endif %}" href="?tab=utenti">
+      Utenti associati
+    </a>
+  </li>
+</ul>
 
-  <div class="col-12 col-xl-7">
-    <section class="card border-0 shadow-sm h-100">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-          <h2 class="h5 mb-0">Inviti Agenzia</h2>
-          {% if can_create_agency_invites %}
-            <a
-              class="btn btn-sm btn-outline-primary"
-              href="{% url 'exchange_agreement:agency-invitation-create' %}?agency_key={{ agency.agency_key }}"
+{% if active_tab == "descrizione" %}
+  <section class="card border-0 shadow-sm">
+    <div class="card-body">
+      <h2 class="h5 mb-3">Descrizione Agenzia</h2>
+      {% if agency.description %}
+        <p class="mb-3">{{ agency.description }}</p>
+      {% else %}
+        <p class="text-body-secondary mb-3">Nessuna descrizione configurata.</p>
+      {% endif %}
+      <dl class="row mb-0">
+        <dt class="col-sm-3 text-body-secondary">Creata il</dt>
+        <dd class="col-sm-9">{{ agency.created_at|date:"d/m/Y H:i" }} UTC</dd>
+        <dt class="col-sm-3 text-body-secondary">Ultimo aggiornamento</dt>
+        <dd class="col-sm-9">{{ agency.updated_at|date:"d/m/Y H:i" }} UTC</dd>
+        {% if membership %}
+          <dt class="col-sm-3 text-body-secondary">Ruolo locale</dt>
+          <dd class="col-sm-9">{{ membership.get_role_display }}</dd>
+        {% elif is_platform_admin %}
+          <dt class="col-sm-3 text-body-secondary">Ruolo</dt>
+          <dd class="col-sm-9">Platform admin</dd>
+        {% endif %}
+      </dl>
+    </div>
+  </section>
+{% elif active_tab == "inviti" %}
+  <section class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <h2 class="h5 mb-0">Inviti Agenzia</h2>
+        {% if can_create_agency_invites %}
+          <a
+            class="btn btn-sm btn-outline-primary"
+            href="{% url 'exchange_agreement:agency-invitation-create' %}?agency_key={{ agency.agency_key }}"
+          >
+            Crea invito agenzia
+          </a>
+        {% endif %}
+      </div>
+
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <span class="badge rounded-pill text-bg-primary">Pending: {{ invitation_summary.pending }}</span>
+        <span class="badge rounded-pill text-bg-success">Accettati: {{ invitation_summary.accepted }}</span>
+        <span class="badge rounded-pill text-bg-danger">Rifiutati: {{ invitation_summary.rejected }}</span>
+        <span class="badge rounded-pill text-bg-dark">Revocati: {{ invitation_summary.revoked }}</span>
+        <span class="badge rounded-pill text-bg-secondary">Scaduti: {{ invitation_summary.expired }}</span>
+      </div>
+
+      {% if latest_invitations %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Ruolo</th>
+                <th>Stato</th>
+                <th>Scadenza</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for invite in latest_invitations %}
+                <tr>
+                  <td>{{ invite.email|default:"Open invite" }}</td>
+                  <td>{{ invite.get_role_to_assign_display }}</td>
+                  <td>{{ invite.get_status_display }}</td>
+                  <td>{{ invite.expires_at|date:"d/m/Y H:i" }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'invitation-landing-root' invite.token %}">
+                      Apri
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-body-secondary mb-0">Nessun invito agenzia disponibile.</p>
+      {% endif %}
+    </div>
+  </section>
+{% elif active_tab == "contratti" %}
+  <section class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <h2 class="h5 mb-0">Contratti dell'agenzia</h2>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-primary" href="{% url 'exchange_agreement:agency-contracts' agency.agency_key %}">
+            Vista completa contratti
+          </a>
+          {% if can_create_contract %}
+            <a class="btn btn-sm btn-primary" href="{% url 'exchange_agreement:agency-contract-create' agency.agency_key %}">
+              Crea nuovo contratto
+            </a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if contracts %}
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Codice</th>
+                <th>Azienda TPL</th>
+                <th>Lotto</th>
+                <th>Periodo</th>
+                <th>Stato</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for contract in contracts %}
+                <tr>
+                  <td><strong>{{ contract.contract_code }}</strong></td>
+                  <td>{{ contract.contractor_company.name }}</td>
+                  <td>{{ contract.lot }}</td>
+                  <td>
+                    {{ contract.start_date|date:"d/m/Y" }}
+                    {% if contract.end_date %} - {{ contract.end_date|date:"d/m/Y" }}{% endif %}
+                  </td>
+                  <td>{{ contract.get_status_display }}</td>
+                  <td class="text-end">
+                    <a
+                      class="btn btn-sm btn-outline-secondary"
+                      href="{% url 'exchange_agreement:agency-contract-detail' agency.agency_key contract.contract_code %}"
+                    >
+                      Dettaglio
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-body-secondary mb-0">Nessun contratto associato a questa agenzia.</p>
+      {% endif %}
+    </div>
+  </section>
+{% elif active_tab == "lotti" %}
+  {% if lot_error_message %}
+    {% include "includes/ui_alert.html" with alert_variant="danger" alert_message=lot_error_message %}
+  {% endif %}
+
+  {% if lot_success_message %}
+    {% include "includes/ui_alert.html" with alert_variant="success" alert_message=lot_success_message %}
+  {% endif %}
+
+  <section class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <h2 class="h5 mb-0">Lotti disponibili</h2>
+      </div>
+
+      {% if lots %}
+        <div class="table-responsive mb-3">
+          <table class="table align-middle mb-0">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Sigla</th>
+                <th>Descrizione</th>
+                <th>Contratti agenzia</th>
+                <th>Contratti totali</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for lot in lots %}
+                <tr>
+                  <td><code>{{ lot.id }}</code></td>
+                  <td>{{ lot.short_description|default:"-" }}</td>
+                  <td>{{ lot.description }}</td>
+                  <td>{{ lot.agency_contract_count }}</td>
+                  <td>{{ lot.total_contract_count }}</td>
+                  <td class="text-end">
+                    <a
+                      class="btn btn-sm btn-outline-secondary"
+                      href="{% url 'exchange_agreement:agency-lot-detail' agency.agency_key lot.id %}"
+                    >
+                      Dettaglio
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-body-secondary mb-3">Nessun lotto presente.</p>
+      {% endif %}
+
+      {% if can_manage_lots %}
+        <hr>
+        <form method="post" class="row g-3" id="create-lot-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create-lot">
+          <input type="hidden" name="tab" value="lotti">
+          <div class="col-md-3">
+            <label class="form-label" for="short_description">Sigla (opzionale)</label>
+            <input
+              class="form-control"
+              type="text"
+              id="short_description"
+              name="short_description"
+              maxlength="64"
+              value="{{ lot_form_values.short_description }}"
+              placeholder="ATM-NORD"
             >
-              Crea invito agenzia
-            </a>
-          {% endif %}
-        </div>
-
-        <div class="d-flex flex-wrap gap-2 mb-3">
-          <span class="badge rounded-pill text-bg-primary">Pending: {{ invitation_summary.pending }}</span>
-          <span class="badge rounded-pill text-bg-success">Accettati: {{ invitation_summary.accepted }}</span>
-          <span class="badge rounded-pill text-bg-danger">Rifiutati: {{ invitation_summary.rejected }}</span>
-          <span class="badge rounded-pill text-bg-dark">Revocati: {{ invitation_summary.revoked }}</span>
-          <span class="badge rounded-pill text-bg-secondary">Scaduti: {{ invitation_summary.expired }}</span>
-        </div>
-
-        {% if latest_invitations %}
-          <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-              <thead>
-                <tr>
-                  <th>Email</th>
-                  <th>Ruolo</th>
-                  <th>Stato</th>
-                  <th>Scadenza</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for invite in latest_invitations %}
-                  <tr>
-                    <td>{{ invite.email|default:"Open invite" }}</td>
-                    <td>{{ invite.get_role_to_assign_display }}</td>
-                    <td>{{ invite.get_status_display }}</td>
-                    <td>{{ invite.expires_at|date:"d/m/Y H:i" }}</td>
-                    <td class="text-end">
-                      <a class="btn btn-sm btn-outline-secondary" href="{% url 'invitation-landing-root' invite.token %}">
-                        Apri
-                      </a>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
           </div>
-        {% else %}
-          <p class="text-body-secondary mb-0">Nessun invito agenzia disponibile.</p>
+          <div class="col-md-7">
+            <label class="form-label" for="description">Descrizione lotto</label>
+            <input
+              class="form-control"
+              type="text"
+              id="description"
+              name="description"
+              maxlength="255"
+              required
+              value="{{ lot_form_values.description }}"
+              placeholder="Lotto Nord Milano"
+            >
+          </div>
+          <div class="col-md-2 d-flex align-items-end">
+            <button class="btn btn-primary w-100" type="submit">Crea lotto</button>
+          </div>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+{% else %}
+  <section class="card border-0 shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <h2 class="h5 mb-0">Utenti associati</h2>
+        {% if can_create_agency_invites %}
+          <a
+            class="btn btn-sm btn-outline-primary"
+            href="{% url 'exchange_agreement:agency-invitation-create' %}?agency_key={{ agency.agency_key }}"
+          >
+            Crea invito agenzia
+          </a>
         {% endif %}
       </div>
-    </section>
-  </div>
 
-  <div class="col-12">
-    <section class="card border-0 shadow-sm">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-          <h2 class="h5 mb-0">Contratti dell'agenzia</h2>
-          <div class="d-flex gap-2">
-            <a class="btn btn-sm btn-outline-primary" href="{% url 'exchange_agreement:agency-contracts' agency.agency_key %}">
-              Vista completa contratti
-            </a>
-            {% if can_create_contract %}
-              <a class="btn btn-sm btn-primary" href="{% url 'exchange_agreement:agency-contract-create' agency.agency_key %}">
-                Crea nuovo contratto
-              </a>
-            {% endif %}
-          </div>
-        </div>
-
-        {% if contracts %}
-          <div class="table-responsive">
-            <table class="table align-middle mb-0">
-              <thead>
+      {% if agency_memberships %}
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Utente</th>
+                <th>Email</th>
+                <th>Ruolo</th>
+                <th>Assegnato il</th>
+                <th>Creato da</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for member in agency_memberships %}
                 <tr>
-                  <th>Codice</th>
-                  <th>Azienda TPL</th>
-                  <th>Lotto</th>
-                  <th>Periodo</th>
-                  <th>Stato</th>
-                  <th></th>
+                  <td>{{ member.user.username }}</td>
+                  <td>{{ member.user.email|default:"-" }}</td>
+                  <td>{{ member.get_role_display }}</td>
+                  <td>{{ member.created_at|date:"d/m/Y H:i" }} UTC</td>
+                  <td>{{ member.created_by.username|default:"-" }}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {% for contract in contracts %}
-                  <tr>
-                    <td><strong>{{ contract.contract_code }}</strong></td>
-                    <td>{{ contract.contractor_company.name }}</td>
-                    <td>{{ contract.lot }}</td>
-                    <td>
-                      {{ contract.start_date|date:"d/m/Y" }}
-                      {% if contract.end_date %} - {{ contract.end_date|date:"d/m/Y" }}{% endif %}
-                    </td>
-                    <td>{{ contract.get_status_display }}</td>
-                    <td class="text-end">
-                      <a
-                        class="btn btn-sm btn-outline-secondary"
-                        href="{% url 'exchange_agreement:agency-contract-detail' agency.agency_key contract.contract_code %}"
-                      >
-                        Dettaglio
-                      </a>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <p class="text-body-secondary mb-0">Nessun contratto associato a questa agenzia.</p>
-        {% endif %}
-      </div>
-    </section>
-  </div>
-</div>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-body-secondary mb-0">Nessun utente associato a questa agenzia.</p>
+      {% endif %}
+    </div>
+  </section>
+{% endif %}
 {% endblock %}

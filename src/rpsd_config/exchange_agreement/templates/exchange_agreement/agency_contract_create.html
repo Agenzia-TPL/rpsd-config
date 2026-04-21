@@ -25,8 +25,62 @@
       {% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}
     {% endif %}
 
+    {% if company_error_message %}
+      {% include "includes/ui_alert.html" with alert_variant="danger" alert_message=company_error_message %}
+    {% endif %}
+
+    {% if company_success_message %}
+      {% include "includes/ui_alert.html" with alert_variant="success" alert_message=company_success_message %}
+    {% endif %}
+
     <form method="post" class="card border-0 shadow-sm mb-3">
       {% csrf_token %}
+      <input type="hidden" name="action" value="create-company">
+      <input type="hidden" name="contract_code" value="{{ form_values.contract_code }}">
+      <input type="hidden" name="contractor_company_id" value="{{ form_values.contractor_company_id }}">
+      <input type="hidden" name="lot_id" value="{{ form_values.lot_id }}">
+      <input type="hidden" name="start_date" value="{{ form_values.start_date }}">
+      <input type="hidden" name="end_date" value="{{ form_values.end_date }}">
+      <input type="hidden" name="tender_id" value="{{ form_values.tender_id }}">
+      <input type="hidden" name="status" value="{{ form_values.status }}">
+      <div class="card-body p-4">
+        <h2 class="h5 mb-3">Nuova azienda TPL</h2>
+        <p class="text-body-secondary small mb-3">
+          Se l'azienda non e' presente nel menu a tendina, creala qui e verra' selezionata automaticamente.
+        </p>
+
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label" for="company_name">Nome azienda</label>
+            <input
+              class="form-control"
+              type="text"
+              id="company_name"
+              name="company_name"
+              value="{{ company_form_values.name }}"
+              placeholder="ATM Milano"
+              maxlength="255"
+            >
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="company_description">Descrizione (opzionale)</label>
+            <input
+              class="form-control"
+              type="text"
+              id="company_description"
+              name="company_description"
+              value="{{ company_form_values.description }}"
+            >
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-outline-primary mt-4">Crea azienda</button>
+      </div>
+    </form>
+
+    <form method="post" class="card border-0 shadow-sm mb-3">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="create-contract">
       <div class="card-body p-4">
         <div class="mb-3">
           <label class="form-label" for="contract_code">Codice contratto</label>
@@ -51,6 +105,9 @@
               </option>
             {% endfor %}
           </select>
+          <div class="form-text">
+            Azienda non presente? Usa il form "Nuova azienda TPL" qui sopra.
+          </div>
         </div>
 
         <div class="mb-3">

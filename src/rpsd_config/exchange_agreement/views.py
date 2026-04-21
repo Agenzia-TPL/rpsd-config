@@ -7,10 +7,12 @@ from urllib.parse import urlencode
 
 from allauth.socialaccount.models import SocialAccount
 from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import NoReverseMatch, reverse
@@ -31,7 +33,10 @@ from .models import (
     Contract,
     ContractInvitation,
     ContractMembership,
+    IndicatorProfile,
     Lot,
+    NetexValidationProfile,
+    SiriValidationProfile,
 )
 from .rbac import resolve_user_agency_scope
 from .services.agency_invitations import (
@@ -498,6 +503,133 @@ def received_invitations(request: HttpRequest) -> HttpResponse:
     )
 
 
+def _is_platform_or_superuser(user) -> bool:
+    agency_scope = resolve_user_agency_scope(user)
+    return bool(user.is_superuser or agency_scope.is_platform_admin)
+
+
+def _is_agency_admin(user) -> bool:
+    agency_scope = resolve_user_agency_scope(user)
+    return bool(agency_scope.admin_agency_keys)
+
+
+def _can_view_companies(user) -> bool:
+    agency_scope = resolve_user_agency_scope(user)
+    return bool(
+        user.is_superuser
+        or agency_scope.is_platform_admin
+        or agency_scope.admin_agency_keys
+    )
+
+
+def _can_create_companies(user) -> bool:
+    agency_scope = resolve_user_agency_scope(user)
+    return bool(user.is_superuser or agency_scope.is_platform_admin)
+
+
+def _can_delete_companies(user) -> bool:
+    return _can_view_companies(user)
+
+
+def _extract_groups_for_user(user) -> list[str]:
+    social = (
+        SocialAccount.objects.filter(user=user)
+        .order_by("-last_login", "-date_joined")
+        .first()
+    )
+    if social is None:
+        return []
+
+    extra_data = social.extra_data if isinstance(social.extra_data, dict) else {}
+    groups = extra_data.get("groups")
+    if not isinstance(groups, list):
+        id_token = extra_data.get("id_token")
+        if isinstance(id_token, dict):
+            groups = id_token.get("groups")
+    if not isinstance(groups, list):
+        return []
+
+    return sorted({group for group in groups if isinstance(group, str)})
+
+
+def _build_platform_user_rows() -> tuple[list[dict], dict]:
+    user_model = get_user_model()
+    rows = []
+    counters = {
+        "total": 0,
+        "platform_admin": 0,
+        "staff": 0,
+        "superuser": 0,
+    }
+
+    for user in user_model.objects.all().order_by("username"):
+        groups = _extract_groups_for_user(user)
+        is_platform_admin = "/rpsd/admin" in groups
+        agency_groups = [group for group in groups if group.startswith("/rpsd/") and group != "/rpsd/admin"]
+        rows.append(
+            {
+                "user": user,
+                "groups": groups,
+                "agency_groups": agency_groups,
+                "is_platform_admin": is_platform_admin,
+            }
+        )
+        counters["total"] += 1
+        counters["platform_admin"] += int(is_platform_admin)
+        counters["staff"] += int(bool(user.is_staff))
+        counters["superuser"] += int(bool(user.is_superuser))
+
+    return rows, counters
+
+
+def _build_initialization_state() -> dict:
+    netex_profiles = list(NetexValidationProfile.objects.all().order_by("-created_at", "-id"))
+    siri_profiles = list(
+        SiriValidationProfile.objects.all().order_by("profile_type", "-created_at", "-id")
+    )
+    indicator_profiles = list(IndicatorProfile.objects.all().order_by("-created_at", "-id"))
+
+    netex_active_count = sum(1 for profile in netex_profiles if profile.is_active)
+    siri_active_count = sum(1 for profile in siri_profiles if profile.is_active)
+    indicator_active_count = sum(1 for profile in indicator_profiles if profile.is_active)
+
+    active_siri_by_type: dict[str, int] = {}
+    for profile in siri_profiles:
+        if profile.is_active:
+            active_siri_by_type[profile.profile_type] = (
+                active_siri_by_type.get(profile.profile_type, 0) + 1
+            )
+    siri_duplicate_active_types = sorted(
+        profile_type
+        for profile_type, count in active_siri_by_type.items()
+        if count > 1
+    )
+
+    initialized = (
+        netex_active_count == 1
+        and siri_active_count >= 1
+        and not siri_duplicate_active_types
+        and indicator_active_count >= 1
+    )
+
+    return {
+        "netex_profiles": netex_profiles,
+        "siri_profiles": siri_profiles,
+        "indicator_profiles": indicator_profiles,
+        "summary": {
+            "netex_active_count": netex_active_count,
+            "siri_active_count": siri_active_count,
+            "indicator_active_count": indicator_active_count,
+            "siri_duplicate_active_types": siri_duplicate_active_types,
+            "initialized": initialized,
+        },
+    }
+
+
+def _normalize_boolean_flag(value: str) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "on", "yes"}
+
+
 @login_required
 def agencies_page(request: HttpRequest) -> HttpResponse:
     agency_scope = resolve_user_agency_scope(request.user)
@@ -558,6 +690,217 @@ def agencies_page(request: HttpRequest) -> HttpResponse:
     )
 
 
+@login_required
+@require_http_methods(["GET", "POST"])
+def company_list_page(request: HttpRequest) -> HttpResponse:
+    if not _can_view_companies(request.user):
+        raise PermissionDenied(
+            "Solo platform admin, agency admin o superuser possono accedere."
+        )
+
+    can_create_company = _can_create_companies(request.user)
+    result_context = {
+        "error_message": "",
+        "success_message": "",
+        "created_company": None,
+        "form_values": {
+            "name": "",
+            "description": "",
+        },
+    }
+
+    if request.method == "POST":
+        if not can_create_company:
+            raise PermissionDenied(
+                "Solo gli utenti platform admin o superuser possono creare aziende."
+            )
+
+        name = request.POST.get("name", "").strip()
+        description = request.POST.get("description", "").strip()
+        result_context["form_values"] = {
+            "name": name,
+            "description": description,
+        }
+
+        if not name:
+            result_context["error_message"] = "Il nome azienda e' obbligatorio."
+        elif Company.objects.filter(name__iexact=name).exists():
+            result_context["error_message"] = (
+                "Esiste gia' una azienda con questo nome."
+            )
+        else:
+            try:
+                created = Company.objects.create(
+                    name=name,
+                    description=description,
+                )
+                result_context["success_message"] = "Azienda creata correttamente."
+                result_context["created_company"] = created
+                result_context["form_values"] = {"name": "", "description": ""}
+            except IntegrityError:
+                # Handles concurrent create race between pre-check and insert.
+                existing = Company.objects.filter(name__iexact=name).first()
+                if existing is not None:
+                    result_context["error_message"] = (
+                        "Azienda gia' creata da un altro utente in parallelo."
+                    )
+                else:
+                    result_context["error_message"] = (
+                        "Impossibile creare azienda per un errore di vincolo."
+                    )
+
+    companies = list(
+        Company.objects.annotate(contract_count=Count("contracts_as_contractor"))
+        .order_by("name")
+    )
+
+    return render(
+        request,
+        "exchange_agreement/companies.html",
+        {
+            "companies": companies,
+            "can_create_company": can_create_company,
+            **result_context,
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def company_detail_page(request: HttpRequest, company_id: int) -> HttpResponse:
+    if not _can_view_companies(request.user):
+        raise PermissionDenied(
+            "Solo platform admin, agency admin o superuser possono accedere."
+        )
+
+    company = get_object_or_404(Company, pk=company_id)
+    allowed_tabs = {"descrizione", "contratti", "utenti", "interscambio"}
+    active_tab = (
+        request.POST.get("tab")
+        or request.GET.get("tab")
+        or "descrizione"
+    ).strip().lower()
+    if active_tab not in allowed_tabs:
+        active_tab = "descrizione"
+
+    result_context = {
+        "error_message": "",
+        "success_message": "",
+    }
+
+    contracts = list(
+        Contract.objects.select_related(
+            "client_agency",
+            "lot",
+            "flow_profile",
+        )
+        .filter(contractor_company=company)
+        .order_by("-start_date", "contract_code")
+    )
+    contract_memberships = list(
+        ContractMembership.objects.select_related("user", "contract", "created_by")
+        .filter(contract__contractor_company=company)
+        .order_by("user__username", "contract__contract_code")
+    )
+    role_order = {
+        ContractMembership.Role.CONTRACT_ADMIN: 0,
+        ContractMembership.Role.CONTRACT_EDITOR: 1,
+        ContractMembership.Role.CONTRACT_READER: 2,
+    }
+    role_labels = {
+        role_code: role_label
+        for role_code, role_label in ContractMembership.Role.choices
+    }
+    users_index: dict[int, dict] = {}
+    for membership in contract_memberships:
+        entry = users_index.get(membership.user_id)
+        if entry is None:
+            entry = {
+                "user": membership.user,
+                "role_codes": set(),
+                "contract_codes": set(),
+                "created_at": membership.created_at,
+                "updated_at": membership.updated_at,
+            }
+            users_index[membership.user_id] = entry
+
+        entry["role_codes"].add(membership.role)
+        entry["contract_codes"].add(membership.contract.contract_code)
+        if membership.created_at < entry["created_at"]:
+            entry["created_at"] = membership.created_at
+        if membership.updated_at > entry["updated_at"]:
+            entry["updated_at"] = membership.updated_at
+
+    company_users = []
+    for entry in users_index.values():
+        sorted_role_codes = sorted(
+            entry["role_codes"],
+            key=lambda code: role_order.get(code, 99),
+        )
+        sorted_contract_codes = sorted(entry["contract_codes"])
+        company_users.append(
+            {
+                "user": entry["user"],
+                "role_labels": [role_labels[code] for code in sorted_role_codes],
+                "contract_codes": sorted_contract_codes,
+                "contract_count": len(sorted_contract_codes),
+                "created_at": entry["created_at"],
+                "updated_at": entry["updated_at"],
+            }
+        )
+    company_users.sort(key=lambda user_row: user_row["user"].username.lower())
+    company_contract_count = len(contracts)
+    company_has_contracts = company_contract_count > 0
+    can_delete_company = _can_delete_companies(request.user)
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        if action == "delete-company":
+            if not can_delete_company:
+                raise PermissionDenied(
+                    "Solo platform admin, agency admin o superuser possono eliminare aziende."
+                )
+            if company_has_contracts:
+                result_context["error_message"] = (
+                    "Questa azienda non puo' essere eliminata perche' e' collegata a contratti."
+                )
+            else:
+                deleted_company_name = company.name
+                company.delete()
+                messages.success(
+                    request,
+                    f"Azienda '{deleted_company_name}' eliminata correttamente.",
+                )
+                return redirect("exchange_agreement:company-list")
+        else:
+            result_context["error_message"] = "Azione non supportata."
+
+    m2m_exchange_info = {
+        "credentials_available": False,
+        "can_rotate_secret": False,
+        "client_id": "",
+        "status_message": (
+            "Credenziali M2M dedicate per azienda non ancora configurate in questa versione."
+        ),
+    }
+
+    return render(
+        request,
+        "exchange_agreement/company_detail.html",
+        {
+            "company": company,
+            "contracts": contracts,
+            "active_tab": active_tab,
+            "company_users": company_users,
+            "can_delete_company": can_delete_company,
+            "company_has_contracts": company_has_contracts,
+            "company_contract_count": company_contract_count,
+            "m2m_exchange_info": m2m_exchange_info,
+            **result_context,
+        },
+    )
+
+
 def _can_view_agency(*, user, agency: Agency, agency_scope) -> bool:
     if user.is_superuser or agency_scope.is_platform_admin:
         return True
@@ -612,7 +955,22 @@ def _agency_contracts_qs(agency: Agency):
     ).order_by("-start_date", "contract_code")
 
 
+def _agency_lots_qs(agency: Agency):
+    return (
+        Lot.objects.annotate(
+            agency_contract_count=Count(
+                "contracts",
+                filter=Q(contracts__client_agency=agency),
+                distinct=True,
+            ),
+            total_contract_count=Count("contracts", distinct=True),
+        )
+        .order_by("id")
+    )
+
+
 @login_required
+@require_http_methods(["GET", "POST"])
 def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
     agency = get_object_or_404(Agency, agency_key=agency_key)
     agency_scope = resolve_user_agency_scope(request.user)
@@ -620,13 +978,78 @@ def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
         raise PermissionDenied("Non hai accesso a questa agenzia.")
 
     membership = AgencyMembership.objects.filter(user=request.user, agency=agency).first()
+    agency_memberships = list(
+        AgencyMembership.objects.select_related("user", "created_by")
+        .filter(agency=agency)
+        .order_by("role", "user__username")
+    )
+    allowed_tabs = {"descrizione", "inviti", "contratti", "lotti", "utenti"}
+    active_tab = (
+        request.POST.get("tab")
+        or request.GET.get("tab")
+        or "descrizione"
+    ).strip().lower()
+    if active_tab not in allowed_tabs:
+        active_tab = "descrizione"
     invitation_summary = _agency_invitation_summary(agency)
     latest_invitations = list(
         AgencyInvitation.objects.select_related("invited_by", "accepted_by", "rejected_by")
         .filter(agency=agency)
         .order_by("-created_at")[:10]
     )
+    can_manage_lots = _can_create_contract_for_agency(
+        user=request.user,
+        agency=agency,
+        agency_scope=agency_scope,
+    )
     contracts = list(_agency_contracts_qs(agency))
+    lots = list(_agency_lots_qs(agency))
+
+    result_context = {
+        "active_tab": active_tab,
+        "lot_error_message": "",
+        "lot_success_message": "",
+        "created_lot": None,
+        "lot_form_values": {
+            "short_description": "",
+            "description": "",
+        },
+    }
+
+    if request.method == "POST":
+        if not can_manage_lots:
+            raise PermissionDenied("Solo platform admin o agency admin possono creare lotti.")
+
+        action = (request.POST.get("action") or "").strip()
+        if action != "create-lot":
+            result_context["lot_error_message"] = "Azione non supportata."
+        else:
+            short_description = request.POST.get("short_description", "").strip()
+            description = request.POST.get("description", "").strip()
+            result_context["lot_form_values"] = {
+                "short_description": short_description,
+                "description": description,
+            }
+
+            if not description:
+                result_context["lot_error_message"] = "La descrizione del lotto e' obbligatoria."
+            elif Lot.objects.filter(
+                short_description__iexact=short_description,
+                description__iexact=description,
+            ).exists():
+                result_context["lot_error_message"] = "Esiste gia' un lotto con questi dati."
+            else:
+                created_lot = Lot.objects.create(
+                    short_description=short_description,
+                    description=description,
+                )
+                result_context["lot_success_message"] = "Lotto creato correttamente."
+                result_context["created_lot"] = created_lot
+                result_context["lot_form_values"] = {
+                    "short_description": "",
+                    "description": "",
+                }
+                lots = list(_agency_lots_qs(agency))
 
     return render(
         request,
@@ -634,10 +1057,12 @@ def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
         {
             "agency": agency,
             "membership": membership,
+            "agency_memberships": agency_memberships,
             "is_platform_admin": agency_scope.is_platform_admin,
             "invitation_summary": invitation_summary,
             "latest_invitations": latest_invitations,
             "contracts": contracts,
+            "lots": lots,
             "can_create_agency_invites": request.user.is_superuser
             or agency_scope.is_platform_admin
             or agency.agency_key in agency_scope.admin_agency_keys,
@@ -646,6 +1071,101 @@ def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
                 agency=agency,
                 agency_scope=agency_scope,
             ),
+            "can_manage_lots": can_manage_lots,
+            **result_context,
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def agency_lot_detail_page(
+    request: HttpRequest,
+    agency_key: str,
+    lot_id: int,
+) -> HttpResponse:
+    agency = get_object_or_404(Agency, agency_key=agency_key)
+    agency_scope = resolve_user_agency_scope(request.user)
+    if not _can_view_agency(user=request.user, agency=agency, agency_scope=agency_scope):
+        raise PermissionDenied("Non hai accesso a questa agenzia.")
+
+    lot = get_object_or_404(
+        Lot.objects.annotate(
+            agency_contract_count=Count(
+                "contracts",
+                filter=Q(contracts__client_agency=agency),
+                distinct=True,
+            ),
+            total_contract_count=Count("contracts", distinct=True),
+        ),
+        pk=lot_id,
+    )
+    can_edit_lot = _can_create_contract_for_agency(
+        user=request.user,
+        agency=agency,
+        agency_scope=agency_scope,
+    )
+
+    result_context = {
+        "error_message": "",
+        "success_message": "",
+        "form_values": {
+            "short_description": lot.short_description,
+            "description": lot.description,
+        },
+    }
+
+    if request.method == "POST":
+        if not can_edit_lot:
+            raise PermissionDenied(
+                "Solo platform admin o agency admin possono modificare il lotto."
+            )
+
+        short_description = request.POST.get("short_description", "").strip()
+        description = request.POST.get("description", "").strip()
+        result_context["form_values"] = {
+            "short_description": short_description,
+            "description": description,
+        }
+
+        if not description:
+            result_context["error_message"] = "La descrizione del lotto e' obbligatoria."
+        elif (
+            Lot.objects.filter(
+                short_description__iexact=short_description,
+                description__iexact=description,
+            )
+            .exclude(pk=lot.pk)
+            .exists()
+        ):
+            result_context["error_message"] = "Esiste gia' un lotto con questi dati."
+        else:
+            lot.short_description = short_description
+            lot.description = description
+            lot.save()
+            result_context["success_message"] = "Lotto aggiornato correttamente."
+
+    agency_contracts = list(
+        Contract.objects.select_related(
+            "contractor_company",
+            "flow_profile",
+        )
+        .filter(
+            client_agency=agency,
+            lot=lot,
+        )
+        .order_by("-start_date", "contract_code")
+    )
+
+    return render(
+        request,
+        "exchange_agreement/agency_lot_detail.html",
+        {
+            "agency": agency,
+            "lot": lot,
+            "agency_contracts": agency_contracts,
+            "can_edit_lot": can_edit_lot,
+            **result_context,
         },
     )
 
@@ -734,6 +1254,9 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
         "error_message": "",
         "success_message": "",
         "created_contract": None,
+        "company_error_message": "",
+        "company_success_message": "",
+        "created_company": None,
         "form_values": {
             "contract_code": "",
             "contractor_company_id": "",
@@ -743,9 +1266,14 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
             "tender_id": "",
             "status": Contract.ContractStatus.DRAFT,
         },
+        "company_form_values": {
+            "name": "",
+            "description": "",
+        },
     }
 
     if request.method == "POST":
+        form_action = (request.POST.get("action") or "create-contract").strip()
         form_values = {
             "contract_code": request.POST.get("contract_code", "").strip(),
             "contractor_company_id": request.POST.get("contractor_company_id", "").strip(),
@@ -757,55 +1285,115 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
         }
         result_context["form_values"] = form_values
 
-        if not form_values["contract_code"]:
-            result_context["error_message"] = "Il codice contratto e' obbligatorio."
-        else:
-            company = Company.objects.filter(id=form_values["contractor_company_id"]).first()
-            lot = Lot.objects.filter(id=form_values["lot_id"]).first()
+        if form_action == "create-company":
+            company_name = request.POST.get("company_name", "").strip()
+            company_description = request.POST.get("company_description", "").strip()
+            result_context["company_form_values"] = {
+                "name": company_name,
+                "description": company_description,
+            }
 
-            if company is None:
-                result_context["error_message"] = "Seleziona una azienda valida."
-            elif lot is None:
-                result_context["error_message"] = "Seleziona un lotto valido."
-            elif form_values["status"] not in {choice[0] for choice in status_choices}:
-                result_context["error_message"] = "Stato contratto non supportato."
+            if not company_name:
+                result_context["company_error_message"] = (
+                    "Il nome azienda e' obbligatorio."
+                )
             else:
-                try:
-                    start_date_value = date.fromisoformat(form_values["start_date"])
-                except ValueError:
-                    result_context["error_message"] = "La data inizio non e' valida."
+                existing_company = Company.objects.filter(name__iexact=company_name).first()
+                if existing_company is not None:
+                    result_context["company_error_message"] = (
+                        "Esiste gia' una azienda con questo nome."
+                    )
+                    result_context["form_values"]["contractor_company_id"] = str(
+                        existing_company.id
+                    )
                 else:
-                    end_date_value = None
-                    if form_values["end_date"]:
-                        try:
-                            end_date_value = date.fromisoformat(form_values["end_date"])
-                        except ValueError:
-                            result_context["error_message"] = "La data fine non e' valida."
+                    try:
+                        created_company = Company.objects.create(
+                            name=company_name,
+                            description=company_description,
+                        )
+                    except IntegrityError:
+                        race_company = Company.objects.filter(
+                            name__iexact=company_name
+                        ).first()
+                        if race_company is not None:
+                            result_context["company_error_message"] = (
+                                "Azienda gia' creata da un altro utente in parallelo."
+                            )
+                            result_context["form_values"]["contractor_company_id"] = str(
+                                race_company.id
+                            )
+                        else:
+                            result_context["company_error_message"] = (
+                                "Impossibile creare azienda: vincolo dati non rispettato."
+                            )
+                    else:
+                        result_context["company_success_message"] = (
+                            "Azienda creata correttamente."
+                        )
+                        result_context["created_company"] = created_company
+                        result_context["company_form_values"] = {
+                            "name": "",
+                            "description": "",
+                        }
+                        result_context["form_values"]["contractor_company_id"] = str(
+                            created_company.id
+                        )
+                        companies = list(Company.objects.all().order_by("name"))
+        else:
+            if not form_values["contract_code"]:
+                result_context["error_message"] = "Il codice contratto e' obbligatorio."
+            else:
+                company = Company.objects.filter(
+                    id=form_values["contractor_company_id"]
+                ).first()
+                lot = Lot.objects.filter(id=form_values["lot_id"]).first()
 
-                    if not result_context["error_message"]:
-                        try:
-                            contract = Contract.objects.create(
-                                contract_code=form_values["contract_code"],
-                                client_agency=agency,
-                                contractor_company=company,
-                                lot=lot,
-                                start_date=start_date_value,
-                                end_date=end_date_value,
-                                tender_id=form_values["tender_id"],
-                                status=form_values["status"],
-                            )
-                            result_context["success_message"] = (
-                                "Contratto creato correttamente."
-                            )
-                            result_context["created_contract"] = contract
-                        except ValidationError as exc:
-                            result_context["error_message"] = (
-                                f"Validazione contratto fallita: {exc}"
-                            )
-                        except IntegrityError:
-                            result_context["error_message"] = (
-                                "Impossibile creare contratto: vincolo dati non rispettato."
-                            )
+                if company is None:
+                    result_context["error_message"] = "Seleziona una azienda valida."
+                elif lot is None:
+                    result_context["error_message"] = "Seleziona un lotto valido."
+                elif form_values["status"] not in {choice[0] for choice in status_choices}:
+                    result_context["error_message"] = "Stato contratto non supportato."
+                else:
+                    try:
+                        start_date_value = date.fromisoformat(form_values["start_date"])
+                    except ValueError:
+                        result_context["error_message"] = "La data inizio non e' valida."
+                    else:
+                        end_date_value = None
+                        if form_values["end_date"]:
+                            try:
+                                end_date_value = date.fromisoformat(form_values["end_date"])
+                            except ValueError:
+                                result_context["error_message"] = (
+                                    "La data fine non e' valida."
+                                )
+
+                        if not result_context["error_message"]:
+                            try:
+                                contract = Contract.objects.create(
+                                    contract_code=form_values["contract_code"],
+                                    client_agency=agency,
+                                    contractor_company=company,
+                                    lot=lot,
+                                    start_date=start_date_value,
+                                    end_date=end_date_value,
+                                    tender_id=form_values["tender_id"],
+                                    status=form_values["status"],
+                                )
+                                result_context["success_message"] = (
+                                    "Contratto creato correttamente."
+                                )
+                                result_context["created_contract"] = contract
+                            except ValidationError as exc:
+                                result_context["error_message"] = (
+                                    f"Validazione contratto fallita: {exc}"
+                                )
+                            except IntegrityError:
+                                result_context["error_message"] = (
+                                    "Impossibile creare contratto: vincolo dati non rispettato."
+                                )
 
     return render(
         request,
@@ -821,10 +1409,182 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
 
 
 @login_required
+@require_http_methods(["GET", "POST"])
 def platform_configuration_page(request: HttpRequest) -> HttpResponse:
     agency_scope = resolve_user_agency_scope(request.user)
-    if not agency_scope.is_platform_admin:
-        raise PermissionDenied("Solo gli utenti del gruppo /rpsd/admin possono accedere.")
+    if not (request.user.is_superuser or agency_scope.is_platform_admin):
+        raise PermissionDenied(
+            "Solo platform admin o superuser possono accedere alla configurazione."
+        )
+
+    allowed_tabs = {"globali", "utenti", "inizializzazione"}
+    active_tab = (
+        request.POST.get("tab")
+        or request.GET.get("tab")
+        or "globali"
+    ).strip().lower()
+    if active_tab not in allowed_tabs:
+        active_tab = "globali"
+
+    result_context = {
+        "error_message": "",
+        "success_message": "",
+        "active_tab": active_tab,
+        "upload_form_values": {
+            "netex_label": "",
+            "netex_is_active": False,
+            "siri_label": "",
+            "siri_type": SiriValidationProfile.ProfileType.PT,
+            "siri_is_active": False,
+            "indicator_label": "",
+            "indicator_is_active": False,
+        },
+    }
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        result_context["upload_form_values"] = {
+            "netex_label": request.POST.get("netex_label", "").strip(),
+            "netex_is_active": _normalize_boolean_flag(
+                request.POST.get("netex_is_active", "")
+            ),
+            "siri_label": request.POST.get("siri_label", "").strip(),
+            "siri_type": request.POST.get(
+                "siri_type",
+                SiriValidationProfile.ProfileType.PT,
+            ).strip(),
+            "siri_is_active": _normalize_boolean_flag(
+                request.POST.get("siri_is_active", "")
+            ),
+            "indicator_label": request.POST.get("indicator_label", "").strip(),
+            "indicator_is_active": _normalize_boolean_flag(
+                request.POST.get("indicator_is_active", "")
+            ),
+        }
+
+        try:
+            if action == "upload-netex":
+                uploaded_file = request.FILES.get("netex_file")
+                if uploaded_file is None:
+                    raise ValidationError("Seleziona un file Netex (.xsd).")
+                set_active = result_context["upload_form_values"]["netex_is_active"]
+                with transaction.atomic():
+                    if set_active:
+                        NetexValidationProfile.objects.filter(is_active=True).update(
+                            is_active=False
+                        )
+                    profile = NetexValidationProfile(
+                        label=result_context["upload_form_values"]["netex_label"],
+                        file=uploaded_file,
+                        is_active=set_active,
+                    )
+                    profile.full_clean()
+                    profile.save()
+                result_context["success_message"] = "Profilo Netex caricato correttamente."
+                result_context["upload_form_values"]["netex_label"] = ""
+                result_context["upload_form_values"]["netex_is_active"] = False
+
+            elif action == "upload-siri":
+                uploaded_file = request.FILES.get("siri_file")
+                if uploaded_file is None:
+                    raise ValidationError("Seleziona un file profilo SIRI (.xsd/.xml).")
+                siri_type = result_context["upload_form_values"]["siri_type"]
+                if siri_type not in {
+                    choice[0] for choice in SiriValidationProfile.ProfileType.choices
+                }:
+                    raise ValidationError("Tipo profilo SIRI non valido.")
+                set_active = result_context["upload_form_values"]["siri_is_active"]
+                with transaction.atomic():
+                    if set_active:
+                        SiriValidationProfile.objects.filter(
+                            profile_type=siri_type,
+                            is_active=True,
+                        ).update(is_active=False)
+                    profile = SiriValidationProfile(
+                        profile_type=siri_type,
+                        label=result_context["upload_form_values"]["siri_label"],
+                        file=uploaded_file,
+                        is_active=set_active,
+                    )
+                    profile.full_clean()
+                    profile.save()
+                result_context["success_message"] = "Profilo SIRI caricato correttamente."
+                result_context["upload_form_values"]["siri_label"] = ""
+                result_context["upload_form_values"]["siri_is_active"] = False
+
+            elif action == "upload-indicator":
+                uploaded_file = request.FILES.get("indicator_file")
+                if uploaded_file is None:
+                    raise ValidationError("Seleziona un file indicatori (.yml/.yaml).")
+                profile = IndicatorProfile(
+                    label=result_context["upload_form_values"]["indicator_label"],
+                    file=uploaded_file,
+                    is_active=result_context["upload_form_values"]["indicator_is_active"],
+                )
+                profile.full_clean()
+                profile.save()
+                result_context["success_message"] = (
+                    "Definizione indicatori caricata correttamente."
+                )
+                result_context["upload_form_values"]["indicator_label"] = ""
+                result_context["upload_form_values"]["indicator_is_active"] = False
+
+            elif action == "set-netex-active":
+                profile_id = int(request.POST.get("profile_id", "0"))
+                set_active = _normalize_boolean_flag(request.POST.get("set_active", ""))
+                profile = NetexValidationProfile.objects.filter(pk=profile_id).first()
+                if profile is None:
+                    raise ValidationError("Profilo Netex non trovato.")
+                with transaction.atomic():
+                    if set_active:
+                        NetexValidationProfile.objects.filter(is_active=True).exclude(
+                            pk=profile.pk
+                        ).update(is_active=False)
+                    profile.is_active = set_active
+                    profile.save(update_fields=["is_active", "updated_at"])
+                result_context["success_message"] = "Stato profilo Netex aggiornato."
+
+            elif action == "set-siri-active":
+                profile_id = int(request.POST.get("profile_id", "0"))
+                set_active = _normalize_boolean_flag(request.POST.get("set_active", ""))
+                profile = SiriValidationProfile.objects.filter(pk=profile_id).first()
+                if profile is None:
+                    raise ValidationError("Profilo SIRI non trovato.")
+                with transaction.atomic():
+                    if set_active:
+                        SiriValidationProfile.objects.filter(
+                            profile_type=profile.profile_type,
+                            is_active=True,
+                        ).exclude(pk=profile.pk).update(is_active=False)
+                    profile.is_active = set_active
+                    profile.save(update_fields=["is_active", "updated_at"])
+                result_context["success_message"] = "Stato profilo SIRI aggiornato."
+
+            elif action == "set-indicator-active":
+                profile_id = int(request.POST.get("profile_id", "0"))
+                set_active = _normalize_boolean_flag(request.POST.get("set_active", ""))
+                profile = IndicatorProfile.objects.filter(pk=profile_id).first()
+                if profile is None:
+                    raise ValidationError("Profilo indicatori non trovato.")
+                profile.is_active = set_active
+                profile.save(update_fields=["is_active", "updated_at"])
+                result_context["success_message"] = "Stato profilo indicatori aggiornato."
+
+            else:
+                raise ValidationError("Azione non supportata.")
+
+        except ValidationError as exc:
+            if hasattr(exc, "messages"):
+                result_context["error_message"] = " ".join(exc.messages)
+            else:
+                result_context["error_message"] = str(exc)
+        except (IntegrityError, ValueError):
+            result_context["error_message"] = (
+                "Operazione non completata: verifica dati e vincoli di attivazione."
+            )
+
+    platform_users, platform_user_summary = _build_platform_user_rows()
+    initialization_state = _build_initialization_state()
 
     return render(
         request,
@@ -834,7 +1594,15 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                 "Parametri IAM/OIDC globali",
                 "Politiche inviti e scadenze",
                 "Parametri piattaforma trasversali ai componenti",
-            ]
+            ],
+            "platform_users": platform_users,
+            "platform_user_summary": platform_user_summary,
+            "netex_profiles": initialization_state["netex_profiles"],
+            "siri_profiles": initialization_state["siri_profiles"],
+            "indicator_profiles": initialization_state["indicator_profiles"],
+            "initialization_summary": initialization_state["summary"],
+            "siri_type_choices": SiriValidationProfile.ProfileType.choices,
+            **result_context,
         },
     )
 

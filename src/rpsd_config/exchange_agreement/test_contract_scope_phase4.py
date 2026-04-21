@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: EUPL-1.2
 import json
 from datetime import date
+from unittest.mock import patch
 
 from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 from django.test import TestCase
 from django.urls import reverse
 
@@ -285,3 +287,97 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
             reader_page,
             reverse("exchange_agreement:contract-invitation-create"),
         )
+
+    def test_agency_contract_create_page_can_create_company_inline(self):
+        self.client.force_login(self.agency_admin_a)
+        url = reverse(
+            "exchange_agreement:agency-contract-create",
+            args=[self.agency_a.agency_key],
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "action": "create-company",
+                "company_name": "TPER Bologna",
+                "company_description": "Operatore TPL",
+                "contract_code": "CTR-A-UI-001",
+                "contractor_company_id": "",
+                "lot_id": self.lot.id,
+                "start_date": "2036-01-01",
+                "end_date": "",
+                "tender_id": "TENDER-UI-001",
+                "status": Contract.ContractStatus.DRAFT,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Azienda creata correttamente.")
+        created_company = Company.objects.get(name="TPER Bologna")
+        self.assertContains(response, f'value="{created_company.id}" selected')
+        self.assertContains(response, 'value="CTR-A-UI-001"')
+
+    def test_agency_contract_create_page_rejects_duplicate_company_case_insensitive(self):
+        self.client.force_login(self.agency_admin_a)
+        url = reverse(
+            "exchange_agreement:agency-contract-create",
+            args=[self.agency_a.agency_key],
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "action": "create-company",
+                "company_name": "atm",
+                "company_description": "Duplicate case-insensitive",
+                "contract_code": "",
+                "contractor_company_id": "",
+                "lot_id": "",
+                "start_date": "",
+                "end_date": "",
+                "tender_id": "",
+                "status": Contract.ContractStatus.DRAFT,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Esiste gia' una azienda con questo nome.")
+        self.assertEqual(Company.objects.filter(name__iexact="atm").count(), 1)
+
+    def test_agency_contract_create_page_handles_company_create_race_integrity_error(self):
+        self.client.force_login(self.agency_admin_a)
+        url = reverse(
+            "exchange_agreement:agency-contract-create",
+            args=[self.agency_a.agency_key],
+        )
+        original_create = Company.objects.create
+
+        def _race_side_effect(*args, **kwargs):
+            if not Company.objects.filter(name__iexact="Race Company").exists():
+                original_create(name="Race Company", description="Concurrent insert")
+            raise IntegrityError("duplicate key value violates unique constraint")
+
+        with patch(
+            "rpsd_config.exchange_agreement.views.Company.objects.create",
+            side_effect=_race_side_effect,
+        ):
+            response = self.client.post(
+                url,
+                {
+                    "action": "create-company",
+                    "company_name": "Race Company",
+                    "company_description": "Race",
+                    "contract_code": "",
+                    "contractor_company_id": "",
+                    "lot_id": "",
+                    "start_date": "",
+                    "end_date": "",
+                    "tender_id": "",
+                    "status": Contract.ContractStatus.DRAFT,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Azienda gia' creata da un altro utente in parallelo.",
+        )
+        self.assertEqual(Company.objects.filter(name__iexact="Race Company").count(), 1)

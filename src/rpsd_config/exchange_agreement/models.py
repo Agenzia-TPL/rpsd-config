@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 import uuid
 from datetime import date, timedelta
+from pathlib import Path
 
 # models.py (EN version)
 from django.conf import settings
@@ -140,6 +141,111 @@ class Company(TimeStampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+def _platform_initialization_file_path(*, category: str, filename: str) -> str:
+    extension = Path(filename).suffix.lower()
+    return f"platform/initialization/{category}/{uuid.uuid4().hex}{extension}"
+
+
+def netex_profile_upload_path(instance, filename):
+    return _platform_initialization_file_path(category="netex", filename=filename)
+
+
+def siri_profile_upload_path(instance, filename):
+    return _platform_initialization_file_path(category="siri", filename=filename)
+
+
+def indicator_profile_upload_path(instance, filename):
+    return _platform_initialization_file_path(category="indicators", filename=filename)
+
+
+class NetexValidationProfile(TimeStampedModel):
+    label = models.CharField(max_length=128, blank=True, default="")
+    file = models.FileField(
+        upload_to=netex_profile_upload_path,
+        max_length=512,
+        validators=[FileExtensionValidator(allowed_extensions=["xsd"])],
+        help_text="Validation profile file (.xsd).",
+    )
+    is_active = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        verbose_name = "Netex validation profile"
+        verbose_name_plural = "Netex validation profiles"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_active"],
+                condition=models.Q(is_active=True),
+                name="uniq_active_netex_validation_profile",
+            )
+        ]
+
+    def __str__(self) -> str:
+        if self.label:
+            return self.label
+        return Path(self.file.name).name
+
+
+class SiriValidationProfile(TimeStampedModel):
+    class ProfileType(models.TextChoices):
+        PT = "siri-pt", _("SIRI PT")
+        SX = "siri-sx", _("SIRI SX")
+        VM = "siri-vm", _("SIRI VM")
+        SM = "siri-sm", _("SIRI SM")
+
+    profile_type = models.CharField(
+        max_length=32,
+        choices=ProfileType.choices,
+        default=ProfileType.PT,
+    )
+    label = models.CharField(max_length=128, blank=True, default="")
+    file = models.FileField(
+        upload_to=siri_profile_upload_path,
+        max_length=512,
+        validators=[FileExtensionValidator(allowed_extensions=["xsd", "xml"])],
+        help_text="SIRI validation profile file (.xsd/.xml).",
+    )
+    is_active = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        verbose_name = "SIRI validation profile"
+        verbose_name_plural = "SIRI validation profiles"
+        ordering = ["profile_type", "-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["profile_type"],
+                condition=models.Q(is_active=True),
+                name="uniq_active_siri_profile_by_type",
+            )
+        ]
+
+    def __str__(self) -> str:
+        if self.label:
+            return f"{self.profile_type} - {self.label}"
+        return f"{self.profile_type} - {Path(self.file.name).name}"
+
+
+class IndicatorProfile(TimeStampedModel):
+    label = models.CharField(max_length=128, blank=True, default="")
+    file = models.FileField(
+        upload_to=indicator_profile_upload_path,
+        max_length=512,
+        validators=[FileExtensionValidator(allowed_extensions=["yml", "yaml"])],
+        help_text="Indicator definition file (.yml/.yaml).",
+    )
+    is_active = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        verbose_name = "Indicator profile"
+        verbose_name_plural = "Indicator profiles"
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self) -> str:
+        if self.label:
+            return self.label
+        return Path(self.file.name).name
 
 
 # -----------------------------------------------
