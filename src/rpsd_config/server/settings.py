@@ -127,6 +127,7 @@ class GeneralSettings(BaseSettings):
         "django.middleware.common.CommonMiddleware",
         "django.middleware.csrf.CsrfViewMiddleware",
         "django.contrib.auth.middleware.AuthenticationMiddleware",
+        "rpsd_config.server.bearer_auth.JWTBearerMiddleware",
         "allauth.account.middleware.AccountMiddleware",
         "django.contrib.messages.middleware.MessageMiddleware",
         "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -159,6 +160,7 @@ class GeneralSettings(BaseSettings):
     AUTHENTICATION_BACKENDS: list[str] = [
         "django.contrib.auth.backends.ModelBackend",
         "allauth.account.auth_backends.AuthenticationBackend",
+        "rpsd_config.server.bearer_auth.JWTBearerBackend",
     ]
 
     LOGIN_REDIRECT_URL: str = "/"

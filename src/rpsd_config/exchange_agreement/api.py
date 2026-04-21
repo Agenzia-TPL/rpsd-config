@@ -11,6 +11,9 @@ from django.urls import reverse
 from django.utils import timezone
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
+from ninja.security import SessionAuth
+
+from rpsd_config.server.bearer_auth import BearerTokenAuth
 
 from .models import (
     Agency,
@@ -250,7 +253,11 @@ class ContractPublicationDetailSchema(ContractPublicationSummarySchema):
     snapshot: dict
 
 
-api = NinjaAPI(title="RPSD Exchange Agreement API", version="1.0")
+api = NinjaAPI(
+    title="RPSD Exchange Agreement API",
+    version="1.0",
+    auth=[SessionAuth(), BearerTokenAuth()],
+)
 
 
 def _oidc_provider_id() -> str:
@@ -1027,7 +1034,7 @@ def bootstrap_agency_endpoint(request, payload: AgencyBootstrapRequest):
     )
 
 
-@api.get("/invitations/{token}/check", response=InvitationCheckResponse)
+@api.get("/invitations/{token}/check", response=InvitationCheckResponse, auth=None)
 def check_invitation(request, token: str):
     contract_invitation = (
         ContractInvitation.objects.select_related("contract").filter(token=token).first()
@@ -1070,7 +1077,7 @@ def check_invitation(request, token: str):
     )
 
 
-@api.post("/invitations/{token}/start", response=InvitationStartResponse)
+@api.post("/invitations/{token}/start", response=InvitationStartResponse, auth=None)
 def start_onboarding(request, token: str):
     contract_invitation = ContractInvitation.objects.filter(token=token).first()
     agency_invitation = AgencyInvitation.objects.filter(token=token).first()
