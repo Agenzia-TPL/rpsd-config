@@ -24,8 +24,8 @@
         <button
           type="submit"
           class="btn btn-outline-danger btn-sm"
-          {% if company_has_contracts %}disabled{% endif %}
-          title="{% if company_has_contracts %}Azienda collegata a contratti: eliminazione non consentita{% endif %}"
+          {% if company_has_active_contracts %}disabled{% endif %}
+          title="{% if company_has_active_contracts %}Azienda con contratti attivi: eliminazione non consentita{% endif %}"
         >
           Elimina azienda
         </button>
@@ -72,9 +72,13 @@
     <div class="card-body">
       <h2 class="h5">Anagrafica</h2>
       <div class="mb-3">
-        {% if company_has_contracts %}
+        {% if company_has_active_contracts %}
           <span class="badge text-bg-warning">
-            Eliminazione non consentita: {{ company_contract_count }} contratto/i collegato/i
+            Eliminazione non consentita: {{ company_active_contract_count }} contratto/i attivo/i
+          </span>
+        {% elif company_has_contracts %}
+          <span class="badge text-bg-secondary">
+            Nessun contratto attivo, ma sono presenti {{ company_contract_count }} contratto/i storico/i collegato/i
           </span>
         {% else %}
           <span class="badge text-bg-success">Azienda eliminabile (nessun contratto collegato)</span>
@@ -191,6 +195,17 @@
         {{ m2m_exchange_info.status_message }}
       </p>
       <dl class="row mb-0">
+        <dt class="col-sm-4 text-body-secondary">Integrazione</dt>
+        <dd class="col-sm-8">
+          {% if m2m_exchange_info.integration_name %}
+            <code>{{ m2m_exchange_info.integration_name }}</code>
+            <span class="text-body-secondary">({{ m2m_exchange_info.environment }})</span>
+          {% else %}
+            <span class="text-body-secondary">Non configurata</span>
+          {% endif %}
+        </dd>
+        <dt class="col-sm-4 text-body-secondary">Stato integrazione</dt>
+        <dd class="col-sm-8">{{ m2m_exchange_info.status_label }}</dd>
         <dt class="col-sm-4 text-body-secondary">Client M2M</dt>
         <dd class="col-sm-8">
           {% if m2m_exchange_info.client_id %}
@@ -199,9 +214,38 @@
             <span class="text-body-secondary">Non configurato</span>
           {% endif %}
         </dd>
+        <dt class="col-sm-4 text-body-secondary">Key ID cifratura</dt>
+        <dd class="col-sm-8">
+          {% if m2m_exchange_info.secret_key_id %}
+            <code>{{ m2m_exchange_info.secret_key_id }}</code>
+          {% else %}
+            <span class="text-body-secondary">N/D</span>
+          {% endif %}
+        </dd>
+        <dt class="col-sm-4 text-body-secondary">Secret aggiornato il</dt>
+        <dd class="col-sm-8">
+          {% if m2m_exchange_info.secret_updated_at %}
+            {{ m2m_exchange_info.secret_updated_at|date:"d/m/Y H:i" }} UTC
+          {% else %}
+            <span class="text-body-secondary">N/D</span>
+          {% endif %}
+        </dd>
+        <dt class="col-sm-4 text-body-secondary">Ultima rotazione</dt>
+        <dd class="col-sm-8">
+          {% if m2m_exchange_info.last_secret_rotation_at %}
+            {{ m2m_exchange_info.last_secret_rotation_at|date:"d/m/Y H:i" }} UTC
+          {% else %}
+            <span class="text-body-secondary">Mai eseguita</span>
+          {% endif %}
+        </dd>
         <dt class="col-sm-4 text-body-secondary">Secret corrente</dt>
         <dd class="col-sm-8">
-          {% if m2m_exchange_info.credentials_available %}
+          {% if m2m_exchange_info.revealed_secret %}
+            <code>{{ m2m_exchange_info.revealed_secret }}</code>
+            <p class="small text-danger mt-2 mb-0">
+              Secret mostrato su richiesta. Copialo ora.
+            </p>
+          {% elif m2m_exchange_info.credentials_available %}
             <code>••••••••••••••••</code>
           {% else %}
             <span class="text-body-secondary">Non disponibile</span>
@@ -215,10 +259,50 @@
     <div class="card-body">
       <h2 class="h5">Operativita interscambio</h2>
       <p class="text-body-secondary small mb-3">
-        La rotazione automatica del secret M2M verra' abilitata quando il modello credenziali
-        per azienda sara' disponibile lato backend.
+        Le operazioni sono abilitate per utenti platform admin, agency admin o superuser.
       </p>
-      <button class="btn btn-outline-primary" disabled>Ruota secret client</button>
+      <div class="d-flex flex-wrap gap-2">
+        <form method="post" class="d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="tab" value="interscambio">
+          <input type="hidden" name="action" value="reveal-client-secret">
+          <button
+            type="submit"
+            class="btn btn-outline-secondary"
+            {% if not m2m_exchange_info.can_reveal_secret %}disabled{% endif %}
+          >
+            Mostra secret client
+          </button>
+        </form>
+        <form method="post" class="d-inline">
+          {% csrf_token %}
+          <input type="hidden" name="tab" value="interscambio">
+          <input type="hidden" name="action" value="rotate-client-secret">
+          <button
+            type="submit"
+            class="btn btn-outline-primary"
+            {% if not m2m_exchange_info.can_rotate_secret %}disabled{% endif %}
+          >
+            Ruota secret client
+          </button>
+        </form>
+        <form
+          method="post"
+          class="d-inline"
+          onsubmit="return confirm('Confermi la revoca del client M2M?');"
+        >
+          {% csrf_token %}
+          <input type="hidden" name="tab" value="interscambio">
+          <input type="hidden" name="action" value="revoke-client">
+          <button
+            type="submit"
+            class="btn btn-outline-danger"
+            {% if not m2m_exchange_info.can_revoke_client %}disabled{% endif %}
+          >
+            Revoca client M2M
+          </button>
+        </form>
+      </div>
     </div>
   </section>
 {% endif %}

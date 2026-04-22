@@ -336,6 +336,30 @@ class KeycloakAdminSettings(BaseSettings):
         return self
 
 
+class M2MSettings(BaseSettings):
+    # Default suffix for deterministic technical principal IDs:
+    # "<company-slug>-<suffix>" (implemented in service layer).
+    M2M_CLIENT_ID_SUFFIX: str = Field(default="default-prod")
+
+    # Secret-at-rest protection key material (runtime provided in real deployments).
+    # Keep empty in local-dev until the encryption layer is enabled.
+    M2M_SECRET_ENCRYPTION_KEY: str = Field(default="")
+    M2M_SECRET_ENCRYPTION_KEY_ID: str = Field(default="local-dev")
+
+    # Internal authz endpoint policy (ingest -> config).
+    M2M_INTERNAL_AUTHZ_REQUIRE_BEARER: bool = Field(default=True)
+    M2M_INTERNAL_AUTHZ_ALLOWED_CLIENTS_CSV: str = Field(default="rpsd-ingest")
+    M2M_INTERNAL_AUTHZ_AUDIENCE: str = Field(default="rpsd-config-internal")
+
+    @property
+    def m2m_internal_authz_allowed_clients(self) -> list[str]:
+        return [
+            client_id.strip()
+            for client_id in self.M2M_INTERNAL_AUTHZ_ALLOWED_CLIENTS_CSV.split(",")
+            if client_id.strip()
+        ]
+
+
 class AppSettings(BaseSettings):
     """Application-specific settings (non-Django framework settings).
 
@@ -359,6 +383,7 @@ class ProjectSettings(
     LeafletSettings,
     OIDCSettings,
     KeycloakAdminSettings,
+    M2MSettings,
     AppSettings,
 ):
     model_config = SettingsConfigDict(

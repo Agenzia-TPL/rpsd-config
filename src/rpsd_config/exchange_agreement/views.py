@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 import base64
 import json
+import logging
 from datetime import date
 from urllib.parse import urlencode
 
@@ -13,6 +14,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
+from django.db.models.deletion import ProtectedError
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import NoReverseMatch, reverse
@@ -33,6 +35,7 @@ from .models import (
     Contract,
     ContractInvitation,
     ContractMembership,
+    IntegrationPrincipal,
     IndicatorProfile,
     Lot,
     NetexValidationProfile,
@@ -57,6 +60,23 @@ from .services.agency_bootstrap import (
     AgencyBootstrapValidationError,
     bootstrap_agency_with_admin_invitation,
 )
+from .services.m2m_audit import audit_m2m_event, resolve_request_id
+from .services.m2m_provisioning import (
+    M2MProvisioningError,
+    M2MProvisionResult,
+    provision_default_m2m_principal_for_company,
+)
+from .services.m2m_client_naming import (
+    DEFAULT_M2M_ENVIRONMENT,
+    DEFAULT_M2M_INTEGRATION_NAME,
+)
+from .services.m2m_secret_store import (
+    M2MSecretStorageError,
+    reveal_principal_secret,
+    store_principal_secret,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _cache_group_membership_for_current_session(*, user, group_path: str) -> None:
@@ -531,6 +551,79 @@ def _can_delete_companies(user) -> bool:
     return _can_view_companies(user)
 
 
+def _get_company_default_m2m_principal(company: Company) -> IntegrationPrincipal | None:
+    return (
+        IntegrationPrincipal.objects.filter(
+            company=company,
+            name=DEFAULT_M2M_INTEGRATION_NAME,
+            environment=DEFAULT_M2M_ENVIRONMENT,
+        )
+        .order_by("id")
+        .first()
+    )
+
+
+def _build_company_m2m_exchange_info(
+    *,
+    principal: IntegrationPrincipal | None,
+    can_manage_m2m: bool,
+    revealed_secret: str | None = None,
+) -> dict:
+    if principal is None:
+        return {
+            "credentials_available": False,
+            "can_rotate_secret": False,
+            "can_reveal_secret": False,
+            "can_revoke_client": False,
+            "client_id": "",
+            "client_uuid": "",
+            "integration_name": "",
+            "environment": "",
+            "status": "",
+            "status_label": "Non configurata",
+            "secret_key_id": "",
+            "secret_updated_at": None,
+            "last_secret_rotation_at": None,
+            "revealed_secret": "",
+            "status_message": (
+                "Credenziali M2M dedicate per azienda non ancora configurate in questa versione."
+            ),
+        }
+
+    has_stored_secret = bool((principal.client_secret_ciphertext or "").strip())
+    is_active_principal = principal.status == IntegrationPrincipal.Status.ACTIVE
+    if principal.status == IntegrationPrincipal.Status.REVOKED:
+        status_message = (
+            "Integrazione M2M revocata. Il client non e' piu' operativo."
+        )
+    else:
+        status_message = (
+            "Integrazione M2M configurata. Usa Mostra secret o Ruota secret per operativita'."
+        )
+
+    return {
+        "credentials_available": has_stored_secret,
+        "can_rotate_secret": bool(
+            can_manage_m2m and principal.keycloak_client_uuid and is_active_principal
+        ),
+        "can_reveal_secret": bool(can_manage_m2m and has_stored_secret and is_active_principal),
+        "can_revoke_client": bool(
+            can_manage_m2m and principal.keycloak_client_uuid and is_active_principal
+        ),
+        "client_id": principal.keycloak_client_id,
+        "client_uuid": principal.keycloak_client_uuid,
+        "integration_name": principal.name,
+        "environment": principal.environment,
+        "status": principal.status,
+        "status_label": principal.get_status_display(),
+        "secret_key_id": principal.client_secret_key_id,
+        "secret_updated_at": principal.client_secret_updated_at,
+        "last_secret_rotation_at": principal.last_secret_rotation_at,
+        "revealed_secret": revealed_secret or "",
+        "status_message": status_message,
+    }
+
+
 def _extract_groups_for_user(user) -> list[str]:
     social = (
         SocialAccount.objects.filter(user=user)
@@ -630,6 +723,134 @@ def _normalize_boolean_flag(value: str) -> bool:
     return (value or "").strip().lower() in {"1", "true", "on", "yes"}
 
 
+def _create_company_with_m2m_provisioning(
+    *,
+    actor,
+    name: str,
+    description: str,
+    request_id: str | None = None,
+) -> tuple[Company, M2MProvisionResult]:
+    with transaction.atomic():
+        company = Company.objects.create(
+            name=name,
+            description=description,
+        )
+        provision = provision_default_m2m_principal_for_company(
+            company=company,
+            actor=actor,
+            request_id=request_id,
+        )
+        return company, provision
+
+
+def _cleanup_company_m2m_principals_before_delete(
+    *,
+    company: Company,
+    actor,
+    request_id: str,
+) -> tuple[bool, str]:
+    principals = list(
+        IntegrationPrincipal.objects.filter(company=company).order_by("id")
+    )
+    if not principals:
+        return True, ""
+
+    try:
+        keycloak_service = KeycloakAdminService.from_settings()
+    except KeycloakAdminConfigError:
+        audit_m2m_event(
+            "principal.revoke",
+            request_id=request_id,
+            outcome="error",
+            actor=actor,
+            company=company,
+            reason="keycloak-admin-config-invalid",
+        )
+        return (
+            False,
+            "Impossibile completare il cleanup IAM dei client M2M associati all'azienda.",
+        )
+
+    for principal in principals:
+        client_uuid = (principal.keycloak_client_uuid or "").strip()
+        if not client_uuid:
+            try:
+                resolved_client = keycloak_service.find_client_by_client_id(
+                    principal.keycloak_client_id
+                )
+            except (KeycloakAdminConfigError, KeycloakAdminAPIError):
+                audit_m2m_event(
+                    "principal.revoke",
+                    request_id=request_id,
+                    outcome="error",
+                    actor=actor,
+                    company=company,
+                    principal=principal,
+                    reason="client-lookup-failed",
+                )
+                return (
+                    False,
+                    "Impossibile completare il cleanup IAM dei client M2M associati all'azienda.",
+                )
+            if resolved_client is None:
+                audit_m2m_event(
+                    "principal.revoke",
+                    request_id=request_id,
+                    outcome="warning",
+                    actor=actor,
+                    company=company,
+                    principal=principal,
+                    reason="client-not-found-on-cleanup",
+                )
+            else:
+                client_uuid = resolved_client.id
+
+        if client_uuid:
+            try:
+                keycloak_service.disable_client(client_uuid=client_uuid)
+            except (KeycloakAdminConfigError, KeycloakAdminAPIError):
+                audit_m2m_event(
+                    "principal.revoke",
+                    request_id=request_id,
+                    outcome="error",
+                    actor=actor,
+                    company=company,
+                    principal=principal,
+                    reason="keycloak-disable-failed-on-company-delete",
+                )
+                return (
+                    False,
+                    "Impossibile completare il cleanup IAM dei client M2M associati all'azienda.",
+                )
+
+        principal.status = IntegrationPrincipal.Status.REVOKED
+        principal.client_secret_ciphertext = ""
+        principal.client_secret_key_id = ""
+        principal.client_secret_updated_at = None
+        update_fields = [
+            "status",
+            "client_secret_ciphertext",
+            "client_secret_key_id",
+            "client_secret_updated_at",
+            "updated_at",
+        ]
+        if client_uuid and principal.keycloak_client_uuid != client_uuid:
+            principal.keycloak_client_uuid = client_uuid
+            update_fields.append("keycloak_client_uuid")
+        principal.save(update_fields=update_fields)
+        audit_m2m_event(
+            "principal.revoke",
+            request_id=request_id,
+            outcome="success",
+            actor=actor,
+            company=company,
+            principal=principal,
+            reason="company-delete-cleanup",
+        )
+
+    return True, ""
+
+
 @login_required
 def agencies_page(request: HttpRequest) -> HttpResponse:
     agency_scope = resolve_user_agency_scope(request.user)
@@ -710,6 +931,7 @@ def company_list_page(request: HttpRequest) -> HttpResponse:
     }
 
     if request.method == "POST":
+        request_id = resolve_request_id(request)
         if not can_create_company:
             raise PermissionDenied(
                 "Solo gli utenti platform admin o superuser possono creare aziende."
@@ -730,13 +952,39 @@ def company_list_page(request: HttpRequest) -> HttpResponse:
             )
         else:
             try:
-                created = Company.objects.create(
+                created, provision = _create_company_with_m2m_provisioning(
+                    actor=request.user,
                     name=name,
                     description=description,
+                    request_id=request_id,
                 )
                 result_context["success_message"] = "Azienda creata correttamente."
                 result_context["created_company"] = created
                 result_context["form_values"] = {"name": "", "description": ""}
+                audit_m2m_event(
+                    "principal.create.dashboard",
+                    request_id=request_id,
+                    outcome="success",
+                    actor=request.user,
+                    company=created,
+                    principal=getattr(provision, "principal", None),
+                    reason="company-list",
+                )
+            except (
+                M2MProvisioningError,
+                KeycloakAdminConfigError,
+                KeycloakAdminAPIError,
+            ):
+                result_context["error_message"] = (
+                    "Impossibile creare azienda: provisioning credenziali M2M fallito."
+                )
+                audit_m2m_event(
+                    "principal.create.dashboard",
+                    request_id=request_id,
+                    outcome="error",
+                    actor=request.user,
+                    reason="company-list-provisioning-failed",
+                )
             except IntegrityError:
                 # Handles concurrent create race between pre-check and insert.
                 existing = Company.objects.filter(name__iexact=name).first()
@@ -850,8 +1098,14 @@ def company_detail_page(request: HttpRequest, company_id: int) -> HttpResponse:
         )
     company_users.sort(key=lambda user_row: user_row["user"].username.lower())
     company_contract_count = len(contracts)
+    company_active_contract_count = sum(1 for contract in contracts if contract.is_active_today)
     company_has_contracts = company_contract_count > 0
+    company_has_active_contracts = company_active_contract_count > 0
     can_delete_company = _can_delete_companies(request.user)
+    can_manage_m2m = _can_view_companies(request.user)
+    principal = _get_company_default_m2m_principal(company)
+    revealed_secret = ""
+    request_id = resolve_request_id(request)
 
     if request.method == "POST":
         action = (request.POST.get("action") or "").strip()
@@ -860,29 +1114,274 @@ def company_detail_page(request: HttpRequest, company_id: int) -> HttpResponse:
                 raise PermissionDenied(
                     "Solo platform admin, agency admin o superuser possono eliminare aziende."
                 )
-            if company_has_contracts:
+            if company_has_active_contracts:
                 result_context["error_message"] = (
-                    "Questa azienda non puo' essere eliminata perche' e' collegata a contratti."
+                    "Questa azienda non puo' essere eliminata perche' ha contratti attivi."
+                )
+            elif company_has_contracts:
+                result_context["error_message"] = (
+                    "Questa azienda non puo' essere eliminata perche' esistono "
+                    "contratti collegati."
                 )
             else:
-                deleted_company_name = company.name
-                company.delete()
-                messages.success(
-                    request,
-                    f"Azienda '{deleted_company_name}' eliminata correttamente.",
+                cleanup_ok, cleanup_message = _cleanup_company_m2m_principals_before_delete(
+                    company=company,
+                    actor=request.user,
+                    request_id=request_id,
                 )
-                return redirect("exchange_agreement:company-list")
+                if not cleanup_ok:
+                    result_context["error_message"] = cleanup_message
+                else:
+                    deleted_company_name = company.name
+                    try:
+                        company.delete()
+                    except ProtectedError:
+                        result_context["error_message"] = (
+                            "Questa azienda non puo' essere eliminata perche' esistono "
+                            "contratti collegati."
+                        )
+                    else:
+                        messages.success(
+                            request,
+                            f"Azienda '{deleted_company_name}' eliminata correttamente.",
+                        )
+                        return redirect("exchange_agreement:company-list")
+        elif action == "reveal-client-secret":
+            active_tab = "interscambio"
+            if not can_manage_m2m:
+                raise PermissionDenied(
+                    "Non hai i permessi per visualizzare il secret del client M2M."
+                )
+            if principal is None:
+                result_context["error_message"] = (
+                    "Nessuna integrazione M2M configurata per questa azienda."
+                )
+                audit_m2m_event(
+                    "secret.reveal",
+                    request_id=request_id,
+                    outcome="warning",
+                    actor=request.user,
+                    company=company,
+                    reason="principal-missing",
+                )
+            else:
+                try:
+                    secret = reveal_principal_secret(principal=principal)
+                except M2MSecretStorageError:
+                    result_context["error_message"] = (
+                        "Impossibile decifrare il secret M2M salvato."
+                    )
+                    audit_m2m_event(
+                        "secret.reveal",
+                        request_id=request_id,
+                        outcome="error",
+                        actor=request.user,
+                        company=company,
+                        principal=principal,
+                        reason="decrypt-failed",
+                    )
+                else:
+                    if not secret:
+                        result_context["error_message"] = (
+                            "Secret M2M non disponibile per questa integrazione."
+                        )
+                        audit_m2m_event(
+                            "secret.reveal",
+                            request_id=request_id,
+                            outcome="warning",
+                            actor=request.user,
+                            company=company,
+                            principal=principal,
+                            reason="secret-missing",
+                        )
+                    else:
+                        revealed_secret = secret
+                        result_context["success_message"] = (
+                            "Secret client recuperato. Copialo ora."
+                        )
+                        audit_m2m_event(
+                            "secret.reveal",
+                            request_id=request_id,
+                            outcome="success",
+                            actor=request.user,
+                            company=company,
+                            principal=principal,
+                        )
+        elif action == "rotate-client-secret":
+            active_tab = "interscambio"
+            if not can_manage_m2m:
+                raise PermissionDenied(
+                    "Non hai i permessi per ruotare il secret del client M2M."
+                )
+            if principal is None:
+                result_context["error_message"] = (
+                    "Nessuna integrazione M2M configurata per questa azienda."
+                )
+                audit_m2m_event(
+                    "secret.rotate",
+                    request_id=request_id,
+                    outcome="warning",
+                    actor=request.user,
+                    company=company,
+                    reason="principal-missing",
+                )
+            elif not principal.keycloak_client_uuid:
+                result_context["error_message"] = (
+                    "UUID client Keycloak assente: rotazione non possibile."
+                )
+                audit_m2m_event(
+                    "secret.rotate",
+                    request_id=request_id,
+                    outcome="warning",
+                    actor=request.user,
+                    company=company,
+                    principal=principal,
+                    reason="client-uuid-missing",
+                )
+            else:
+                try:
+                    rotated_secret = KeycloakAdminService.from_settings().rotate_client_secret(
+                        client_uuid=principal.keycloak_client_uuid
+                    )
+                except (KeycloakAdminConfigError, KeycloakAdminAPIError):
+                    result_context["error_message"] = (
+                        "Impossibile ruotare il secret client M2M."
+                    )
+                    audit_m2m_event(
+                        "secret.rotate",
+                        request_id=request_id,
+                        outcome="error",
+                        actor=request.user,
+                        company=company,
+                        principal=principal,
+                        reason="keycloak-rotate-failed",
+                    )
+                else:
+                    try:
+                        store_principal_secret(
+                            principal=principal,
+                            raw_secret=rotated_secret,
+                            mark_rotation=True,
+                        )
+                    except M2MSecretStorageError:
+                        logger.exception(
+                            "m2m.secret.rotate_local_persist_failed",
+                            extra={
+                                "integration_principal_id": principal.id,
+                                "company_id": company.id,
+                                "keycloak_client_id": principal.keycloak_client_id,
+                            },
+                        )
+                        revealed_secret = rotated_secret
+                        result_context["error_message"] = (
+                            "Secret ruotato su Keycloak ma non persistito localmente. "
+                            "Salvalo ora e verifica la configurazione M2M."
+                        )
+                        audit_m2m_event(
+                            "secret.rotate",
+                            request_id=request_id,
+                            outcome="error",
+                            actor=request.user,
+                            company=company,
+                            principal=principal,
+                            reason="local-store-failed",
+                        )
+                    else:
+                        principal.refresh_from_db()
+                        revealed_secret = rotated_secret
+                        result_context["success_message"] = (
+                            "Secret client ruotato correttamente."
+                        )
+                        audit_m2m_event(
+                            "secret.rotate",
+                            request_id=request_id,
+                            outcome="success",
+                            actor=request.user,
+                            company=company,
+                            principal=principal,
+                        )
+        elif action == "revoke-client":
+            active_tab = "interscambio"
+            if not can_manage_m2m:
+                raise PermissionDenied(
+                    "Non hai i permessi per revocare il client M2M."
+                )
+            if principal is None:
+                result_context["error_message"] = (
+                    "Nessuna integrazione M2M configurata per questa azienda."
+                )
+                audit_m2m_event(
+                    "principal.revoke",
+                    request_id=request_id,
+                    outcome="warning",
+                    actor=request.user,
+                    company=company,
+                    reason="principal-missing",
+                )
+            elif not principal.keycloak_client_uuid:
+                result_context["error_message"] = (
+                    "UUID client Keycloak assente: revoca non possibile."
+                )
+                audit_m2m_event(
+                    "principal.revoke",
+                    request_id=request_id,
+                    outcome="warning",
+                    actor=request.user,
+                    company=company,
+                    principal=principal,
+                    reason="client-uuid-missing",
+                )
+            else:
+                try:
+                    KeycloakAdminService.from_settings().disable_client(
+                        client_uuid=principal.keycloak_client_uuid
+                    )
+                except (KeycloakAdminConfigError, KeycloakAdminAPIError):
+                    result_context["error_message"] = (
+                        "Impossibile revocare il client M2M."
+                    )
+                    audit_m2m_event(
+                        "principal.revoke",
+                        request_id=request_id,
+                        outcome="error",
+                        actor=request.user,
+                        company=company,
+                        principal=principal,
+                        reason="keycloak-disable-failed",
+                    )
+                else:
+                    principal.status = IntegrationPrincipal.Status.REVOKED
+                    principal.client_secret_ciphertext = ""
+                    principal.client_secret_key_id = ""
+                    principal.client_secret_updated_at = None
+                    principal.save(
+                        update_fields=[
+                            "status",
+                            "client_secret_ciphertext",
+                            "client_secret_key_id",
+                            "client_secret_updated_at",
+                            "updated_at",
+                        ]
+                    )
+                    result_context["success_message"] = (
+                        "Client M2M revocato correttamente."
+                    )
+                    audit_m2m_event(
+                        "principal.revoke",
+                        request_id=request_id,
+                        outcome="success",
+                        actor=request.user,
+                        company=company,
+                        principal=principal,
+                    )
         else:
             result_context["error_message"] = "Azione non supportata."
 
-    m2m_exchange_info = {
-        "credentials_available": False,
-        "can_rotate_secret": False,
-        "client_id": "",
-        "status_message": (
-            "Credenziali M2M dedicate per azienda non ancora configurate in questa versione."
-        ),
-    }
+    m2m_exchange_info = _build_company_m2m_exchange_info(
+        principal=principal,
+        can_manage_m2m=can_manage_m2m,
+        revealed_secret=revealed_secret,
+    )
 
     return render(
         request,
@@ -895,6 +1394,8 @@ def company_detail_page(request: HttpRequest, company_id: int) -> HttpResponse:
             "can_delete_company": can_delete_company,
             "company_has_contracts": company_has_contracts,
             "company_contract_count": company_contract_count,
+            "company_has_active_contracts": company_has_active_contracts,
+            "company_active_contract_count": company_active_contract_count,
             "m2m_exchange_info": m2m_exchange_info,
             **result_context,
         },
@@ -1273,6 +1774,7 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
     }
 
     if request.method == "POST":
+        request_id = resolve_request_id(request)
         form_action = (request.POST.get("action") or "create-contract").strip()
         form_values = {
             "contract_code": request.POST.get("contract_code", "").strip(),
@@ -1308,9 +1810,26 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
                     )
                 else:
                     try:
-                        created_company = Company.objects.create(
+                        created_company, provision = _create_company_with_m2m_provisioning(
+                            actor=request.user,
                             name=company_name,
                             description=company_description,
+                            request_id=request_id,
+                        )
+                    except (
+                        M2MProvisioningError,
+                        KeycloakAdminConfigError,
+                        KeycloakAdminAPIError,
+                    ):
+                        result_context["company_error_message"] = (
+                            "Impossibile creare azienda: provisioning credenziali M2M fallito."
+                        )
+                        audit_m2m_event(
+                            "principal.create.dashboard",
+                            request_id=request_id,
+                            outcome="error",
+                            actor=request.user,
+                            reason="agency-contract-inline-provisioning-failed",
                         )
                     except IntegrityError:
                         race_company = Company.objects.filter(
@@ -1332,6 +1851,15 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
                             "Azienda creata correttamente."
                         )
                         result_context["created_company"] = created_company
+                        audit_m2m_event(
+                            "principal.create.dashboard",
+                            request_id=request_id,
+                            outcome="success",
+                            actor=request.user,
+                            company=created_company,
+                            principal=getattr(provision, "principal", None),
+                            reason="agency-contract-inline",
+                        )
                         result_context["company_form_values"] = {
                             "name": "",
                             "description": "",

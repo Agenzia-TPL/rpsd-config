@@ -128,11 +128,11 @@ rpsd-config/
    docker compose up -d
    ```
 
-2. Copy the example environment file and adjust the values:
+2. Create your local runtime environment file and adjust values if needed:
 
    ```bash
-   cp .env.local.example .env.base
-   # edit .env.base and .env as needed
+   cp .env.development .env
+   # optionally edit .env for local overrides
    ```
 
 3. Install Python dependencies:
@@ -159,17 +159,13 @@ rpsd-config/
    uv run devserver
    ```
 
-The application will be available at `http://client.localhost:12080`.
+The application will be available at:
 
-A local Keycloak instance is expected at `http://keycloak.localhost:19300`
+- `http://localhost:8000` (standalone `uv run devserver`)
+- `http://localhost:20100` (when started via the `rpsd` compose stack)
+
+A local Keycloak instance is expected at `http://localhost:19300`
 (see the `rpsd` repository for Keycloak setup).
-
-Add the following entries to `/etc/hosts` if not already present:
-
-```
-127.0.0.1 client.localhost
-127.0.0.1 keycloak.localhost
-```
 
 ### Docker / production
 
@@ -202,6 +198,17 @@ All settings are loaded from environment variables (and optionally from
 | `OIDC_CLIENT_ID` | No | `django` | OIDC client ID registered in Keycloak. |
 | `OIDC_CLIENT_SECRET` | No | `django-secret` | OIDC client secret. Set in production. |
 | `OIDC_FETCH_USERINFO` | No | `False` | If `True`, Django calls the userinfo endpoint instead of reading claims from the ID token. |
+| `KEYCLOAK_ADMIN_BASE_URL` | No | derived from discovery | Base URL for Keycloak Admin API (`http://keycloak:8080` in all-in-one compose). |
+| `KEYCLOAK_ADMIN_REALM` | No | derived from discovery | Realm used by Admin API (must be `rpsd`). |
+| `KEYCLOAK_ADMIN_CLIENT_ID` | No | `rpsd-config-admin-api` | Service account client used by config to manage IAM entities. |
+| `KEYCLOAK_ADMIN_CLIENT_SECRET` | Yes (for IAM automation) | — | Secret for `KEYCLOAK_ADMIN_CLIENT_ID`. |
+| `KEYCLOAK_ADMIN_GROUP_ROOT` | No | `/rpsd` | Root group path used by RBAC provisioning. |
+| `M2M_CLIENT_ID_SUFFIX` | No | `default-prod` | Suffix used for deterministic M2M client naming. |
+| `M2M_SECRET_ENCRYPTION_KEY` | Yes (for M2M secret persistence) | — | Base64url Fernet key used to encrypt client secrets at rest. |
+| `M2M_SECRET_ENCRYPTION_KEY_ID` | No | `local-dev` | Logical key identifier stored with encrypted secret metadata. |
+| `M2M_INTERNAL_AUTHZ_REQUIRE_BEARER` | No | `True` | Requires bearer token on internal authz endpoint. |
+| `M2M_INTERNAL_AUTHZ_ALLOWED_CLIENTS_CSV` | No | `rpsd-ingest` | Allowlist of service clients allowed to call `/internal/authz/check`. |
+| `M2M_INTERNAL_AUTHZ_AUDIENCE` | No | `rpsd-config-internal` | Expected audience for internal service-to-service JWT. |
 | `EXTERNAL_SCHEME` | No | `http` | Public-facing URL scheme (`http` or `https`). Used for building absolute URLs. |
 | `EXTERNAL_HOST` | No | `localhost` | Public-facing hostname. |
 | `EXTERNAL_PORT` | No | `20100` | Public-facing port. |
@@ -224,7 +231,7 @@ python src/rpsd_config/manage.py shell -c "from django.conf import settings; pri
 2. Keycloak token endpoint acceptance of `client_id` / `client_secret`
 
 ```bash
-curl -X POST "http://keycloak.localhost:19300/realms/rapsodia/protocol/openid-connect/token" \
+curl -X POST "http://localhost:19300/realms/rpsd/protocol/openid-connect/token" \
   -H "content-type: application/x-www-form-urlencoded" \
   --data "grant_type=client_credentials&client_id=django&client_secret=django-secret"
 ```
@@ -234,12 +241,12 @@ curl -X POST "http://keycloak.localhost:19300/realms/rapsodia/protocol/openid-co
 Example invite URL (local):
 
 ```txt
-http://client.localhost:12080/invite/6bf9bc71-45ca-4218-93bb-f4293a6f99b2/
+http://localhost:20100/invite/6bf9bc71-45ca-4218-93bb-f4293a6f99b2/
 ```
 
 ## API (Django Ninja)
 
-API base path:
+Public API base path:
 
 - `/exchange_agreement/api/`
 
@@ -247,6 +254,10 @@ API docs:
 
 - Swagger UI: `/exchange_agreement/api/docs`
 - OpenAPI JSON: `/exchange_agreement/api/openapi.json`
+
+Internal service endpoint:
+
+- `POST /internal/authz/check` (service-to-service, bearer protected)
 
 Key endpoints (v1):
 

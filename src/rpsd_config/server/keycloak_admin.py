@@ -81,6 +81,20 @@ class KeycloakUserRef:
     email: str
 
 
+@dataclass(frozen=True)
+class KeycloakClientRef:
+    id: str
+    client_id: str
+    enabled: bool
+
+
+@dataclass(frozen=True)
+class KeycloakClientCredentials:
+    client: KeycloakClientRef
+    secret: str
+    created: bool
+
+
 @dataclass
 class _AccessTokenCache:
     token: str
@@ -266,6 +280,14 @@ class KeycloakAdminService:
             id=str(payload.get("id") or ""),
             username=str(payload.get("username") or ""),
             email=str(payload.get("email") or ""),
+        )
+
+    @staticmethod
+    def _to_client_ref(payload: dict[str, Any]) -> KeycloakClientRef:
+        return KeycloakClientRef(
+            id=str(payload.get("id") or ""),
+            client_id=str(payload.get("clientId") or ""),
+            enabled=bool(payload.get("enabled", True)),
         )
 
     def get_group_by_path(self, group_path: str) -> KeycloakGroupRef | None:
@@ -509,3 +531,193 @@ class KeycloakAdminService:
             f"users/{user_id}/groups/{group_id}",
             expected_status=(204,),
         )
+
+    def get_client_by_id(self, client_uuid: str) -> KeycloakClientRef:
+        response = self._request(
+            "GET",
+            f"clients/{client_uuid}",
+            expected_status=(200,),
+        )
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise KeycloakAdminAPIError(
+                method="GET",
+                url=f"{self._realm_admin_base_url}/clients/{client_uuid}",
+                status_code=200,
+                detail="Unexpected client response payload type.",
+            )
+        return self._to_client_ref(payload)
+
+    def find_client_by_client_id(self, client_id: str) -> KeycloakClientRef | None:
+        response = self._request(
+            "GET",
+            "clients",
+            expected_status=(200,),
+            params={"clientId": client_id, "max": 2},
+        )
+        payload = response.json()
+        if not isinstance(payload, list):
+            raise KeycloakAdminAPIError(
+                method="GET",
+                url=f"{self._realm_admin_base_url}/clients",
+                status_code=200,
+                detail="Unexpected clients response payload type.",
+            )
+        if not payload:
+            return None
+
+        exact = next(
+            (
+                item
+                for item in payload
+                if isinstance(item, dict)
+                and str(item.get("clientId") or "") == client_id
+            ),
+            payload[0],
+        )
+        if not isinstance(exact, dict):
+            return None
+        return self._to_client_ref(exact)
+
+    def get_client_secret(self, *, client_uuid: str) -> str:
+        response = self._request(
+            "GET",
+            f"clients/{client_uuid}/client-secret",
+            expected_status=(200,),
+        )
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise KeycloakAdminAPIError(
+                method="GET",
+                url=f"{self._realm_admin_base_url}/clients/{client_uuid}/client-secret",
+                status_code=200,
+                detail="Unexpected client-secret response payload type.",
+            )
+        secret = payload.get("value")
+        if not isinstance(secret, str) or not secret:
+            raise KeycloakAdminAPIError(
+                method="GET",
+                url=f"{self._realm_admin_base_url}/clients/{client_uuid}/client-secret",
+                status_code=200,
+                detail="Client secret response does not contain value.",
+            )
+        return secret
+
+    def rotate_client_secret(self, *, client_uuid: str) -> str:
+        response = self._request(
+            "POST",
+            f"clients/{client_uuid}/client-secret",
+            expected_status=(200,),
+        )
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise KeycloakAdminAPIError(
+                method="POST",
+                url=f"{self._realm_admin_base_url}/clients/{client_uuid}/client-secret",
+                status_code=200,
+                detail="Unexpected rotated-secret response payload type.",
+            )
+        secret = payload.get("value")
+        if not isinstance(secret, str) or not secret:
+            raise KeycloakAdminAPIError(
+                method="POST",
+                url=f"{self._realm_admin_base_url}/clients/{client_uuid}/client-secret",
+                status_code=200,
+                detail="Rotated secret response does not contain value.",
+            )
+        return secret
+
+    def create_confidential_m2m_client(
+        self,
+        *,
+        client_id: str,
+        name: str | None = None,
+        description: str = "",
+    ) -> KeycloakClientCredentials:
+        existing = self.find_client_by_client_id(client_id)
+        if existing is not None:
+            return KeycloakClientCredentials(
+                client=existing,
+                secret=self.get_client_secret(client_uuid=existing.id),
+                created=False,
+            )
+
+        response = self._request(
+            "POST",
+            "clients",
+            expected_status=(201, 204),
+            json={
+                "clientId": client_id,
+                "name": name or client_id,
+                "description": description,
+                "enabled": True,
+                "protocol": "openid-connect",
+                "publicClient": False,
+                "bearerOnly": False,
+                "serviceAccountsEnabled": True,
+                "standardFlowEnabled": False,
+                "directAccessGrantsEnabled": False,
+                "implicitFlowEnabled": False,
+                "consentRequired": False,
+                "redirectUris": [],
+                "webOrigins": [],
+            },
+        )
+
+        location = response.headers.get("Location") or ""
+        client_uuid = location.rstrip("/").split("/")[-1] if location else ""
+        created_client = (
+            self.get_client_by_id(client_uuid)
+            if client_uuid
+            else self.find_client_by_client_id(client_id)
+        )
+        if created_client is None:
+            raise KeycloakAdminAPIError(
+                method="POST",
+                url=f"{self._realm_admin_base_url}/clients",
+                status_code=response.status_code,
+                detail=(
+                    "Client created but unable to resolve resulting client "
+                    f"for client_id '{client_id}'."
+                ),
+            )
+
+        return KeycloakClientCredentials(
+            client=created_client,
+            secret=self.get_client_secret(client_uuid=created_client.id),
+            created=True,
+        )
+
+    def disable_client(self, *, client_uuid: str) -> KeycloakClientRef:
+        response = self._request(
+            "GET",
+            f"clients/{client_uuid}",
+            expected_status=(200,),
+        )
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise KeycloakAdminAPIError(
+                method="GET",
+                url=f"{self._realm_admin_base_url}/clients/{client_uuid}",
+                status_code=200,
+                detail="Unexpected client response payload type.",
+            )
+
+        if payload.get("enabled") is not False:
+            payload["enabled"] = False
+            self._request(
+                "PUT",
+                f"clients/{client_uuid}",
+                expected_status=(204,),
+                json=payload,
+            )
+
+        return self.get_client_by_id(client_uuid)
+
+    def delete_client(self, *, client_uuid: str) -> bool:
+        response = self._request(
+            "DELETE",
+            f"clients/{client_uuid}",
+            expected_status=(204, 404),
+        )
+        return response.status_code == 204

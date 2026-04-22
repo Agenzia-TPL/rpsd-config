@@ -1,14 +1,20 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
+import json
 from datetime import date
 from urllib.parse import urlencode
 
+import jwt
+from allauth.socialaccount.internal import jwtkit
+from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import Q
+from django.http import JsonResponse
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
 from ninja.security import SessionAuth
@@ -42,6 +48,8 @@ from .services.agency_bootstrap import (
     AgencyBootstrapValidationError,
     bootstrap_agency_with_admin_invitation,
 )
+from .services.m2m_audit import audit_m2m_event, resolve_request_id
+from .services.m2m_authz import evaluate_m2m_authz
 from .services.publication import PublishContractError, publish_contract
 
 
@@ -258,6 +266,209 @@ api = NinjaAPI(
     version="1.0",
     auth=[SessionAuth(), BearerTokenAuth()],
 )
+
+_INTERNAL_AUTHZ_REQUIRED_FIELDS = (
+    "principal_type",
+    "principal_id",
+    "action",
+    "contract_code",
+)
+
+
+def _internal_authz_allowed_clients() -> set[str]:
+    raw = getattr(settings, "M2M_INTERNAL_AUTHZ_ALLOWED_CLIENTS_CSV", "")
+    return {
+        client_id.strip()
+        for client_id in raw.split(",")
+        if client_id and client_id.strip()
+    }
+
+
+def _internal_authz_jwks_url() -> str:
+    discovery = getattr(settings, "KEYCLOAK_DISCOVERY_URL", "")
+    if not discovery:
+        return ""
+    server_base = discovery.removesuffix("/.well-known/openid-configuration")
+    return server_base + "/protocol/openid-connect/certs"
+
+
+def _authenticate_internal_authz_request(request):
+    if not getattr(settings, "M2M_INTERNAL_AUTHZ_REQUIRE_BEARER", True):
+        return {"client_id": "policy-disabled"}
+
+    header = request.META.get("HTTP_AUTHORIZATION", "")
+    if not header.startswith("Bearer "):
+        return _internal_authz_json_error(
+            reason="missing-bearer-token",
+            status=401,
+        )
+    token = header[7:].strip()
+    if not token:
+        return _internal_authz_json_error(
+            reason="missing-bearer-token",
+            status=401,
+        )
+
+    issuer = getattr(settings, "OIDC_ISSUER_URL", "")
+    jwks_url = _internal_authz_jwks_url()
+    if not issuer or not jwks_url:
+        return _internal_authz_json_error(
+            reason="authz-guard-misconfigured",
+            status=503,
+        )
+
+    expected_audience = getattr(settings, "M2M_INTERNAL_AUTHZ_AUDIENCE", "").strip()
+    verify_aud = bool(expected_audience)
+
+    try:
+        alg, key = jwtkit.fetch_key(token, jwks_url, jwtkit.lookup_kid_jwk)
+        decode_kwargs = {
+            "jwt": token,
+            "key": key,
+            "algorithms": [alg],
+            "issuer": issuer,
+            "options": {
+                "verify_signature": True,
+                "verify_iss": True,
+                "verify_aud": verify_aud,
+                "verify_exp": True,
+            },
+        }
+        if verify_aud:
+            decode_kwargs["audience"] = expected_audience
+        claims = jwt.decode(**decode_kwargs)
+    except (OAuth2Error, jwt.PyJWTError):
+        return _internal_authz_json_error(
+            reason="invalid-bearer-token",
+            status=401,
+        )
+
+    client_id = claims.get("azp") or claims.get("client_id")
+    if not isinstance(client_id, str) or not client_id.strip():
+        return _internal_authz_json_error(
+            reason="principal-id-missing",
+            status=401,
+        )
+    client_id = client_id.strip()
+
+    allowed_clients = _internal_authz_allowed_clients()
+    if allowed_clients and client_id not in allowed_clients:
+        return _internal_authz_json_error(
+            reason="caller-not-allowed",
+            status=403,
+        )
+
+    return {
+        "client_id": client_id,
+        "subject": claims.get("sub"),
+    }
+
+
+def _internal_authz_json_error(*, reason: str, status: int, errors: list[str] | None = None):
+    payload: dict[str, object] = {"allowed": False, "reason": reason}
+    if errors:
+        payload["errors"] = errors
+    return JsonResponse(payload, status=status)
+
+
+@csrf_exempt
+def internal_authz_check(request):
+    """Internal authz endpoint contract (Phase 4, step T-m2m-19).
+
+    Endpoint shape is intentionally canonical and stable:
+    request carries principal/action/resource tuple and response always includes
+    ``allowed`` + ``reason``.
+    """
+
+    if request.method != "POST":
+        return _internal_authz_json_error(
+            reason="method-not-allowed",
+            status=405,
+        )
+
+    auth_context_or_response = _authenticate_internal_authz_request(request)
+    if isinstance(auth_context_or_response, JsonResponse):
+        return auth_context_or_response
+
+    try:
+        body_text = request.body.decode("utf-8") if request.body else ""
+        payload = json.loads(body_text or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return _internal_authz_json_error(
+            reason="invalid-json",
+            status=400,
+        )
+
+    if not isinstance(payload, dict):
+        return _internal_authz_json_error(
+            reason="invalid-request",
+            status=400,
+            errors=["Request body must be a JSON object."],
+        )
+
+    errors: list[str] = []
+    normalized: dict[str, str] = {}
+    for field_name in _INTERNAL_AUTHZ_REQUIRED_FIELDS:
+        raw_value = payload.get(field_name)
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            errors.append(f"'{field_name}' is required and must be a non-empty string.")
+            continue
+        normalized[field_name] = raw_value.strip()
+
+    raw_category = payload.get("data_category")
+    if raw_category is not None and (
+        not isinstance(raw_category, str) or not raw_category.strip()
+    ):
+        errors.append("'data_category' must be null or a non-empty string.")
+
+    if errors:
+        return _internal_authz_json_error(
+            reason="invalid-request",
+            status=400,
+            errors=errors,
+        )
+
+    if normalized["principal_type"] != "client":
+        return JsonResponse(
+            {
+                "allowed": False,
+                "reason": "unsupported-principal-type",
+            },
+            status=200,
+        )
+
+    normalized_data_category = (
+        raw_category.strip() if isinstance(raw_category, str) else None
+    )
+    decision = evaluate_m2m_authz(
+        principal_id=normalized["principal_id"],
+        action=normalized["action"],
+        contract_code=normalized["contract_code"],
+        data_category=normalized_data_category,
+    )
+    if not decision.allowed:
+        audit_m2m_event(
+            "authz.deny",
+            request_id=resolve_request_id(request),
+            outcome="deny",
+            reason=decision.reason,
+            extra={
+                "caller_client_id": auth_context_or_response.get("client_id", ""),
+                "principal_type": normalized["principal_type"],
+                "principal_id": normalized["principal_id"],
+                "action": normalized["action"],
+                "contract_code": normalized["contract_code"],
+                "data_category": normalized_data_category or "",
+            },
+        )
+
+    return JsonResponse(
+        {
+            "allowed": decision.allowed,
+            "reason": decision.reason,
+        },
+        status=200,
+    )
 
 
 def _oidc_provider_id() -> str:

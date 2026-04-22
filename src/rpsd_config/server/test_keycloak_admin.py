@@ -38,8 +38,13 @@ class _FakeKeycloakSession:
         self.users_by_email: dict[str, str] = {}
         self.user_group_assignments: set[tuple[str, str]] = set()
         self.user_password_resets: list[tuple[str, str, bool]] = []
+        self.clients_by_id: dict[str, dict] = {}
+        self.clients_by_client_id: dict[str, str] = {}
+        self.client_secrets_by_id: dict[str, str] = {}
         self._next_group_id = 1
         self._next_user_id = 1
+        self._next_client_id = 1
+        self._secret_rotation_count = 0
 
     def request(self, method: str, url: str, **kwargs):
         self.calls.append((method, url, kwargs))
@@ -98,6 +103,102 @@ class _FakeKeycloakSession:
                     )
                 },
             )
+
+        if "/clients/" in path and path.endswith("/client-secret") and method == "GET":
+            client_uuid = path.rstrip("/").split("/")[-2]
+            if client_uuid not in self.clients_by_id:
+                return _FakeResponse(status_code=404, payload={"error": "not_found"})
+            return _FakeResponse(
+                status_code=200,
+                payload={
+                    "type": "secret",
+                    "value": self.client_secrets_by_id[client_uuid],
+                },
+            )
+
+        if "/clients/" in path and path.endswith("/client-secret") and method == "POST":
+            client_uuid = path.rstrip("/").split("/")[-2]
+            if client_uuid not in self.clients_by_id:
+                return _FakeResponse(status_code=404, payload={"error": "not_found"})
+            self._secret_rotation_count += 1
+            rotated = f"rotated-{client_uuid}-{self._secret_rotation_count}"
+            self.client_secrets_by_id[client_uuid] = rotated
+            return _FakeResponse(
+                status_code=200,
+                payload={
+                    "type": "secret",
+                    "value": rotated,
+                },
+            )
+
+        if path.endswith("/clients") and method == "GET":
+            client_id = query.get("clientId", [""])[0]
+            if client_id:
+                match_id = self.clients_by_client_id.get(client_id)
+                if match_id:
+                    return _FakeResponse(
+                        status_code=200, payload=[self.clients_by_id[match_id]]
+                    )
+                return _FakeResponse(status_code=200, payload=[])
+            return _FakeResponse(status_code=200, payload=list(self.clients_by_id.values()))
+
+        if path.endswith("/clients") and method == "POST":
+            payload = kwargs.get("json") or {}
+            client_id = str(payload.get("clientId") or "")
+            if not client_id:
+                return _FakeResponse(status_code=400, payload={"error": "clientId_missing"})
+            if client_id in self.clients_by_client_id:
+                return _FakeResponse(status_code=409, payload={"error": "conflict"})
+
+            client_uuid = str(self._next_client_id)
+            self._next_client_id += 1
+            client = {
+                "id": client_uuid,
+                "clientId": client_id,
+                "enabled": bool(payload.get("enabled", True)),
+                "serviceAccountsEnabled": bool(
+                    payload.get("serviceAccountsEnabled", False)
+                ),
+                "publicClient": bool(payload.get("publicClient", False)),
+                "protocol": str(payload.get("protocol") or "openid-connect"),
+            }
+            self.clients_by_id[client_uuid] = client
+            self.clients_by_client_id[client_id] = client_uuid
+            self.client_secrets_by_id[client_uuid] = f"secret-{client_uuid}"
+            return _FakeResponse(
+                status_code=201,
+                headers={
+                    "Location": (
+                        f"http://keycloak:8080/admin/realms/rpsd/clients/{client_uuid}"
+                    )
+                },
+            )
+
+        if "/clients/" in path and method == "GET":
+            client_uuid = path.rstrip("/").split("/")[-1]
+            client = self.clients_by_id.get(client_uuid)
+            if client is None:
+                return _FakeResponse(status_code=404, payload={"error": "not_found"})
+            return _FakeResponse(status_code=200, payload=client)
+
+        if "/clients/" in path and method == "PUT":
+            client_uuid = path.rstrip("/").split("/")[-1]
+            client = self.clients_by_id.get(client_uuid)
+            if client is None:
+                return _FakeResponse(status_code=404, payload={"error": "not_found"})
+            payload = kwargs.get("json") or {}
+            client.update(payload)
+            self.clients_by_id[client_uuid] = client
+            return _FakeResponse(status_code=204)
+
+        if "/clients/" in path and method == "DELETE":
+            client_uuid = path.rstrip("/").split("/")[-1]
+            client = self.clients_by_id.pop(client_uuid, None)
+            if client is None:
+                return _FakeResponse(status_code=404, payload={"error": "not_found"})
+            self.clients_by_client_id.pop(str(client.get("clientId") or ""), None)
+            self.client_secrets_by_id.pop(client_uuid, None)
+            return _FakeResponse(status_code=204)
 
         if path.endswith("/users") and method == "GET":
             if "username" in query:
@@ -276,6 +377,94 @@ class KeycloakAdminServiceTests(SimpleTestCase):
             (user.id, "PasswordSicura123!", False),
             session.user_password_resets,
         )
+
+    def test_create_confidential_m2m_client_and_rotate_secret(self):
+        session = _FakeKeycloakSession()
+        service = KeycloakAdminService(
+            base_url="http://keycloak:8080",
+            realm="rpsd",
+            client_id="rpsd-config-admin-api",
+            client_secret="secret",
+            session=session,
+        )
+
+        created = service.create_confidential_m2m_client(
+            client_id="atm-default-prod",
+            name="ATM Default Prod",
+            description="M2M integration",
+        )
+        self.assertTrue(created.created)
+        self.assertEqual(created.client.client_id, "atm-default-prod")
+        self.assertTrue(created.secret.startswith("secret-"))
+
+        found = service.find_client_by_client_id("atm-default-prod")
+        self.assertIsNotNone(found)
+        self.assertEqual(found.id, created.client.id)
+
+        rotated = service.rotate_client_secret(client_uuid=created.client.id)
+        self.assertNotEqual(rotated, created.secret)
+        self.assertTrue(rotated.startswith(f"rotated-{created.client.id}-"))
+
+    def test_create_confidential_m2m_client_is_idempotent(self):
+        session = _FakeKeycloakSession()
+        service = KeycloakAdminService(
+            base_url="http://keycloak:8080",
+            realm="rpsd",
+            client_id="rpsd-config-admin-api",
+            client_secret="secret",
+            session=session,
+        )
+
+        first = service.create_confidential_m2m_client(
+            client_id="trenord-default-prod"
+        )
+        second = service.create_confidential_m2m_client(
+            client_id="trenord-default-prod"
+        )
+
+        self.assertTrue(first.created)
+        self.assertFalse(second.created)
+        self.assertEqual(first.client.id, second.client.id)
+        self.assertEqual(len(session.clients_by_id), 1)
+
+    def test_disable_and_delete_client(self):
+        session = _FakeKeycloakSession()
+        service = KeycloakAdminService(
+            base_url="http://keycloak:8080",
+            realm="rpsd",
+            client_id="rpsd-config-admin-api",
+            client_secret="secret",
+            session=session,
+        )
+
+        created = service.create_confidential_m2m_client(
+            client_id="atm-lab-default-prod"
+        )
+        disabled = service.disable_client(client_uuid=created.client.id)
+        self.assertFalse(disabled.enabled)
+
+        deleted = service.delete_client(client_uuid=created.client.id)
+        self.assertTrue(deleted)
+        self.assertIsNone(service.find_client_by_client_id("atm-lab-default-prod"))
+        self.assertFalse(service.delete_client(client_uuid=created.client.id))
+
+    def test_get_client_secret_maps_invalid_payload(self):
+        session = _FakeKeycloakSession()
+        service = KeycloakAdminService(
+            base_url="http://keycloak:8080",
+            realm="rpsd",
+            client_id="rpsd-config-admin-api",
+            client_secret="secret",
+            session=session,
+        )
+
+        created = service.create_confidential_m2m_client(
+            client_id="atm-invalid-secret-prod"
+        )
+        session.client_secrets_by_id[created.client.id] = ""
+
+        with self.assertRaises(KeycloakAdminAPIError):
+            service.get_client_secret(client_uuid=created.client.id)
 
     def test_token_error_is_mapped(self):
         session = _FakeKeycloakSession(token_error=True)

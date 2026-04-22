@@ -1,13 +1,15 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
 from datetime import date
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from rpsd_config.exchange_agreement.models import (
     Agency,
@@ -15,7 +17,13 @@ from rpsd_config.exchange_agreement.models import (
     Company,
     Contract,
     ContractMembership,
+    IntegrationPrincipal,
     Lot,
+)
+from rpsd_config.server.keycloak_admin import KeycloakAdminConfigError
+from rpsd_config.exchange_agreement.services.m2m_secret_store import (
+    reveal_principal_secret,
+    store_principal_secret,
 )
 
 
@@ -375,7 +383,7 @@ class NavigationAndPagesTests(TestCase):
         self.assertEqual(blocked_delete.status_code, 200)
         self.assertContains(
             blocked_delete,
-            "non puo' essere eliminata",
+            "contratti attivi",
         )
         self.assertTrue(Company.objects.filter(pk=self.company.id).exists())
 
@@ -390,21 +398,192 @@ class NavigationAndPagesTests(TestCase):
         self.assertFalse(Company.objects.filter(pk=orphan.id).exists())
         self.assertContains(deleted, "eliminata correttamente")
 
+    def test_company_delete_with_only_closed_contract_returns_feedback(self):
+        historical_company = Company.objects.create(name="Historical Company Delete")
+        historical_lot = Lot.objects.create(description="Lotto historical delete")
+        Contract.objects.create(
+            contract_code="NAV-CLOSED-DELETE-001",
+            client_agency=self.agency,
+            contractor_company=historical_company,
+            lot=historical_lot,
+            start_date=date(2025, 1, 1),
+            end_date=date(2025, 12, 31),
+            status=Contract.ContractStatus.CLOSED,
+            closed_at=timezone.now(),
+            closed_reason="Contract closed",
+        )
+
+        self.client.force_login(self.agency_admin)
+        response = self.client.post(
+            reverse("exchange_agreement:company-detail", args=[historical_company.id]),
+            {"action": "delete-company", "tab": "descrizione"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "contratti collegati")
+        self.assertTrue(Company.objects.filter(pk=historical_company.id).exists())
+
+    def test_company_delete_blocks_after_contract_closed_transition(self):
+        self.contract.status = Contract.ContractStatus.CLOSED
+        self.contract.closed_at = timezone.now()
+        self.contract.closed_reason = "Lifecycle close before delete"
+        self.contract.save(
+            update_fields=["status", "closed_at", "closed_reason", "updated_at"]
+        )
+
+        self.client.force_login(self.agency_admin)
+        with patch(
+            "rpsd_config.exchange_agreement.views.KeycloakAdminService.from_settings"
+        ) as service_factory:
+            response = self.client.post(
+                reverse("exchange_agreement:company-detail", args=[self.company.id]),
+                {"action": "delete-company", "tab": "descrizione"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "contratti collegati")
+        self.assertTrue(Company.objects.filter(pk=self.company.id).exists())
+        service_factory.assert_not_called()
+
+    def test_company_delete_cleans_up_m2m_principals_before_delete(self):
+        orphan = Company.objects.create(name="Orphan Company With M2M")
+        principal = IntegrationPrincipal.objects.create(
+            company=orphan,
+            name="default",
+            environment=IntegrationPrincipal.Environment.PROD,
+            keycloak_client_id="orphan-company-default-prod",
+            keycloak_client_uuid="kc-orphan-delete-001",
+            status=IntegrationPrincipal.Status.ACTIVE,
+            created_by=self.platform_admin,
+        )
+        store_principal_secret(principal=principal, raw_secret="secret-to-delete")
+
+        self.client.force_login(self.agency_admin)
+        disable_mock = Mock(return_value=SimpleNamespace(enabled=False))
+        keycloak_service = SimpleNamespace(
+            disable_client=disable_mock,
+            find_client_by_client_id=Mock(return_value=None),
+        )
+        with (
+            patch(
+                "rpsd_config.exchange_agreement.views.KeycloakAdminService.from_settings",
+                return_value=keycloak_service,
+            ),
+            patch("rpsd_config.exchange_agreement.views.audit_m2m_event"),
+        ):
+            response = self.client.post(
+                reverse("exchange_agreement:company-detail", args=[orphan.id]),
+                {"action": "delete-company", "tab": "descrizione"},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Company.objects.filter(pk=orphan.id).exists())
+        self.assertFalse(IntegrationPrincipal.objects.filter(pk=principal.id).exists())
+        disable_mock.assert_called_once_with(client_uuid="kc-orphan-delete-001")
+
+    def test_company_delete_blocks_when_m2m_cleanup_fails(self):
+        orphan = Company.objects.create(name="Orphan Company Cleanup Fail")
+        principal = IntegrationPrincipal.objects.create(
+            company=orphan,
+            name="default",
+            environment=IntegrationPrincipal.Environment.PROD,
+            keycloak_client_id="orphan-cleanup-fail-default-prod",
+            keycloak_client_uuid="kc-orphan-delete-err-001",
+            status=IntegrationPrincipal.Status.ACTIVE,
+            created_by=self.platform_admin,
+        )
+        store_principal_secret(principal=principal, raw_secret="secret-to-keep")
+
+        self.client.force_login(self.agency_admin)
+        disable_mock = Mock(side_effect=KeycloakAdminConfigError("boom"))
+        keycloak_service = SimpleNamespace(
+            disable_client=disable_mock,
+            find_client_by_client_id=Mock(return_value=None),
+        )
+        with (
+            patch(
+                "rpsd_config.exchange_agreement.views.KeycloakAdminService.from_settings",
+                return_value=keycloak_service,
+            ),
+            patch("rpsd_config.exchange_agreement.views.audit_m2m_event"),
+        ):
+            response = self.client.post(
+                reverse("exchange_agreement:company-detail", args=[orphan.id]),
+                {"action": "delete-company", "tab": "descrizione"},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "cleanup IAM")
+        self.assertTrue(Company.objects.filter(pk=orphan.id).exists())
+        principal.refresh_from_db()
+        self.assertEqual(principal.status, IntegrationPrincipal.Status.ACTIVE)
+        disable_mock.assert_called_once_with(client_uuid="kc-orphan-delete-err-001")
+
+    def test_company_delete_resolves_client_uuid_when_missing(self):
+        orphan = Company.objects.create(name="Orphan Company UUID Resolve")
+        principal = IntegrationPrincipal.objects.create(
+            company=orphan,
+            name="default",
+            environment=IntegrationPrincipal.Environment.PROD,
+            keycloak_client_id="orphan-company-lookup-prod",
+            keycloak_client_uuid="",
+            status=IntegrationPrincipal.Status.ACTIVE,
+            created_by=self.platform_admin,
+        )
+        store_principal_secret(principal=principal, raw_secret="secret-to-lookup")
+
+        self.client.force_login(self.agency_admin)
+        disable_mock = Mock(return_value=SimpleNamespace(enabled=False))
+        keycloak_service = SimpleNamespace(
+            disable_client=disable_mock,
+            find_client_by_client_id=Mock(
+                return_value=SimpleNamespace(
+                    id="kc-resolved-uuid-001",
+                    client_id=principal.keycloak_client_id,
+                    enabled=True,
+                )
+            ),
+        )
+        with (
+            patch(
+                "rpsd_config.exchange_agreement.views.KeycloakAdminService.from_settings",
+                return_value=keycloak_service,
+            ),
+            patch("rpsd_config.exchange_agreement.views.audit_m2m_event"),
+        ):
+            response = self.client.post(
+                reverse("exchange_agreement:company-detail", args=[orphan.id]),
+                {"action": "delete-company", "tab": "descrizione"},
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Company.objects.filter(pk=orphan.id).exists())
+        self.assertFalse(IntegrationPrincipal.objects.filter(pk=principal.id).exists())
+        disable_mock.assert_called_once_with(client_uuid="kc-resolved-uuid-001")
+
     def test_company_list_create_success_and_duplicate_case_insensitive(self):
         self.client.force_login(self.platform_admin)
         list_url = reverse("exchange_agreement:company-list")
 
-        create_response = self.client.post(
-            list_url,
-            {
-                "name": "Nuova Azienda",
-                "description": "Descrizione test",
-            },
-            follow=True,
-        )
+        with patch(
+            "rpsd_config.exchange_agreement.views.provision_default_m2m_principal_for_company",
+            return_value=SimpleNamespace(),
+        ) as provision_mock:
+            create_response = self.client.post(
+                list_url,
+                {
+                    "name": "Nuova Azienda",
+                    "description": "Descrizione test",
+                },
+                follow=True,
+            )
+
         self.assertEqual(create_response.status_code, 200)
         self.assertContains(create_response, "Azienda creata correttamente.")
         self.assertTrue(Company.objects.filter(name="Nuova Azienda").exists())
+        provision_mock.assert_called_once()
 
         duplicate_response = self.client.post(
             list_url,
@@ -447,9 +626,30 @@ class NavigationAndPagesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
-            "Azienda gia",
+            "errore di vincolo",
         )
-        self.assertEqual(Company.objects.filter(name__iexact="Race Company").count(), 1)
+        self.assertEqual(Company.objects.filter(name__iexact="Race Company").count(), 0)
+
+    def test_company_list_create_rolls_back_company_when_m2m_provisioning_fails(self):
+        self.client.force_login(self.platform_admin)
+        list_url = reverse("exchange_agreement:company-list")
+
+        with patch(
+            "rpsd_config.exchange_agreement.views.provision_default_m2m_principal_for_company",
+            side_effect=KeycloakAdminConfigError("m2m provisioning failed"),
+        ):
+            response = self.client.post(
+                list_url,
+                {
+                    "name": "Company No M2M",
+                    "description": "Should rollback",
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "provisioning credenziali M2M fallito")
+        self.assertFalse(Company.objects.filter(name="Company No M2M").exists())
 
     def test_company_detail_shows_associated_contracts_and_404(self):
         self.client.force_login(self.platform_admin)
@@ -486,3 +686,149 @@ class NavigationAndPagesTests(TestCase):
             reverse("exchange_agreement:company-detail", args=[999999])
         )
         self.assertEqual(not_found.status_code, 404)
+
+    def test_company_detail_interscambio_reveal_and_rotate_secret_for_platform_admin(self):
+        principal = IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment=IntegrationPrincipal.Environment.PROD,
+            keycloak_client_id="azienda-tpl-navigation-default-prod",
+            keycloak_client_uuid="kc-nav-m2m-001",
+            status=IntegrationPrincipal.Status.ACTIVE,
+            created_by=self.platform_admin,
+        )
+        store_principal_secret(principal=principal, raw_secret="initial-secret")
+
+        self.client.force_login(self.platform_admin)
+        detail_url = reverse("exchange_agreement:company-detail", args=[self.company.id])
+
+        interscambio_response = self.client.get(f"{detail_url}?tab=interscambio")
+        self.assertEqual(interscambio_response.status_code, 200)
+        self.assertContains(interscambio_response, principal.keycloak_client_id)
+        self.assertContains(interscambio_response, "Mostra secret client")
+        self.assertContains(interscambio_response, "Ruota secret client")
+        self.assertContains(interscambio_response, "Revoca client M2M")
+        self.assertContains(interscambio_response, "••••••••••••••••")
+
+        with patch(
+            "rpsd_config.exchange_agreement.views.audit_m2m_event",
+        ) as audit_mock:
+            reveal_response = self.client.post(
+                detail_url,
+                {
+                    "action": "reveal-client-secret",
+                    "tab": "interscambio",
+                },
+                follow=True,
+            )
+
+        self.assertEqual(reveal_response.status_code, 200)
+        self.assertContains(reveal_response, "Secret client recuperato. Copialo ora.")
+        self.assertContains(reveal_response, "initial-secret")
+        self.assertTrue(audit_mock.called)
+        self.assertEqual(audit_mock.call_args.kwargs.get("outcome"), "success")
+        self.assertEqual(audit_mock.call_args.args[0], "secret.reveal")
+
+        with (
+            patch(
+                "rpsd_config.exchange_agreement.views.KeycloakAdminService.from_settings",
+                return_value=SimpleNamespace(
+                    rotate_client_secret=lambda **kwargs: "rotated-secret-001"
+                ),
+            ),
+            patch(
+                "rpsd_config.exchange_agreement.views.audit_m2m_event",
+            ) as audit_mock,
+        ):
+            rotate_response = self.client.post(
+                detail_url,
+                {
+                    "action": "rotate-client-secret",
+                    "tab": "interscambio",
+                },
+                follow=True,
+            )
+
+        self.assertEqual(rotate_response.status_code, 200)
+        self.assertContains(rotate_response, "Secret client ruotato correttamente.")
+        self.assertContains(rotate_response, "rotated-secret-001")
+        principal.refresh_from_db()
+        self.assertIsNotNone(principal.last_secret_rotation_at)
+        self.assertEqual(
+            reveal_principal_secret(principal=principal),
+            "rotated-secret-001",
+        )
+        self.assertTrue(audit_mock.called)
+        self.assertEqual(audit_mock.call_args.kwargs.get("outcome"), "success")
+        self.assertEqual(audit_mock.call_args.args[0], "secret.rotate")
+
+    def test_company_detail_interscambio_reveal_secret_allowed_for_agency_admin(self):
+        principal = IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment=IntegrationPrincipal.Environment.PROD,
+            keycloak_client_id="azienda-tpl-navigation-agency-admin-prod",
+            keycloak_client_uuid="kc-nav-m2m-002",
+            status=IntegrationPrincipal.Status.ACTIVE,
+            created_by=self.platform_admin,
+        )
+        store_principal_secret(principal=principal, raw_secret="agency-admin-secret")
+
+        self.client.force_login(self.agency_admin)
+        detail_url = reverse("exchange_agreement:company-detail", args=[self.company.id])
+        reveal_response = self.client.post(
+            detail_url,
+            {
+                "action": "reveal-client-secret",
+                "tab": "interscambio",
+            },
+            follow=True,
+        )
+        self.assertEqual(reveal_response.status_code, 200)
+        self.assertContains(reveal_response, "agency-admin-secret")
+
+    def test_company_detail_interscambio_revoke_client_audited(self):
+        principal = IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment=IntegrationPrincipal.Environment.PROD,
+            keycloak_client_id="azienda-tpl-navigation-revoke-prod",
+            keycloak_client_uuid="kc-nav-m2m-003",
+            status=IntegrationPrincipal.Status.ACTIVE,
+            created_by=self.platform_admin,
+        )
+        store_principal_secret(principal=principal, raw_secret="secret-to-revoke")
+
+        self.client.force_login(self.platform_admin)
+        detail_url = reverse("exchange_agreement:company-detail", args=[self.company.id])
+
+        with (
+            patch(
+                "rpsd_config.exchange_agreement.views.KeycloakAdminService.from_settings",
+                return_value=SimpleNamespace(
+                    disable_client=lambda **kwargs: SimpleNamespace(enabled=False)
+                ),
+            ),
+            patch(
+                "rpsd_config.exchange_agreement.views.audit_m2m_event",
+            ) as audit_mock,
+        ):
+            response = self.client.post(
+                detail_url,
+                {
+                    "action": "revoke-client",
+                    "tab": "interscambio",
+                },
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Client M2M revocato correttamente.")
+        principal.refresh_from_db()
+        self.assertEqual(principal.status, IntegrationPrincipal.Status.REVOKED)
+        self.assertEqual(principal.client_secret_ciphertext, "")
+        self.assertEqual(principal.client_secret_key_id, "")
+        self.assertIsNone(principal.client_secret_updated_at)
+        self.assertTrue(audit_mock.called)
+        self.assertEqual(audit_mock.call_args.args[0], "principal.revoke")
+        self.assertEqual(audit_mock.call_args.kwargs.get("outcome"), "success")

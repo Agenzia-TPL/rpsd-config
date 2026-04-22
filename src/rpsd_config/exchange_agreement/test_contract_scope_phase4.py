@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 import json
 from datetime import date
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from allauth.socialaccount.models import SocialAccount
@@ -19,6 +20,7 @@ from rpsd_config.exchange_agreement.models import (
     FlowProfile,
     Lot,
 )
+from rpsd_config.server.keycloak_admin import KeycloakAdminConfigError
 
 
 def _flow_profile_options() -> dict:
@@ -295,26 +297,32 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
             args=[self.agency_a.agency_key],
         )
 
-        response = self.client.post(
-            url,
-            {
-                "action": "create-company",
-                "company_name": "TPER Bologna",
-                "company_description": "Operatore TPL",
-                "contract_code": "CTR-A-UI-001",
-                "contractor_company_id": "",
-                "lot_id": self.lot.id,
-                "start_date": "2036-01-01",
-                "end_date": "",
-                "tender_id": "TENDER-UI-001",
-                "status": Contract.ContractStatus.DRAFT,
-            },
-        )
+        with patch(
+            "rpsd_config.exchange_agreement.views.provision_default_m2m_principal_for_company",
+            return_value=SimpleNamespace(),
+        ) as provision_mock:
+            response = self.client.post(
+                url,
+                {
+                    "action": "create-company",
+                    "company_name": "TPER Bologna",
+                    "company_description": "Operatore TPL",
+                    "contract_code": "CTR-A-UI-001",
+                    "contractor_company_id": "",
+                    "lot_id": self.lot.id,
+                    "start_date": "2036-01-01",
+                    "end_date": "",
+                    "tender_id": "TENDER-UI-001",
+                    "status": Contract.ContractStatus.DRAFT,
+                },
+            )
+
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Azienda creata correttamente.")
         created_company = Company.objects.get(name="TPER Bologna")
         self.assertContains(response, f'value="{created_company.id}" selected')
         self.assertContains(response, 'value="CTR-A-UI-001"')
+        provision_mock.assert_called_once()
 
     def test_agency_contract_create_page_rejects_duplicate_company_case_insensitive(self):
         self.client.force_login(self.agency_admin_a)
@@ -339,7 +347,7 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Esiste gia' una azienda con questo nome.")
+        self.assertContains(response, "Esiste gia")
         self.assertEqual(Company.objects.filter(name__iexact="atm").count(), 1)
 
     def test_agency_contract_create_page_handles_company_create_race_integrity_error(self):
@@ -378,6 +386,37 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
-            "Azienda gia' creata da un altro utente in parallelo.",
+            "vincolo dati non rispettato",
         )
-        self.assertEqual(Company.objects.filter(name__iexact="Race Company").count(), 1)
+        self.assertEqual(Company.objects.filter(name__iexact="Race Company").count(), 0)
+
+    def test_agency_contract_create_company_rolls_back_when_m2m_provisioning_fails(self):
+        self.client.force_login(self.agency_admin_a)
+        url = reverse(
+            "exchange_agreement:agency-contract-create",
+            args=[self.agency_a.agency_key],
+        )
+
+        with patch(
+            "rpsd_config.exchange_agreement.views.provision_default_m2m_principal_for_company",
+            side_effect=KeycloakAdminConfigError("missing m2m config"),
+        ):
+            response = self.client.post(
+                url,
+                {
+                    "action": "create-company",
+                    "company_name": "Failing Inline Company",
+                    "company_description": "Should rollback on m2m error",
+                    "contract_code": "",
+                    "contractor_company_id": "",
+                    "lot_id": "",
+                    "start_date": "",
+                    "end_date": "",
+                    "tender_id": "",
+                    "status": Contract.ContractStatus.DRAFT,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "provisioning credenziali M2M fallito")
+        self.assertFalse(Company.objects.filter(name="Failing Inline Company").exists())

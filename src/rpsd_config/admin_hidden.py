@@ -16,6 +16,8 @@ from rpsd_config.exchange_agreement.models import (
     ContractPublication,
     Dataset,
     FlowProfile,
+    IntegrationGrant,
+    IntegrationPrincipal,
     IndicatorProfile,
     IndicatorDef,
     Lot,
@@ -34,6 +36,26 @@ class _HiddenAdmin(admin.ModelAdmin):
         return {}
 
 
+class _VisibleReadOnlyAdmin(_HiddenAdmin):
+    """Visible in admin index, but not editable from Django admin."""
+
+    def get_model_perms(self, request):
+        return admin.ModelAdmin.get_model_perms(self, request)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = [field.name for field in self.model._meta.fields]
+        for field_name in self.readonly_fields:
+            if field_name not in fields:
+                fields.append(field_name)
+        return tuple(fields)
+
+
 @admin.register(Agency)
 class AgencyHidden(_HiddenAdmin):
     search_fields = ("name", "agency_key")
@@ -42,6 +64,49 @@ class AgencyHidden(_HiddenAdmin):
 @admin.register(Company)
 class CompanyHidden(_HiddenAdmin):
     search_fields = ("name",)
+
+
+@admin.register(IntegrationPrincipal)
+class IntegrationPrincipalHidden(_VisibleReadOnlyAdmin):
+    list_display = (
+        "company",
+        "name",
+        "environment",
+        "keycloak_client_id",
+        "keycloak_client_uuid",
+        "status",
+        "client_secret_key_id",
+        "client_secret_updated_at",
+        "last_secret_rotation_at",
+        "created_by",
+        "updated_at",
+    )
+    list_filter = ("status", "environment", "company")
+    search_fields = ("company__name", "name", "keycloak_client_id")
+    exclude = ("client_secret_ciphertext",)
+    readonly_fields = ("created_at", "updated_at", "last_secret_rotation_at")
+
+
+@admin.register(IntegrationGrant)
+class IntegrationGrantHidden(_VisibleReadOnlyAdmin):
+    list_display = (
+        "principal",
+        "contract",
+        "action",
+        "data_category",
+        "status",
+        "valid_from",
+        "valid_to",
+        "created_by",
+        "updated_at",
+    )
+    list_filter = ("status", "action", "data_category")
+    search_fields = (
+        "principal__keycloak_client_id",
+        "principal__company__name",
+        "contract__contract_code",
+    )
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(Authority)

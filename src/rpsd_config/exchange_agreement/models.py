@@ -143,6 +143,179 @@ class Company(TimeStampedModel):
         return self.name
 
 
+class IntegrationPrincipal(TimeStampedModel):
+    """Technical M2M identity bound to a company integration."""
+
+    class Environment(models.TextChoices):
+        PROD = "prod", _("Production")
+        TEST = "test", _("Test")
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", _("Active")
+        SUSPENDED = "suspended", _("Suspended")
+        REVOKED = "revoked", _("Revoked")
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="integration_principals",
+    )
+    name = models.CharField(max_length=128)
+    environment = models.CharField(
+        max_length=8,
+        choices=Environment.choices,
+        default=Environment.PROD,
+        db_index=True,
+    )
+    keycloak_client_id = models.CharField(max_length=255, unique=True)
+    keycloak_client_uuid = models.CharField(max_length=64, blank=True, default="")
+    client_secret_ciphertext = models.TextField(blank=True, default="")
+    client_secret_key_id = models.CharField(max_length=64, blank=True, default="")
+    client_secret_updated_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        db_index=True,
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="integration_principals_created",
+    )
+    last_secret_rotation_at = models.DateTimeField(blank=True, null=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Integration principal"
+        verbose_name_plural = "Integration principals"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "name", "environment"],
+                name="unique_integration_principal_per_company_name_env",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["company", "status"]),
+            models.Index(fields=["company", "environment"]),
+        ]
+        ordering = ["company__name", "name"]
+
+    def __str__(self) -> str:
+        return f"{self.company.name} - {self.name} ({self.environment})"
+
+
+class IntegrationGrant(TimeStampedModel):
+    """Contract-scoped authorization grant for M2M technical principals."""
+
+    class Action(models.TextChoices):
+        INGEST_WRITE = "ingest:write", _("Ingest write")
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", _("Active")
+        DISABLED = "disabled", _("Disabled")
+
+    principal = models.ForeignKey(
+        IntegrationPrincipal,
+        on_delete=models.CASCADE,
+        related_name="grants",
+    )
+    contract = models.ForeignKey(
+        "Contract",
+        on_delete=models.CASCADE,
+        related_name="integration_grants",
+    )
+    action = models.CharField(
+        max_length=64,
+        choices=Action.choices,
+        default=Action.INGEST_WRITE,
+        db_index=True,
+    )
+    data_category = models.CharField(
+        max_length=64,
+        blank=True,
+        null=True,
+        help_text="Optional data category scope (example: netex, siri-pt).",
+    )
+    valid_from = models.DateTimeField(blank=True, null=True, db_index=True)
+    valid_to = models.DateTimeField(blank=True, null=True, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="integration_grants_created",
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Integration grant"
+        verbose_name_plural = "Integration grants"
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(valid_from__isnull=True)
+                    | models.Q(valid_to__isnull=True)
+                    | models.Q(valid_to__gte=models.F("valid_from"))
+                ),
+                name="integration_grant_valid_window",
+            ),
+            models.UniqueConstraint(
+                fields=["principal", "contract", "action", "data_category"],
+                condition=models.Q(status="active", data_category__isnull=False),
+                name="uniq_active_integration_grant_with_category",
+            ),
+            models.UniqueConstraint(
+                fields=["principal", "contract", "action"],
+                condition=models.Q(status="active", data_category__isnull=True),
+                name="uniq_active_integration_grant_no_category",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["principal", "status", "action"],
+                name="ix_igr_pri_stat_act",
+            ),
+            models.Index(
+                fields=["contract", "status", "action"],
+                name="ix_igr_ctr_stat_act",
+            ),
+            models.Index(
+                fields=["principal", "contract", "status"],
+                name="ix_igr_pri_ctr_stat",
+            ),
+        ]
+        ordering = ["principal__company__name", "contract__contract_code", "action"]
+
+    def clean(self):
+        super().clean()
+        if self.valid_from and self.valid_to and self.valid_to < self.valid_from:
+            raise ValidationError(
+                {"valid_to": _("valid_to must be greater than or equal to valid_from.")}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return (
+            f"{self.principal.keycloak_client_id} -> "
+            f"{self.contract.contract_code} ({self.action})"
+        )
+
+
 def _platform_initialization_file_path(*, category: str, filename: str) -> str:
     extension = Path(filename).suffix.lower()
     return f"platform/initialization/{category}/{uuid.uuid4().hex}{extension}"
