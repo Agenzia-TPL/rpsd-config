@@ -85,5 +85,27 @@ See `USAGE.md` for running with Docker (integration tests, staging, production).
 - Avoid f-strings without placeholders — use regular strings instead
 - Break long lines using parentheses, multi-line strings, or temporary variables
 
+## Test File Placement
+
+**Always create test files inside `tests/`, never inside `src/`.**
+
+This project uses a dedicated `tests/` directory at the repo root, mirroring the
+`src/rpsd_config/` package structure:
+
+```
+tests/
+├── exchange_agreement/   # mirrors src/rpsd_config/exchange_agreement/
+├── server/               # mirrors src/rpsd_config/server/
+└── <app>/                # one subdirectory per Django app
+```
+
+- Place new test files in `tests/<app>/test_<module>.py`
+- Each subdirectory under `tests/` must have an `__init__.py`
+- **Do NOT place test files inside `src/`**, even though Django supports co-located
+  tests. `testpaths = ["tests"]` in `pyproject.toml` means pytest will not find them.
+
+> **Warning for users:** If you create a test file inside `src/`, pytest will silently
+> ignore it and VS Code's test panel will not show it. Always use the `tests/` tree.
+
 ---
 *For generic AI assistant guidelines and behavior, see `ai-context.md`.*
