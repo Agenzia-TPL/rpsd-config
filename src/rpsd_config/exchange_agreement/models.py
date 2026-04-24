@@ -1208,7 +1208,8 @@ class AgencyInvitation(TimeStampedModel):
                 accepted_email = getattr(self.accepted_by, "email", "")
                 if accepted_email.lower() != self.email.lower():
                     errors["accepted_by"] = _(
-                        "Accepted user email does not match the invitation target email."
+                        "Accepted user email does not match"
+                        " the invitation target email."
                     )
             if self.rejected_at is not None:
                 errors["rejected_at"] = _(
@@ -1227,7 +1228,8 @@ class AgencyInvitation(TimeStampedModel):
                 rejected_email = getattr(self.rejected_by, "email", "")
                 if rejected_email.lower() != self.email.lower():
                     errors["rejected_by"] = _(
-                        "Rejected user email does not match the invitation target email."
+                        "Rejected user email does not match"
+                        " the invitation target email."
                     )
             if self.accepted_at is not None:
                 errors["accepted_at"] = _(
@@ -1372,7 +1374,8 @@ class ContractInvitation(TimeStampedModel):
 
         if self.role_to_assign == ContractMembership.Role.CONTRACT_ADMIN:
             errors["role_to_assign"] = _(
-                "Contract invitations can assign only contract_editor or contract_reader."
+                "Contract invitations can assign only"
+                " contract_editor or contract_reader."
             )
 
         if self.status == self.Status.ACCEPTED:

@@ -74,7 +74,10 @@ class Migration(migrations.Migration):
             field=models.CharField(
                 blank=True,
                 db_index=True,
-                help_text="Stable immutable key used for IAM group paths (example: atpl-milano).",
+                help_text=(
+                    "Stable immutable key used for IAM group paths"
+                    " (example: atpl-milano)."
+                ),
                 max_length=40,
                 null=True,
                 unique=True,
@@ -86,12 +89,19 @@ class Migration(migrations.Migration):
             name="agency_key",
             field=models.CharField(
                 db_index=True,
-                help_text="Stable immutable key used for IAM group paths (example: atpl-milano).",
+                help_text=(
+                    "Stable immutable key used for IAM group paths"
+                    " (example: atpl-milano)."
+                ),
                 max_length=40,
                 unique=True,
                 validators=[
                     RegexValidator(
-                        message="Agency key must match ^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$ (lowercase letters, digits, hyphen).",
+                        message=(
+                            "Agency key must match"
+                            " ^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$"
+                            " (lowercase letters, digits, hyphen)."
+                        ),
                         regex="^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$",
                     )
                 ],
@@ -204,7 +214,11 @@ class Migration(migrations.Migration):
                     "email",
                     models.EmailField(
                         blank=True,
-                        help_text="Optional target email. If empty, the invitation is open and can be used by the first user who accepts the token.",
+                        help_text=(
+                            "Optional target email. If empty, the invitation is"
+                            " open and can be used by the first user who accepts"
+                            " the token."
+                        ),
                         max_length=254,
                         null=True,
                     ),
