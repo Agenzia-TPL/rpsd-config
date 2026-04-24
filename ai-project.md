@@ -81,7 +81,7 @@ See `USAGE.md` for running with Docker (integration tests, staging, production).
 - Keep lines under 88 characters (project's line length limit)
 - Sort and format imports properly (standard library, third-party, local imports in separate groups)
 - Remove unused imports
-- Add trailing newlines to all files
+- Add trailing newlines to all filesode
 - Avoid f-strings without placeholders — use regular strings instead
 - Break long lines using parentheses, multi-line strings, or temporary variables
 
