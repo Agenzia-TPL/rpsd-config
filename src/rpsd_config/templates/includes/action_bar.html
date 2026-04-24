@@ -1,0 +1,13 @@
+{% if primary_href or secondary_href or danger_href %}
+  <div class="d-flex flex-wrap gap-2{% if action_bar_class %} {{ action_bar_class }}{% endif %}">
+    {% if primary_href and primary_label %}
+      <a class="btn btn-primary{% if primary_class %} {{ primary_class }}{% endif %}" href="{{ primary_href }}">{{ primary_label }}</a>
+    {% endif %}
+    {% if secondary_href and secondary_label %}
+      <a class="btn btn-outline-secondary{% if secondary_class %} {{ secondary_class }}{% endif %}" href="{{ secondary_href }}">{{ secondary_label }}</a>
+    {% endif %}
+    {% if danger_href and danger_label %}
+      <a class="btn btn-outline-danger{% if danger_class %} {{ danger_class }}{% endif %}" href="{{ danger_href }}">{{ danger_label }}</a>
+    {% endif %}
+  </div>
+{% endif %}

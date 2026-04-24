@@ -1,0 +1,25 @@
+.app-shell {
+  min-height: calc(100vh - 56px - 41px);
+}
+
+.app-sidebar {
+  min-height: calc(100vh - 56px - 41px);
+}
+
+.app-sidebar .nav-link {
+  color: #334155;
+  border-radius: 0.5rem;
+}
+
+.app-sidebar .nav-link:hover,
+.app-sidebar .nav-link:focus {
+  color: #0f4c81;
+  background-color: #e9f2fb;
+}
+
+a:focus-visible,
+button:focus-visible,
+.btn:focus-visible {
+  outline: 3px solid #0f4c81;
+  outline-offset: 2px;
+}

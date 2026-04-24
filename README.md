@@ -224,7 +224,7 @@ python src/rpsd_config/manage.py shell -c "from django.conf import settings; pri
 2. Keycloak token endpoint acceptance of `client_id` / `client_secret`
 
 ```bash
-curl -X POST "http://keycloak.localhost:19300/realms/rapsodia/protocol/openid-connect/token" \
+curl -X POST "http://keycloak.localhost:19300/realms/rpsd/protocol/openid-connect/token" \
   -H "content-type: application/x-www-form-urlencoded" \
   --data "grant_type=client_credentials&client_id=django&client_secret=django-secret"
 ```

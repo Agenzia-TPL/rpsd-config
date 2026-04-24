@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 import uuid
 from datetime import date, timedelta
+from pathlib import Path
 
 # models.py (EN version)
 from django.conf import settings
@@ -9,11 +10,12 @@ from django.contrib.gis.db import models as gis_models
 from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import DateRangeField, RangeOperators
 from django.core.exceptions import ValidationError
-from django.core.validators import FileExtensionValidator
+from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import F, Func
 from django.db.models.functions import Now  # for db_default in Django 5.x
 from django.utils import timezone
+from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
 # ==========================
@@ -42,7 +44,25 @@ class TimeStampedModel(models.Model):
 
 
 class Agency(TimeStampedModel):
+    AGENCY_KEY_REGEX = r"^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$"
+    agency_key_validator = RegexValidator(
+        regex=AGENCY_KEY_REGEX,
+        message=_(
+            "Agency key must match ^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$ "
+            "(lowercase letters, digits, hyphen)."
+        ),
+    )
+
     name = models.CharField(max_length=255, unique=True)
+    agency_key = models.CharField(
+        max_length=40,
+        unique=True,
+        db_index=True,
+        validators=[agency_key_validator],
+        help_text=_(
+            "Stable immutable key used for IAM group paths (example: atpl-milano)."
+        ),
+    )
     description = models.TextField(blank=True)
 
     class Meta:
@@ -52,6 +72,61 @@ class Agency(TimeStampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    @classmethod
+    def normalize_agency_key(cls, raw_value: str) -> str:
+        normalized = slugify((raw_value or "").strip(), allow_unicode=False)
+        normalized = normalized.strip("-")
+        if not normalized:
+            normalized = "agency"
+        if len(normalized) < 3:
+            normalized = f"{normalized}-agency"
+        if len(normalized) > 40:
+            normalized = normalized[:40].rstrip("-")
+        if len(normalized) < 3:
+            normalized = (normalized + "000")[:3]
+        return normalized
+
+    def _build_unique_agency_key(self) -> str:
+        base = self.normalize_agency_key(self.name or self.agency_key or "")
+        candidate = base
+        suffix = 2
+        qs = type(self).objects.all()
+        if self.pk:
+            qs = qs.exclude(pk=self.pk)
+        while qs.filter(agency_key=candidate).exists():
+            suffix_part = f"-{suffix}"
+            trimmed = base[: 40 - len(suffix_part)].rstrip("-")
+            if not trimmed:
+                trimmed = "agency"
+            candidate = f"{trimmed}{suffix_part}"
+            suffix += 1
+        return candidate
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if not self.agency_key:
+            self.agency_key = self._build_unique_agency_key()
+        if self.agency_key != self.agency_key.lower():
+            errors["agency_key"] = _("agency_key must be lowercase.")
+        if self.pk:
+            current_key = (
+                type(self)
+                .objects.filter(pk=self.pk)
+                .values_list("agency_key", flat=True)
+                .first()
+            )
+            if current_key and current_key != self.agency_key:
+                errors["agency_key"] = _("agency_key is immutable once set.")
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self.agency_key:
+            self.agency_key = self._build_unique_agency_key()
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class Company(TimeStampedModel):
@@ -65,6 +140,111 @@ class Company(TimeStampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+def _platform_initialization_file_path(*, category: str, filename: str) -> str:
+    extension = Path(filename).suffix.lower()
+    return f"platform/initialization/{category}/{uuid.uuid4().hex}{extension}"
+
+
+def netex_profile_upload_path(instance, filename):
+    return _platform_initialization_file_path(category="netex", filename=filename)
+
+
+def siri_profile_upload_path(instance, filename):
+    return _platform_initialization_file_path(category="siri", filename=filename)
+
+
+def indicator_profile_upload_path(instance, filename):
+    return _platform_initialization_file_path(category="indicators", filename=filename)
+
+
+class NetexValidationProfile(TimeStampedModel):
+    label = models.CharField(max_length=128, blank=True, default="")
+    file = models.FileField(
+        upload_to=netex_profile_upload_path,
+        max_length=512,
+        validators=[FileExtensionValidator(allowed_extensions=["xsd"])],
+        help_text="Validation profile file (.xsd).",
+    )
+    is_active = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        verbose_name = "Netex validation profile"
+        verbose_name_plural = "Netex validation profiles"
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_active"],
+                condition=models.Q(is_active=True),
+                name="uniq_active_netex_validation_profile",
+            )
+        ]
+
+    def __str__(self) -> str:
+        if self.label:
+            return self.label
+        return Path(self.file.name).name
+
+
+class SiriValidationProfile(TimeStampedModel):
+    class ProfileType(models.TextChoices):
+        PT = "siri-pt", _("SIRI PT")
+        SX = "siri-sx", _("SIRI SX")
+        VM = "siri-vm", _("SIRI VM")
+        SM = "siri-sm", _("SIRI SM")
+
+    profile_type = models.CharField(
+        max_length=32,
+        choices=ProfileType.choices,
+        default=ProfileType.PT,
+    )
+    label = models.CharField(max_length=128, blank=True, default="")
+    file = models.FileField(
+        upload_to=siri_profile_upload_path,
+        max_length=512,
+        validators=[FileExtensionValidator(allowed_extensions=["xsd", "xml"])],
+        help_text="SIRI validation profile file (.xsd/.xml).",
+    )
+    is_active = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        verbose_name = "SIRI validation profile"
+        verbose_name_plural = "SIRI validation profiles"
+        ordering = ["profile_type", "-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["profile_type"],
+                condition=models.Q(is_active=True),
+                name="uniq_active_siri_profile_by_type",
+            )
+        ]
+
+    def __str__(self) -> str:
+        if self.label:
+            return f"{self.profile_type} - {self.label}"
+        return f"{self.profile_type} - {Path(self.file.name).name}"
+
+
+class IndicatorProfile(TimeStampedModel):
+    label = models.CharField(max_length=128, blank=True, default="")
+    file = models.FileField(
+        upload_to=indicator_profile_upload_path,
+        max_length=512,
+        validators=[FileExtensionValidator(allowed_extensions=["yml", "yaml"])],
+        help_text="Indicator definition file (.yml/.yaml).",
+    )
+    is_active = models.BooleanField(default=False, db_index=True)
+
+    class Meta:
+        verbose_name = "Indicator profile"
+        verbose_name_plural = "Indicator profiles"
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self) -> str:
+        if self.label:
+            return self.label
+        return Path(self.file.name).name
 
 
 # -----------------------------------------------
@@ -450,8 +630,7 @@ class Contract(TimeStampedModel):
         max_length=64,
         blank=True,
         help_text=(
-            "Associated tender/procurement identifier"
-            " (optional; no dedicated table)"
+            "Associated tender/procurement identifier (optional; no dedicated table)"
         ),
     )
 
@@ -839,6 +1018,7 @@ class ContractMembership(TimeStampedModel):
 
     class Role(models.TextChoices):
         CONTRACT_ADMIN = "contract_admin", _("Contract admin")
+        CONTRACT_EDITOR = "contract_editor", _("Contract editor")
         CONTRACT_READER = "contract_reader", _("Contract reader")
 
     contract = models.ForeignKey(
@@ -874,9 +1054,223 @@ class ContractMembership(TimeStampedModel):
     def __str__(self) -> str:
         return f"{self.contract.contract_code} - {self.user} ({self.role})"
 
+    @classmethod
+    def role_rank(cls, role: str) -> int:
+        order = {
+            cls.Role.CONTRACT_READER: 0,
+            cls.Role.CONTRACT_EDITOR: 1,
+            cls.Role.CONTRACT_ADMIN: 2,
+        }
+        return order.get(role, -1)
+
     @property
     def can_manage_contract(self) -> bool:
-        return self.role == self.Role.CONTRACT_ADMIN
+        return self.role in {self.Role.CONTRACT_ADMIN, self.Role.CONTRACT_EDITOR}
+
+
+class AgencyMembership(TimeStampedModel):
+    """RBAC assignment scoped to an agency."""
+
+    class Role(models.TextChoices):
+        AGENCY_ADMIN = "agency_admin", _("Agency admin")
+        AGENCY_EDITOR = "agency_editor", _("Agency editor")
+        AGENCY_READER = "agency_reader", _("Agency reader")
+
+    agency = models.ForeignKey(
+        Agency, on_delete=models.CASCADE, related_name="memberships"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="agency_memberships",
+    )
+    role = models.CharField(max_length=32, choices=Role.choices)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agency_memberships_created",
+    )
+
+    class Meta:
+        verbose_name = "Agency membership"
+        verbose_name_plural = "Agency memberships"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agency", "user"], name="unique_agency_membership_user"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["agency", "role"]),
+            models.Index(fields=["user"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.agency.agency_key} - {self.user} ({self.role})"
+
+    @classmethod
+    def role_rank(cls, role: str) -> int:
+        order = {
+            cls.Role.AGENCY_READER: 0,
+            cls.Role.AGENCY_EDITOR: 1,
+            cls.Role.AGENCY_ADMIN: 2,
+        }
+        return order.get(role, -1)
+
+    @property
+    def can_manage_agency(self) -> bool:
+        return self.role == self.Role.AGENCY_ADMIN
+
+
+class AgencyInvitation(TimeStampedModel):
+    """Invitation token to assign an agency-scoped role."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending")
+        ACCEPTED = "accepted", _("Accepted")
+        REJECTED = "rejected", _("Rejected")
+        EXPIRED = "expired", _("Expired")
+        REVOKED = "revoked", _("Revoked")
+
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    agency = models.ForeignKey(
+        Agency, on_delete=models.CASCADE, related_name="invitations"
+    )
+    email = models.EmailField(
+        blank=True,
+        null=True,
+        help_text=_(
+            "Optional target email. If empty, the invitation is open and can be used "
+            "by the first user who accepts the token."
+        ),
+    )
+    role_to_assign = models.CharField(
+        max_length=32, choices=AgencyMembership.Role.choices
+    )
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agency_invitations_created",
+    )
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agency_invitations_accepted",
+    )
+    rejected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agency_invitations_rejected",
+    )
+    expires_at = models.DateTimeField(default=_default_invitation_expiration)
+    accepted_at = models.DateTimeField(blank=True, null=True)
+    rejected_at = models.DateTimeField(blank=True, null=True)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING
+    )
+
+    class Meta:
+        verbose_name = "Agency invitation"
+        verbose_name_plural = "Agency invitations"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agency", "email", "role_to_assign"],
+                condition=models.Q(status="pending", email__isnull=False),
+                name="unique_pending_agency_invitation_per_email_role",
+            ),
+            models.UniqueConstraint(
+                fields=["agency", "role_to_assign"],
+                condition=models.Q(status="pending", email__isnull=True),
+                name="unique_pending_open_agency_invitation_per_role",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["agency", "status"]),
+            models.Index(fields=["email"]),
+            models.Index(fields=["token"]),
+        ]
+
+    def clean(self):
+        errors = {}
+        if self.status == self.Status.ACCEPTED:
+            if self.accepted_at is None:
+                errors["accepted_at"] = _("Accepted invitations must have accepted_at.")
+            if self.accepted_by is None:
+                errors["accepted_by"] = _("Accepted invitations must have accepted_by.")
+            if self.email and self.accepted_by is not None:
+                accepted_email = getattr(self.accepted_by, "email", "")
+                if accepted_email.lower() != self.email.lower():
+                    errors["accepted_by"] = _(
+                        "Accepted user email does not match"
+                        " the invitation target email."
+                    )
+            if self.rejected_at is not None:
+                errors["rejected_at"] = _(
+                    "rejected_at must be empty unless invitation status is rejected."
+                )
+            if self.rejected_by is not None:
+                errors["rejected_by"] = _(
+                    "rejected_by must be empty unless invitation status is rejected."
+                )
+        elif self.status == self.Status.REJECTED:
+            if self.rejected_at is None:
+                errors["rejected_at"] = _("Rejected invitations must have rejected_at.")
+            if self.rejected_by is None:
+                errors["rejected_by"] = _("Rejected invitations must have rejected_by.")
+            if self.email and self.rejected_by is not None:
+                rejected_email = getattr(self.rejected_by, "email", "")
+                if rejected_email.lower() != self.email.lower():
+                    errors["rejected_by"] = _(
+                        "Rejected user email does not match"
+                        " the invitation target email."
+                    )
+            if self.accepted_at is not None:
+                errors["accepted_at"] = _(
+                    "accepted_at must be empty unless invitation status is accepted."
+                )
+            if self.accepted_by is not None:
+                errors["accepted_by"] = _(
+                    "accepted_by must be empty unless invitation status is accepted."
+                )
+        else:
+            if self.accepted_at is not None:
+                errors["accepted_at"] = _(
+                    "accepted_at must be empty unless invitation status is accepted."
+                )
+            if self.accepted_by is not None:
+                errors["accepted_by"] = _(
+                    "accepted_by must be empty unless invitation status is accepted."
+                )
+            if self.rejected_at is not None:
+                errors["rejected_at"] = _(
+                    "rejected_at must be empty unless invitation status is rejected."
+                )
+            if self.rejected_by is not None:
+                errors["rejected_by"] = _(
+                    "rejected_by must be empty unless invitation status is rejected."
+                )
+        if self.status == self.Status.PENDING and self.expires_at <= timezone.now():
+            errors["expires_at"] = _("Pending invitations must expire in the future.")
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def is_valid(self) -> bool:
+        return self.status == self.Status.PENDING and self.expires_at > timezone.now()
+
+    def __str__(self) -> str:
+        target = self.email or "open-invite"
+        return f"{self.agency.agency_key} -> {target} ({self.role_to_assign})"
 
 
 class ContractInvitation(TimeStampedModel):
@@ -896,6 +1290,7 @@ class ContractInvitation(TimeStampedModel):
     class Status(models.TextChoices):
         PENDING = "pending", _("Pending")
         ACCEPTED = "accepted", _("Accepted")
+        REJECTED = "rejected", _("Rejected")
         EXPIRED = "expired", _("Expired")
         REVOKED = "revoked", _("Revoked")
 
@@ -928,8 +1323,16 @@ class ContractInvitation(TimeStampedModel):
         blank=True,
         related_name="contract_invitations_accepted",
     )
+    rejected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contract_invitations_rejected",
+    )
     expires_at = models.DateTimeField(default=_default_invitation_expiration)
     accepted_at = models.DateTimeField(blank=True, null=True)
+    rejected_at = models.DateTimeField(blank=True, null=True)
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
@@ -940,6 +1343,15 @@ class ContractInvitation(TimeStampedModel):
         verbose_name = "Contract invitation"
         verbose_name_plural = "Contract invitations"
         constraints = [
+            models.CheckConstraint(
+                check=models.Q(
+                    role_to_assign__in=[
+                        ContractMembership.Role.CONTRACT_EDITOR,
+                        ContractMembership.Role.CONTRACT_READER,
+                    ]
+                ),
+                name="contract_invitation_role_editor_or_reader_only",
+            ),
             models.UniqueConstraint(
                 fields=["contract", "email", "role_to_assign"],
                 condition=models.Q(status="pending", email__isnull=False),
@@ -960,6 +1372,12 @@ class ContractInvitation(TimeStampedModel):
     def clean(self):
         errors = {}
 
+        if self.role_to_assign == ContractMembership.Role.CONTRACT_ADMIN:
+            errors["role_to_assign"] = _(
+                "Contract invitations can assign only"
+                " contract_editor or contract_reader."
+            )
+
         if self.status == self.Status.ACCEPTED:
             if self.accepted_at is None:
                 errors["accepted_at"] = _("Accepted invitations must have accepted_at.")
@@ -972,6 +1390,34 @@ class ContractInvitation(TimeStampedModel):
                         "Accepted user email does not match"
                         " the invitation target email."
                     )
+            if self.rejected_at is not None:
+                errors["rejected_at"] = _(
+                    "rejected_at must be empty unless invitation status is rejected."
+                )
+            if self.rejected_by is not None:
+                errors["rejected_by"] = _(
+                    "rejected_by must be empty unless invitation status is rejected."
+                )
+        elif self.status == self.Status.REJECTED:
+            if self.rejected_at is None:
+                errors["rejected_at"] = _("Rejected invitations must have rejected_at.")
+            if self.rejected_by is None:
+                errors["rejected_by"] = _("Rejected invitations must have rejected_by.")
+            if self.email and self.rejected_by is not None:
+                rejected_email = getattr(self.rejected_by, "email", "")
+                if rejected_email.lower() != self.email.lower():
+                    errors["rejected_by"] = _(
+                        "Rejected user email does not match"
+                        " the invitation target email."
+                    )
+            if self.accepted_at is not None:
+                errors["accepted_at"] = _(
+                    "accepted_at must be empty unless invitation status is accepted."
+                )
+            if self.accepted_by is not None:
+                errors["accepted_by"] = _(
+                    "accepted_by must be empty unless invitation status is accepted."
+                )
         else:
             if self.accepted_at is not None:
                 errors["accepted_at"] = _(
@@ -981,12 +1427,24 @@ class ContractInvitation(TimeStampedModel):
                 errors["accepted_by"] = _(
                     "accepted_by must be empty unless invitation status is accepted."
                 )
+            if self.rejected_at is not None:
+                errors["rejected_at"] = _(
+                    "rejected_at must be empty unless invitation status is rejected."
+                )
+            if self.rejected_by is not None:
+                errors["rejected_by"] = _(
+                    "rejected_by must be empty unless invitation status is rejected."
+                )
 
         if self.status == self.Status.PENDING and self.expires_at <= timezone.now():
             errors["expires_at"] = _("Pending invitations must expire in the future.")
 
         if errors:
             raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
     def is_valid(self) -> bool:
         return self.status == self.Status.PENDING and self.expires_at > timezone.now()

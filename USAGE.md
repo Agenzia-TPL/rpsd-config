@@ -105,6 +105,72 @@ DATABASES__default__PORT=5432
 
 ---
 
+## Authentication
+
+### Human users (OIDC / Keycloak)
+
+Human users log in via OpenID Connect through Keycloak. This is handled by
+`django-allauth` and requires no manual setup beyond the environment variables
+described below.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OIDC_PROVIDER_ID` | `keycloak` | Provider identifier — must match the allauth provider record |
+| `KEYCLOAK_DISCOVERY_URL` | `http://keycloak:8080/realms/rpsd/.well-known/openid-configuration` | OIDC discovery endpoint (server-to-server, must be container-reachable) |
+| `OIDC_AUTHORIZATION_ENDPOINT_URL` | *(empty)* | Override the browser-facing authorization URL (must use `localhost`) |
+| `OIDC_ISSUER_URL` | *(empty)* | Override the expected token issuer (must match Keycloak's `KC_HOSTNAME`) |
+| `OIDC_CLIENT_ID` | `django` | OAuth2 client ID (must match Keycloak client config) |
+| `OIDC_CLIENT_SECRET` | `django-secret` | OAuth2 client secret |
+| `OIDC_FETCH_USERINFO` | `false` | Fetch userinfo endpoint after authentication |
+
+### Service-to-service (JWT Bearer)
+
+Other services authenticate by passing a Keycloak JWT as a Bearer token in the
+`Authorization` header. The token is validated by `JWTBearerMiddleware` +
+`JWTBearerBackend`, which maps the JWT's `sub` claim to a Django User via
+allauth's `SocialAccount` model.
+
+No additional settings are needed — the JWKS URL and issuer are derived from
+`KEYCLOAK_DISCOVERY_URL` and `OIDC_ISSUER_URL`.
+
+#### Keycloak setup (one-time per service)
+
+1. In Keycloak Admin, go to the `rapsodia` realm → **Clients** → **Create client**
+2. Set **Client ID** (e.g., `rpsd-ingest`), **Client authentication** = On
+3. Under **Capability config**: enable **Service accounts roles**, disable **Standard flow**
+4. Save, then go to the **Credentials** tab and note the client secret
+5. To find the service account's `sub` (UUID): go to the **Service accounts roles** tab
+   and click the service account user link at the top — the **ID** field is the `sub`
+
+#### Django setup (one-time per service)
+
+1. In Django Admin, create a **User** for the service (e.g., username `service-rpsd-ingest`).
+   Assign permissions and group memberships as needed.
+2. Create a **Social Account** linked to that user:
+   - **Provider**: `keycloak` (must match `OIDC_PROVIDER_ID`)
+   - **Uid**: the UUID from Keycloak (the `sub` claim)
+
+#### Usage
+
+```bash
+# Get a token
+TOKEN=$(curl -s -X POST \
+  http://localhost:19300/realms/rpsd/protocol/openid-connect/token \
+  -d "grant_type=client_credentials&client_id=rpsd-ingest&client_secret=YOUR_SECRET" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Call the API
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:20100/exchange_agreement/api/v1/contracts
+```
+
+> **Tip:** During development, the default access token lifetime is 5 minutes.
+> To increase it, go to Keycloak Admin → **Realm Settings** → **Tokens** →
+> **Access Token Lifespan**. You can also override it per-client under
+> **Clients** → select client → **Advanced** → **Access Token Lifespan**.
+
+---
+
 ## Static Files
 
 Static files are collected at build time (`RUN uv run manage collectstatic --noinput`

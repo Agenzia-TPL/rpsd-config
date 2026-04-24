@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+
+{% block title %}Dettaglio azienda - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1">Dettaglio azienda</h1>
+    <p class="text-body-secondary mb-0">{{ company.name }}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a href="{% url 'exchange_agreement:company-list' %}" class="btn btn-outline-dark btn-sm">
+      Torna ad Aziende
+    </a>
+    {% if can_delete_company %}
+      <form
+        method="post"
+        class="d-inline"
+        onsubmit="return confirm('Confermi eliminazione azienda? Operazione irreversibile.');"
+      >
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete-company">
+        <input type="hidden" name="tab" value="{{ active_tab }}">
+        <button
+          type="submit"
+          class="btn btn-outline-danger btn-sm"
+          {% if company_has_contracts %}disabled{% endif %}
+          title="{% if company_has_contracts %}Azienda collegata a contratti: eliminazione non consentita{% endif %}"
+        >
+          Elimina azienda
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if error_message %}
+  {% include "includes/ui_alert.html" with alert_variant="danger" alert_message=error_message %}
+{% endif %}
+
+{% if success_message %}
+  {% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}
+{% endif %}
+
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'descrizione' %}active{% endif %}" href="?tab=descrizione">
+      Descrizione
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'contratti' %}active{% endif %}" href="?tab=contratti">
+      Contratti associati
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'utenti' %}active{% endif %}" href="?tab=utenti">
+      Utenti associati
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'interscambio' %}active{% endif %}" href="?tab=interscambio">
+      Utility interscambio dati
+    </a>
+  </li>
+</ul>
+
+{% if active_tab == "descrizione" %}
+  <section class="card border-0 shadow-sm" aria-label="Anagrafica azienda">
+    <div class="card-body">
+      <h2 class="h5">Anagrafica</h2>
+      <div class="mb-3">
+        {% if company_has_contracts %}
+          <span class="badge text-bg-warning">
+            Eliminazione non consentita: {{ company_contract_count }} contratto/i collegato/i
+          </span>
+        {% else %}
+          <span class="badge text-bg-success">Azienda eliminabile (nessun contratto collegato)</span>
+        {% endif %}
+      </div>
+      <dl class="row mt-3 mb-0">
+        <dt class="col-sm-3">ID</dt>
+        <dd class="col-sm-9"><code>{{ company.id }}</code></dd>
+        <dt class="col-sm-3">Nome</dt>
+        <dd class="col-sm-9">{{ company.name }}</dd>
+        <dt class="col-sm-3">Descrizione</dt>
+        <dd class="col-sm-9">
+          {% if company.description %}
+            {{ company.description }}
+          {% else %}
+            <span class="text-body-secondary">Nessuna descrizione.</span>
+          {% endif %}
+        </dd>
+        <dt class="col-sm-3">Creata il</dt>
+        <dd class="col-sm-9">{{ company.created_at|date:"d/m/Y H:i" }} UTC</dd>
+        <dt class="col-sm-3">Aggiornata il</dt>
+        <dd class="col-sm-9">{{ company.updated_at|date:"d/m/Y H:i" }} UTC</dd>
+      </dl>
+    </div>
+  </section>
+{% elif active_tab == "contratti" %}
+  <section class="card border-0 shadow-sm" aria-label="Contratti associati">
+    <div class="card-body">
+      <h2 class="h5">Contratti associati</h2>
+      {% if contracts %}
+        <div class="table-responsive mt-3">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Codice</th>
+                <th>Agenzia</th>
+                <th>Lotto</th>
+                <th>Stato</th>
+                <th>Data inizio</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for contract in contracts %}
+                <tr>
+                  <td><code>{{ contract.contract_code }}</code></td>
+                  <td>{{ contract.client_agency.name }}</td>
+                  <td>{{ contract.lot.id }}</td>
+                  <td>{{ contract.get_status_display }}</td>
+                  <td>{{ contract.start_date|date:"d/m/Y" }}</td>
+                  <td class="text-end">
+                    <a
+                      class="btn btn-sm btn-outline-secondary"
+                      href="{% url 'exchange_agreement:agency-contract-detail' contract.client_agency.agency_key contract.contract_code %}"
+                    >
+                      Dettaglio
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-body-secondary mb-0">Nessun contratto associato.</p>
+      {% endif %}
+    </div>
+  </section>
+{% elif active_tab == "utenti" %}
+  <section class="card border-0 shadow-sm" aria-label="Utenti associati">
+    <div class="card-body">
+      <h2 class="h5">Utenti associati</h2>
+      <p class="text-body-secondary small mb-3">
+        Elenco derivato dalle membership sui contratti di questa azienda.
+      </p>
+      {% if company_users %}
+        <div class="table-responsive mt-3">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Utente</th>
+                <th>Email</th>
+                <th>Ruoli contratto</th>
+                <th>Contratti</th>
+                <th>Ultimo aggiornamento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in company_users %}
+                <tr>
+                  <td>{{ row.user.username }}</td>
+                  <td>{{ row.user.email|default:"-" }}</td>
+                  <td>{{ row.role_labels|join:", " }}</td>
+                  <td>
+                    {{ row.contract_count }}
+                    <div class="small text-body-secondary">{{ row.contract_codes|join:", " }}</div>
+                  </td>
+                  <td>{{ row.updated_at|date:"d/m/Y H:i" }} UTC</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-body-secondary mb-0">Nessun utente associato ai contratti di questa azienda.</p>
+      {% endif %}
+    </div>
+  </section>
+{% else %}
+  <section class="card border-0 shadow-sm mb-3" aria-label="Credenziali M2M">
+    <div class="card-body">
+      <h2 class="h5">Credenziali M2M</h2>
+      <p class="text-body-secondary small mb-3">
+        {{ m2m_exchange_info.status_message }}
+      </p>
+      <dl class="row mb-0">
+        <dt class="col-sm-4 text-body-secondary">Client M2M</dt>
+        <dd class="col-sm-8">
+          {% if m2m_exchange_info.client_id %}
+            <code>{{ m2m_exchange_info.client_id }}</code>
+          {% else %}
+            <span class="text-body-secondary">Non configurato</span>
+          {% endif %}
+        </dd>
+        <dt class="col-sm-4 text-body-secondary">Secret corrente</dt>
+        <dd class="col-sm-8">
+          {% if m2m_exchange_info.credentials_available %}
+            <code>••••••••••••••••</code>
+          {% else %}
+            <span class="text-body-secondary">Non disponibile</span>
+          {% endif %}
+        </dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="card border-0 shadow-sm" aria-label="Operativita interscambio">
+    <div class="card-body">
+      <h2 class="h5">Operativita interscambio</h2>
+      <p class="text-body-secondary small mb-3">
+        La rotazione automatica del secret M2M verra' abilitata quando il modello credenziali
+        per azienda sara' disponibile lato backend.
+      </p>
+      <button class="btn btn-outline-primary" disabled>Ruota secret client</button>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

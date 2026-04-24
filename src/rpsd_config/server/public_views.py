@@ -24,11 +24,12 @@ def _build_oidc_login_url(next_url: str) -> str:
 
 @login_not_required
 def home(request):
+    next_url = request.GET.get("next") or reverse("home")
     return render(
         request,
         "home.html",
         {
-            "login_page_url": reverse("login-page"),
+            "oidc_login_url": _build_oidc_login_url(next_url),
             "admin_url": "/admin/",
         },
     )
@@ -44,5 +45,11 @@ def login_page(request):
             "next_url": next_url,
             "oidc_login_url": _build_oidc_login_url(next_url),
             "home_url": reverse("home"),
+            "show_sidebar": False,
         },
     )
+
+
+@login_not_required
+def bootstrap_smoke(request):
+    return render(request, "ui/bootstrap_smoke.html")

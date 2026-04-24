@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}Login Annullato - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h1 class="h3 mb-0">Login annullato</h1>
+  <span class="badge text-bg-warning">OIDC</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{% url 'login-page' as login_page_url %}
+{% url 'home' as home_url %}
+<div class="row justify-content-center">
+  <div class="col-12 col-xl-8">
+    {% include "includes/ui_alert.html" with alert_variant="warning" alert_class="shadow-sm mb-3" alert_message="Hai annullato la procedura di login con account esterno." %}
+    <p class="text-body-secondary mb-3">
+      Se si e' trattato di un errore, puoi riprovare in qualsiasi momento.
+    </p>
+    {% include "includes/action_bar.html" with primary_href=login_page_url primary_label="Riprova login" secondary_href=home_url secondary_label="Vai alla home" %}
+  </div>
+</div>
+{% endblock %}

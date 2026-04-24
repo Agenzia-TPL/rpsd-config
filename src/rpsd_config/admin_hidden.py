@@ -4,6 +4,8 @@ from django.contrib import admin
 
 from rpsd_config.exchange_agreement.models import (
     Agency,
+    AgencyInvitation,
+    AgencyMembership,
     Authority,
     Company,
     Contract,
@@ -15,7 +17,10 @@ from rpsd_config.exchange_agreement.models import (
     Dataset,
     FlowProfile,
     IndicatorDef,
+    IndicatorProfile,
     Lot,
+    NetexValidationProfile,
+    SiriValidationProfile,
     Structure,
 )
 
@@ -31,7 +36,7 @@ class _HiddenAdmin(admin.ModelAdmin):
 
 @admin.register(Agency)
 class AgencyHidden(_HiddenAdmin):
-    search_fields = ("name",)
+    search_fields = ("name", "agency_key")
 
 
 @admin.register(Company)
@@ -57,6 +62,21 @@ class DatasetHidden(_HiddenAdmin):
 @admin.register(FlowProfile)
 class FlowProfileHidden(_HiddenAdmin):
     search_fields = ("code", "name")
+
+
+@admin.register(NetexValidationProfile)
+class NetexValidationProfileHidden(_HiddenAdmin):
+    search_fields = ("label", "file")
+
+
+@admin.register(SiriValidationProfile)
+class SiriValidationProfileHidden(_HiddenAdmin):
+    search_fields = ("profile_type", "label", "file")
+
+
+@admin.register(IndicatorProfile)
+class IndicatorProfileHidden(_HiddenAdmin):
+    search_fields = ("label", "file")
 
 
 @admin.register(Structure)
@@ -92,6 +112,42 @@ class ContractMembershipHidden(_HiddenAdmin):
 @admin.register(ContractInvitation)
 class ContractInvitationHidden(_HiddenAdmin):
     search_fields = ("contract__contract_code", "email", "token")
+
+
+@admin.register(AgencyMembership)
+class AgencyMembershipHidden(_HiddenAdmin):
+    search_fields = (
+        "agency__name",
+        "agency__agency_key",
+        "user__username",
+        "user__email",
+    )
+
+
+@admin.register(AgencyInvitation)
+class AgencyInvitationHidden(_HiddenAdmin):
+    list_display = (
+        "agency",
+        "email",
+        "role_to_assign",
+        "status",
+        "expires_at",
+        "invited_by",
+        "accepted_by",
+        "rejected_by",
+    )
+    list_filter = ("status", "role_to_assign", "agency")
+    readonly_fields = (
+        "token",
+        "created_at",
+        "updated_at",
+        "accepted_at",
+        "rejected_at",
+    )
+    search_fields = ("agency__name", "agency__agency_key", "email", "token")
+
+    def get_model_perms(self, request):
+        return admin.ModelAdmin.get_model_perms(self, request)
 
 
 @admin.register(ContractPublication)

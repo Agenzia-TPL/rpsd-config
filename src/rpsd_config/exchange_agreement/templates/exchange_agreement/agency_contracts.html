@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Contratti Agenzia - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <div>
+    <h1 class="h3 mb-0">Contratti Agenzia</h1>
+    <p class="text-body-secondary mb-0">{{ agency.name }} • <code>{{ agency.agency_key }}</code></p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agency-detail' agency.agency_key %}">
+      Torna al dettaglio agenzia
+    </a>
+    {% if can_create_contract %}
+      <a class="btn btn-primary btn-sm" href="{% url 'exchange_agreement:agency-contract-create' agency.agency_key %}">
+        Crea nuovo contratto
+      </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    <section class="card border-0 shadow-sm">
+      <div class="card-body">
+        {% if contracts %}
+          <div class="table-responsive">
+            <table class="table align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Codice</th>
+                  <th>Azienda TPL</th>
+                  <th>Lotto</th>
+                  <th>Inizio</th>
+                  <th>Fine</th>
+                  <th>Stato</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for contract in contracts %}
+                  <tr>
+                    <td><strong>{{ contract.contract_code }}</strong></td>
+                    <td>{{ contract.contractor_company.name }}</td>
+                    <td>{{ contract.lot }}</td>
+                    <td>{{ contract.start_date|date:"d/m/Y" }}</td>
+                    <td>{{ contract.end_date|date:"d/m/Y"|default:"-" }}</td>
+                    <td>{{ contract.get_status_display }}</td>
+                    <td class="text-end">
+                      <a
+                        class="btn btn-sm btn-outline-primary"
+                        href="{% url 'exchange_agreement:agency-contract-detail' agency.agency_key contract.contract_code %}"
+                      >
+                        Dettaglio
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          {% include "includes/ui_alert.html" with alert_variant="secondary" alert_message="Nessun contratto disponibile per questa agenzia." %}
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

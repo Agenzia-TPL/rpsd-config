@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}Errore Login OIDC - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h1 class="h3 mb-0">Errore di autenticazione esterna</h1>
+  <span class="badge text-bg-danger">OIDC</span>
+</div>
+{% endblock %}
+
+{% block content %}
+{% url 'login-page' as login_page_url %}
+{% url 'home' as home_url %}
+<div class="row justify-content-center">
+  <div class="col-12 col-xl-8">
+    {% include "includes/ui_alert.html" with alert_variant="danger" alert_class="shadow-sm mb-3" alert_message="Si e' verificato un errore durante il tentativo di accesso con il provider esterno." %}
+    {% include "includes/action_bar.html" with primary_href=login_page_url primary_label="Torna al login" secondary_href=home_url secondary_label="Vai alla home" %}
+  </div>
+</div>
+{% endblock %}

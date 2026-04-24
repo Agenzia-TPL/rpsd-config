@@ -461,7 +461,7 @@ class Command(BaseCommand):
             ContractInvitation.objects.get_or_create(
                 contract=contract,
                 email=None,
-                role_to_assign=ContractMembership.Role.CONTRACT_ADMIN,
+                role_to_assign=ContractMembership.Role.CONTRACT_EDITOR,
                 status=ContractInvitation.Status.PENDING,
                 defaults={
                     "invited_by": admin_user,

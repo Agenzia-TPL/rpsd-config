@@ -35,7 +35,7 @@ Variabili OIDC consigliate in `.env`:
 
 - `KEYCLOAK_DISCOVERY_URL`: endpoint usato da Django per discovery/token/userinfo (default consigliato: `http://keycloak.localhost:19300/...`).
 - `OIDC_AUTHORIZATION_ENDPOINT_URL`: endpoint pubblico usato per la redirect del browser verso la login (es. `http://keycloak.localhost:19300/.../auth`).
-- `OIDC_ISSUER_URL`: issuer pubblico atteso nella validazione dell`id_token` (es. `http://keycloak.localhost:19300/realms/rapsodia`).
+- `OIDC_ISSUER_URL`: issuer pubblico atteso nella validazione dell`id_token` (es. `http://keycloak.localhost:19300/realms/rpsd`).
 - `OIDC_FETCH_USERINFO`: se `false`, Django usa i claim dell`id_token` e non chiama l`endpoint `userinfo` (utile in setup locali con host OIDC misti).
 
 Nota: se usi nomi custom in `/etc/hosts`, aggiungili in `DJANGO_ALLOWED_HOSTS` (e se serve in `DJANGO_CSRF_TRUSTED_ORIGINS`) nel `.env`.
@@ -53,7 +53,7 @@ python src/rpsd_config/manage.py shell -c "from django.conf import settings; pri
 2. Verifica che il token endpoint accetti `client_id` e `client_secret`:
 
 ```bash
-curl -X POST "http://keycloak.localhost:19300/realms/rapsodia/protocol/openid-connect/token" \
+curl -X POST "http://keycloak.localhost:19300/realms/rpsd/protocol/openid-connect/token" \
   -H "content-type: application/x-www-form-urlencoded" \
   --data "grant_type=client_credentials&client_id=django&client_secret=django-secret"
 ```
