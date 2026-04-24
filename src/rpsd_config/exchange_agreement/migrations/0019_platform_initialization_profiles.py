@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
-import rpsd_config.exchange_agreement.models
 import django.core.validators
 from django.db import migrations, models
 from django.db.models.functions.datetime import Now
 
+import rpsd_config.exchange_agreement.models
+
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0018_invitation_rejected_state"),
     ]

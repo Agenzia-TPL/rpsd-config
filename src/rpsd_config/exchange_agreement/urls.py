@@ -4,11 +4,11 @@ from django.contrib import admin
 from django.urls import path
 
 from .views import (
+    agencies_page,
     agency_contract_detail_page,
     agency_contracts_page,
     agency_detail_page,
     agency_lot_detail_page,
-    agencies_page,
     bootstrap_agency_page,
     company_detail_page,
     company_list_page,

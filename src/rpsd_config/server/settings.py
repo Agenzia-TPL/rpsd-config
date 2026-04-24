@@ -249,9 +249,7 @@ class LeafletSettings(BaseSettings):
 class OIDCSettings(BaseSettings):
     OIDC_PROVIDER_ID: str = Field(default="keycloak")
     KEYCLOAK_DISCOVERY_URL: str = Field(
-        default=(
-            "http://keycloak:8080/realms/rpsd/.well-known/openid-configuration"
-        )
+        default=("http://keycloak:8080/realms/rpsd/.well-known/openid-configuration")
     )
     OIDC_AUTHORIZATION_ENDPOINT_URL: str = Field(default="")
     OIDC_ISSUER_URL: str = Field(default="")

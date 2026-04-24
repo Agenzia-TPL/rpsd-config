@@ -20,7 +20,9 @@ class InvitationRejectResult:
     status: str
 
 
-def _validate_reject_actor_email(*, invitation_email: str | None, actor_email: str) -> None:
+def _validate_reject_actor_email(
+    *, invitation_email: str | None, actor_email: str
+) -> None:
     if not invitation_email:
         raise InvitationRejectValidationError(
             "Il rifiuto non e' disponibile per inviti aperti."

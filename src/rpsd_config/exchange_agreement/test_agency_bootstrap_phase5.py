@@ -9,7 +9,11 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from rpsd_config.exchange_agreement.models import Agency, AgencyInvitation, AgencyMembership
+from rpsd_config.exchange_agreement.models import (
+    Agency,
+    AgencyInvitation,
+    AgencyMembership,
+)
 from rpsd_config.server.keycloak_admin import KeycloakAdminAPIError
 
 
@@ -110,8 +114,12 @@ class AgencyBootstrapPhase5Tests(TestCase):
         self.assertEqual(
             payload["assigned_group_path"], "/rpsd/agenzia-tpl-milano/admin"
         )
-        self.assertEqual(fake_keycloak.ensure_agency_groups_calls, ["agenzia-tpl-milano"])
-        self.assertEqual(fake_keycloak.find_user_by_email_calls, ["operatore1@example.com"])
+        self.assertEqual(
+            fake_keycloak.ensure_agency_groups_calls, ["agenzia-tpl-milano"]
+        )
+        self.assertEqual(
+            fake_keycloak.find_user_by_email_calls, ["operatore1@example.com"]
+        )
 
         agency = Agency.objects.get(agency_key="agenzia-tpl-milano")
         invitation = AgencyInvitation.objects.get(token=payload["invitation_token"])

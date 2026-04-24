@@ -29,7 +29,9 @@ def _normalize_agency_key(raw_value: str) -> str:
 def backfill_agency_key(apps, schema_editor):
     Agency = apps.get_model("exchange_agreement", "Agency")
     used = set(
-        Agency.objects.exclude(agency_key__isnull=True).values_list("agency_key", flat=True)
+        Agency.objects.exclude(agency_key__isnull=True).values_list(
+            "agency_key", flat=True
+        )
     )
     for agency in Agency.objects.all().order_by("id"):
         if agency.agency_key:
@@ -61,7 +63,6 @@ def noop_reverse(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0016_contractpublication"),
     ]
@@ -168,7 +169,9 @@ class Migration(migrations.Migration):
                         fields=["agency", "role"],
                         name="exchange_ag_agency__7c6292_idx",
                     ),
-                    models.Index(fields=["user"], name="exchange_ag_user_id_0f6f1c_idx"),
+                    models.Index(
+                        fields=["user"], name="exchange_ag_user_id_0f6f1c_idx"
+                    ),
                 ],
             },
         ),
@@ -271,12 +274,16 @@ class Migration(migrations.Migration):
                 "verbose_name_plural": "Agency invitations",
                 "constraints": [
                     models.UniqueConstraint(
-                        condition=models.Q(("email__isnull", False), ("status", "pending")),
+                        condition=models.Q(
+                            ("email__isnull", False), ("status", "pending")
+                        ),
                         fields=("agency", "email", "role_to_assign"),
                         name="unique_pending_agency_invitation_per_email_role",
                     ),
                     models.UniqueConstraint(
-                        condition=models.Q(("email__isnull", True), ("status", "pending")),
+                        condition=models.Q(
+                            ("email__isnull", True), ("status", "pending")
+                        ),
                         fields=("agency", "role_to_assign"),
                         name="unique_pending_open_agency_invitation_per_role",
                     ),
@@ -286,12 +293,8 @@ class Migration(migrations.Migration):
                         fields=["agency", "status"],
                         name="exchange_ag_agency__d98d05_idx",
                     ),
-                    models.Index(
-                        fields=["email"], name="exchange_ag_email_1a96fc_idx"
-                    ),
-                    models.Index(
-                        fields=["token"], name="exchange_ag_token_2b4a38_idx"
-                    ),
+                    models.Index(fields=["email"], name="exchange_ag_email_1a96fc_idx"),
+                    models.Index(fields=["token"], name="exchange_ag_token_2b4a38_idx"),
                 ],
             },
         ),

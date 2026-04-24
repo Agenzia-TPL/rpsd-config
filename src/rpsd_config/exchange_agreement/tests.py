@@ -35,7 +35,9 @@ class IdentityPrivilegesTests(TestCase):
     def setUp(self):
         self.user_model = get_user_model()
 
-    def test_identity_privileges_extract_groups_and_realm_roles_from_nested_claims(self):
+    def test_identity_privileges_extract_groups_and_realm_roles_from_nested_claims(
+        self,
+    ):
         user = self.user_model.objects.create_user(
             username="oidc-admin",
             password="test-pass-1",
@@ -155,7 +157,10 @@ class InvitationOnboardingFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/accounts/oidc/", response["Location"])
         self.assertIn("process=login", response["Location"])
-        self.assertIn("next=%2Fexchange_agreement%2Fonboarding%2Fcallback%2F", response["Location"])
+        self.assertIn(
+            "next=%2Fexchange_agreement%2Fonboarding%2Fcallback%2F",
+            response["Location"],
+        )
         self.assertEqual(
             self.client.session.get("onboarding_invitation_token"),
             str(invitation.token),

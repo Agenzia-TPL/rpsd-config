@@ -26,8 +26,7 @@ class Migration(migrations.Migration):
             field=models.TextField(
                 blank=True,
                 help_text=(
-                    "Optional SQL documentation snippet"
-                    " (not executed by this service)."
+                    "Optional SQL documentation snippet (not executed by this service)."
                 ),
             ),
         ),

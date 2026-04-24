@@ -60,9 +60,7 @@ class AccountAdapterSignupPolicyTests(TestCase):
             expires_at=timezone.now() + timedelta(days=expires_delta_days),
         )
 
-    def _create_agency_invitation(
-        self, *, expires_delta_days: int
-    ) -> AgencyInvitation:
+    def _create_agency_invitation(self, *, expires_delta_days: int) -> AgencyInvitation:
         agency = Agency.objects.create(name="Agency Signup")
         return AgencyInvitation.objects.create(
             agency=agency,

@@ -60,9 +60,7 @@ class JWTBearerBackend:
             return None
 
         try:
-            alg, key = jwtkit.fetch_key(
-                jwt_token, jwks_url, jwtkit.lookup_kid_jwk
-            )
+            alg, key = jwtkit.fetch_key(jwt_token, jwks_url, jwtkit.lookup_kid_jwk)
             claims = jwt.decode(
                 jwt_token,
                 key=key,
@@ -91,9 +89,7 @@ class JWTBearerBackend:
                 uid=sub,
             )
         except SocialAccount.DoesNotExist:
-            LOGGER.info(
-                "No SocialAccount for provider=%s uid=%s", provider_id, sub
-            )
+            LOGGER.info("No SocialAccount for provider=%s uid=%s", provider_id, sub)
             return None
 
         return social_account.user
@@ -101,10 +97,10 @@ class JWTBearerBackend:
     def get_user(self, user_id):
         from django.contrib.auth import get_user_model
 
-        User = get_user_model()
+        user_model = get_user_model()
         try:
-            return User.objects.get(pk=user_id)
-        except User.DoesNotExist:
+            return user_model.objects.get(pk=user_id)
+        except user_model.DoesNotExist:
             return None
 
 

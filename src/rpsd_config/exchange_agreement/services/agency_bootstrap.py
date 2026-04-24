@@ -131,7 +131,9 @@ def bootstrap_agency_with_admin_invitation(
     except AgencyInvitationProvisioningError as exc:
         raise AgencyBootstrapProvisioningError(str(exc)) from exc
     except ValidationError as exc:
-        raise AgencyBootstrapValidationError(f"Agency validation failed: {exc}") from exc
+        raise AgencyBootstrapValidationError(
+            f"Agency validation failed: {exc}"
+        ) from exc
     except IntegrityError as exc:
         raise AgencyBootstrapValidationError(
             "Unable to bootstrap agency due to a constraint violation."

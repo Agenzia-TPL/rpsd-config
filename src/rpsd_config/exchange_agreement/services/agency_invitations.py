@@ -78,8 +78,7 @@ def _resolve_keycloak_user_id_for_logged_user(
 
     ensured = keycloak.ensure_user(
         username=(
-            getattr(user, "username", "")
-            or _username_candidate_from_email(user.email)
+            getattr(user, "username", "") or _username_candidate_from_email(user.email)
         ),
         email=user.email,
     )

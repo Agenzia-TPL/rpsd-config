@@ -67,13 +67,17 @@ class NavigationAndPagesTests(TestCase):
             user=self.regular_user,
             provider="openid_connect",
             uid="kc-agency-user-nav",
-            extra_data={"id_token": {"groups": [f"/rpsd/{self.agency.agency_key}/editor"]}},
+            extra_data={
+                "id_token": {"groups": [f"/rpsd/{self.agency.agency_key}/editor"]}
+            },
         )
         SocialAccount.objects.create(
             user=self.agency_admin,
             provider="openid_connect",
             uid="kc-agency-admin-nav",
-            extra_data={"id_token": {"groups": [f"/rpsd/{self.agency.agency_key}/admin"]}},
+            extra_data={
+                "id_token": {"groups": [f"/rpsd/{self.agency.agency_key}/admin"]}
+            },
         )
         self.company = Company.objects.create(name="Azienda TPL Navigation")
         self.lot = Lot.objects.create(description="Lotto test navigation")
@@ -110,7 +114,9 @@ class NavigationAndPagesTests(TestCase):
             response, reverse("exchange_agreement:platform-configuration")
         )
 
-    def test_sidebar_for_platform_admin_shows_platform_configuration_and_companies(self):
+    def test_sidebar_for_platform_admin_shows_platform_configuration_and_companies(
+        self,
+    ):
         self.client.force_login(self.platform_admin)
         response = self.client.get(reverse("exchange_agreement:user-area"))
 
@@ -147,7 +153,8 @@ class NavigationAndPagesTests(TestCase):
         self.assertContains(response, self.agency.name)
         self.assertContains(response, self.agency.agency_key)
         self.assertContains(
-            response, reverse("exchange_agreement:agency-detail", args=[self.agency.agency_key])
+            response,
+            reverse("exchange_agreement:agency-detail", args=[self.agency.agency_key]),
         )
         self.assertNotContains(response, self.other_agency.name)
 
@@ -253,7 +260,9 @@ class NavigationAndPagesTests(TestCase):
         )
         self.assertEqual(create_response.status_code, 200)
         self.assertContains(create_response, "Lotto creato correttamente.")
-        created_lot = Lot.objects.get(short_description="NORD", description="Lotto Nord")
+        created_lot = Lot.objects.get(
+            short_description="NORD", description="Lotto Nord"
+        )
         self.assertContains(
             create_response,
             reverse(
@@ -330,7 +339,9 @@ class NavigationAndPagesTests(TestCase):
         self.assertEqual(allowed_superuser.status_code, 200)
 
     def test_company_pages_require_platform_admin_or_superuser(self):
-        detail_url = reverse("exchange_agreement:company-detail", args=[self.company.id])
+        detail_url = reverse(
+            "exchange_agreement:company-detail", args=[self.company.id]
+        )
         list_url = reverse("exchange_agreement:company-list")
 
         self.client.force_login(self.regular_user)
@@ -359,7 +370,10 @@ class NavigationAndPagesTests(TestCase):
 
         denied_agency_admin_create = self.client.post(
             list_url,
-            {"name": "Create denied", "description": "agency-admin should not create here"},
+            {
+                "name": "Create denied",
+                "description": "agency-admin should not create here",
+            },
         )
         self.assertEqual(denied_agency_admin_create.status_code, 403)
 
@@ -380,7 +394,9 @@ class NavigationAndPagesTests(TestCase):
         self.assertTrue(Company.objects.filter(pk=self.company.id).exists())
 
         orphan = Company.objects.create(name="Orphan Company Delete")
-        orphan_detail_url = reverse("exchange_agreement:company-detail", args=[orphan.id])
+        orphan_detail_url = reverse(
+            "exchange_agreement:company-detail", args=[orphan.id]
+        )
         deleted = self.client.post(
             orphan_detail_url,
             {"action": "delete-company", "tab": "descrizione"},
@@ -453,7 +469,9 @@ class NavigationAndPagesTests(TestCase):
 
     def test_company_detail_shows_associated_contracts_and_404(self):
         self.client.force_login(self.platform_admin)
-        detail_url = reverse("exchange_agreement:company-detail", args=[self.company.id])
+        detail_url = reverse(
+            "exchange_agreement:company-detail", args=[self.company.id]
+        )
         default_response = self.client.get(detail_url)
         self.assertEqual(default_response.status_code, 200)
         self.assertContains(default_response, "Anagrafica")

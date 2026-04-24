@@ -89,7 +89,9 @@ class PlatformConfigurationPhase9Tests(TestCase):
         )
         self.assertEqual(first_upload.status_code, 200)
         self.assertEqual(NetexValidationProfile.objects.count(), 1)
-        self.assertEqual(NetexValidationProfile.objects.filter(is_active=True).count(), 1)
+        self.assertEqual(
+            NetexValidationProfile.objects.filter(is_active=True).count(), 1
+        )
 
         second_netex = SimpleUploadedFile(
             "netex-v2.xsd",
@@ -108,7 +110,9 @@ class PlatformConfigurationPhase9Tests(TestCase):
         )
         self.assertEqual(second_upload.status_code, 200)
         self.assertEqual(NetexValidationProfile.objects.count(), 2)
-        self.assertEqual(NetexValidationProfile.objects.filter(is_active=True).count(), 1)
+        self.assertEqual(
+            NetexValidationProfile.objects.filter(is_active=True).count(), 1
+        )
         self.assertEqual(
             NetexValidationProfile.objects.get(is_active=True).label,
             "Netex v2",

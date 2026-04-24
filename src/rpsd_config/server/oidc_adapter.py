@@ -22,7 +22,6 @@ def _url_origin(url: str) -> str:
 
 
 class RpsdOpenIDConnectOAuth2Adapter(OpenIDConnectOAuth2Adapter):
-
     @property
     def openid_config(self):
         """Fetch the discovery document and rewrite server-to-server URLs.

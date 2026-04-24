@@ -4,8 +4,7 @@ import base64
 import json
 from types import SimpleNamespace
 
-from django.test import RequestFactory
-from django.test import SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase
 
 from rpsd_config.server.socialaccount_adapter import (
     RpsdSocialAccountAdapter,

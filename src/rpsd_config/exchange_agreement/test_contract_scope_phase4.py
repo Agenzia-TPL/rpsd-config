@@ -316,7 +316,9 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
         self.assertContains(response, f'value="{created_company.id}" selected')
         self.assertContains(response, 'value="CTR-A-UI-001"')
 
-    def test_agency_contract_create_page_rejects_duplicate_company_case_insensitive(self):
+    def test_agency_contract_create_page_rejects_duplicate_company_case_insensitive(
+        self,
+    ):
         self.client.force_login(self.agency_admin_a)
         url = reverse(
             "exchange_agreement:agency-contract-create",
@@ -342,7 +344,9 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
         self.assertContains(response, "Esiste gia' una azienda con questo nome.")
         self.assertEqual(Company.objects.filter(name__iexact="atm").count(), 1)
 
-    def test_agency_contract_create_page_handles_company_create_race_integrity_error(self):
+    def test_agency_contract_create_page_handles_company_create_race_integrity_error(
+        self,
+    ):
         self.client.force_login(self.agency_admin_a)
         url = reverse(
             "exchange_agreement:agency-contract-create",

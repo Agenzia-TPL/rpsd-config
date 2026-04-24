@@ -60,8 +60,7 @@ class Agency(TimeStampedModel):
         db_index=True,
         validators=[agency_key_validator],
         help_text=_(
-            "Stable immutable key used for IAM group paths "
-            "(example: atpl-milano)."
+            "Stable immutable key used for IAM group paths (example: atpl-milano)."
         ),
     )
     description = models.TextField(blank=True)
@@ -631,8 +630,7 @@ class Contract(TimeStampedModel):
         max_length=64,
         blank=True,
         help_text=(
-            "Associated tender/procurement identifier"
-            " (optional; no dedicated table)"
+            "Associated tender/procurement identifier (optional; no dedicated table)"
         ),
     )
 
@@ -1082,7 +1080,9 @@ class AgencyMembership(TimeStampedModel):
         Agency, on_delete=models.CASCADE, related_name="memberships"
     )
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="agency_memberships"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="agency_memberships",
     )
     role = models.CharField(max_length=32, choices=Role.choices)
     created_by = models.ForeignKey(
@@ -1145,7 +1145,9 @@ class AgencyInvitation(TimeStampedModel):
             "by the first user who accepts the token."
         ),
     )
-    role_to_assign = models.CharField(max_length=32, choices=AgencyMembership.Role.choices)
+    role_to_assign = models.CharField(
+        max_length=32, choices=AgencyMembership.Role.choices
+    )
     invited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1170,7 +1172,9 @@ class AgencyInvitation(TimeStampedModel):
     expires_at = models.DateTimeField(default=_default_invitation_expiration)
     accepted_at = models.DateTimeField(blank=True, null=True)
     rejected_at = models.DateTimeField(blank=True, null=True)
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING
+    )
 
     class Meta:
         verbose_name = "Agency invitation"

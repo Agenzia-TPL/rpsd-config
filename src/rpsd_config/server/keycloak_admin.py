@@ -142,9 +142,7 @@ class KeycloakAdminService:
 
     @property
     def _token_endpoint(self) -> str:
-        return (
-            f"{self.base_url}/realms/{self.realm}/protocol/openid-connect/token"
-        )
+        return f"{self.base_url}/realms/{self.realm}/protocol/openid-connect/token"
 
     @property
     def _realm_admin_base_url(self) -> str:
@@ -462,9 +460,9 @@ class KeycloakAdminService:
             if user_id:
                 return self.get_user_by_id(user_id)
 
-        fallback = self.find_user_by_username(
-            username
-        ) or self.find_user_by_email(email)
+        fallback = self.find_user_by_username(username) or self.find_user_by_email(
+            email
+        )
         if fallback is None:
             raise KeycloakAdminAPIError(
                 method="POST",

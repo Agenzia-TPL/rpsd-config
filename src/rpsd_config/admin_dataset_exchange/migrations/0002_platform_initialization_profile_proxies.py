@@ -4,7 +4,6 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("exchange_agreement", "0019_platform_initialization_profiles"),
         ("admin_dataset_exchange", "0001_initial"),

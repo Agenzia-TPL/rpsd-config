@@ -42,12 +42,15 @@ class RpsdAccountAdapter(DefaultAccountAdapter):
                 expires_at__gt=timezone.now(),
             ).exists()
 
-        return ContractInvitation.objects.filter(
-            token=normalized_token,
-            status=ContractInvitation.Status.PENDING,
-            expires_at__gt=timezone.now(),
-        ).exists() or AgencyInvitation.objects.filter(
-            token=normalized_token,
-            status=AgencyInvitation.Status.PENDING,
-            expires_at__gt=timezone.now(),
-        ).exists()
+        return (
+            ContractInvitation.objects.filter(
+                token=normalized_token,
+                status=ContractInvitation.Status.PENDING,
+                expires_at__gt=timezone.now(),
+            ).exists()
+            or AgencyInvitation.objects.filter(
+                token=normalized_token,
+                status=AgencyInvitation.Status.PENDING,
+                expires_at__gt=timezone.now(),
+            ).exists()
+        )

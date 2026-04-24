@@ -459,8 +459,7 @@ class Migration(migrations.Migration):
                     models.FileField(
                         blank=True,
                         help_text=(
-                            "Validation schema for the section"
-                            " (XSD/XML/JSON/YAML)"
+                            "Validation schema for the section (XSD/XML/JSON/YAML)"
                         ),
                         null=True,
                         upload_to=rpsd_config.exchange_agreement.models.structure_validation_path,

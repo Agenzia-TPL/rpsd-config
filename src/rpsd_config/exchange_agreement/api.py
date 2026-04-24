@@ -30,17 +30,17 @@ from .models import (
     Structure,
 )
 from .rbac import resolve_user_agency_scope
-from .services.agency_invitations import (
-    AgencyInvitationPermissionError,
-    AgencyInvitationProvisioningError,
-    AgencyInvitationValidationError,
-    create_agency_invitation,
-)
 from .services.agency_bootstrap import (
     AgencyBootstrapPermissionError,
     AgencyBootstrapProvisioningError,
     AgencyBootstrapValidationError,
     bootstrap_agency_with_admin_invitation,
+)
+from .services.agency_invitations import (
+    AgencyInvitationPermissionError,
+    AgencyInvitationProvisioningError,
+    AgencyInvitationValidationError,
+    create_agency_invitation,
 )
 from .services.publication import PublishContractError, publish_contract
 
@@ -349,8 +349,7 @@ def _can_create_contract_invitation(*, user, contract: Contract) -> bool:
     if scope.is_platform_admin:
         return True
     return (
-        agency_key in scope.admin_agency_keys
-        or agency_key in scope.editor_agency_keys
+        agency_key in scope.admin_agency_keys or agency_key in scope.editor_agency_keys
     )
 
 
@@ -1037,7 +1036,9 @@ def bootstrap_agency_endpoint(request, payload: AgencyBootstrapRequest):
 @api.get("/invitations/{token}/check", response=InvitationCheckResponse, auth=None)
 def check_invitation(request, token: str):
     contract_invitation = (
-        ContractInvitation.objects.select_related("contract").filter(token=token).first()
+        ContractInvitation.objects.select_related("contract")
+        .filter(token=token)
+        .first()
     )
     agency_invitation = (
         AgencyInvitation.objects.select_related("agency").filter(token=token).first()
@@ -1058,8 +1059,7 @@ def check_invitation(request, token: str):
 
     now = timezone.now()
     valid = (
-        invitation.status == invitation.Status.PENDING
-        and invitation.expires_at > now
+        invitation.status == invitation.Status.PENDING and invitation.expires_at > now
     )
     invitation_type = "contract" if contract_invitation else "agency"
     return InvitationCheckResponse(

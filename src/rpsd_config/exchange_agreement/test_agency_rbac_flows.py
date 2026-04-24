@@ -330,7 +330,9 @@ class AgencyInvitationApiAndOnboardingTests(TestCase):
             fake_keycloak.assign_user_to_group_calls,
         )
 
-        social_account = SocialAccount.objects.get(user=invitee, provider="openid_connect")
+        social_account = SocialAccount.objects.get(
+            user=invitee, provider="openid_connect"
+        )
         self.assertIn(
             f"/rpsd/{agency.agency_key}/editor",
             social_account.extra_data.get("groups", []),

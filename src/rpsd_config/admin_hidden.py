@@ -16,8 +16,8 @@ from rpsd_config.exchange_agreement.models import (
     ContractPublication,
     Dataset,
     FlowProfile,
-    IndicatorProfile,
     IndicatorDef,
+    IndicatorProfile,
     Lot,
     NetexValidationProfile,
     SiriValidationProfile,
@@ -116,7 +116,12 @@ class ContractInvitationHidden(_HiddenAdmin):
 
 @admin.register(AgencyMembership)
 class AgencyMembershipHidden(_HiddenAdmin):
-    search_fields = ("agency__name", "agency__agency_key", "user__username", "user__email")
+    search_fields = (
+        "agency__name",
+        "agency__agency_key",
+        "user__username",
+        "user__email",
+    )
 
 
 @admin.register(AgencyInvitation)
