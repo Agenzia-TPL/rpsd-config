@@ -16,7 +16,8 @@ project-root/
 ├── uv.lock             # Lock file
 ├── src/                # Project source files
 │   └── rpsd_config/    # Django application package
-├── tests/              # Test files
+├── tests/              # Unit tests (no external services)
+├── tests_integration/  # Integration tests (require DB, Keycloak, etc.)
 └── README.md           # Project documentation
 ```
 
@@ -87,25 +88,65 @@ See `USAGE.md` for running with Docker (integration tests, staging, production).
 
 ## Test File Placement
 
-**Always create test files inside `tests/`, never inside `src/`.**
+**Always create test files inside `tests/` or `tests_integration/`, never inside `src/`.**
 
-This project uses a dedicated `tests/` directory at the repo root, mirroring the
-`src/rpsd_config/` package structure:
+Tests are split into two root-level directories based on their external service requirements:
 
 ```
-tests/
-├── exchange_agreement/   # mirrors src/rpsd_config/exchange_agreement/
-├── server/               # mirrors src/rpsd_config/server/
-└── <app>/                # one subdirectory per Django app
+tests/                        # Unit tests — no external services required
+├── server/                   # mirrors src/rpsd_config/server/
+└── <app>/                    # one subdirectory per Django app
+
+tests_integration/            # Integration tests — require PostgreSQL, Keycloak, etc.
+├── server/
+└── exchange_agreement/       # mirrors src/rpsd_config/exchange_agreement/
 ```
 
-- Place new test files in `tests/<app>/test_<module>.py`
-- Each subdirectory under `tests/` must have an `__init__.py`
-- **Do NOT place test files inside `src/`**, even though Django supports co-located
-  tests. `testpaths = ["tests"]` in `pyproject.toml` means pytest will not find them.
+### Which directory to use
 
-> **Warning for users:** If you create a test file inside `src/`, pytest will silently
-> ignore it and VS Code's test panel will not show it. Always use the `tests/` tree.
+| Test type | Directory | Criterion |
+|-----------|-----------|-----------|
+| Unit test | `tests/` | Uses `SimpleTestCase`; all external calls mocked |
+| Integration test | `tests_integration/` | Uses `TestCase`; touches real DB, Keycloak, or other services |
+
+### Rules
+
+- Place new test files in `<dir>/<app>/test_<module>.py`
+- Each subdirectory must have an `__init__.py`
+- **Do NOT place test files inside `src/`** — `testpaths = ["tests"]` in `pyproject.toml`
+  means pytest will not find them
+
+### Running tests
+
+```bash
+# CI / default — unit tests only (always pass, no services needed)
+pytest
+
+# Integration tests — requires services running (see USAGE.md)
+pytest tests_integration/ --reuse-db
+
+# Everything
+pytest tests/ tests_integration/ --reuse-db
+```
+
+`--reuse-db` is already in `addopts` so it applies automatically when running
+`tests_integration/` from VS Code as well.
+
+> **Warning:** If you create a test that requires the database (inherits from `TestCase`
+> or uses `@pytest.mark.django_db`) inside `tests/`, it will cause CI to fail. Put it
+> in `tests_integration/` instead.
+
+### VS Code test discovery
+
+`.vscode/settings.json` passes both directories to pytest explicitly:
+
+```json
+"python.testing.pytestArgs": ["tests", "tests_integration"]
+```
+
+This makes all 70 tests visible in the Test Explorer. Integration tests will appear
+as failed/errored when services are not running — which is intentional and honest.
+Do not remove `tests_integration` from this list.
 
 ---
 *For generic AI assistant guidelines and behavior, see `ai-context.md`.*
