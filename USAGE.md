@@ -116,7 +116,7 @@ described below.
 | Variable | Default | Description |
 |---|---|---|
 | `OIDC_PROVIDER_ID` | `keycloak` | Provider identifier — must match the allauth provider record |
-| `KEYCLOAK_DISCOVERY_URL` | `http://keycloak:8080/realms/rapsodia/.well-known/openid-configuration` | OIDC discovery endpoint (server-to-server, must be container-reachable) |
+| `KEYCLOAK_DISCOVERY_URL` | `http://keycloak:8080/realms/rpsd/.well-known/openid-configuration` | OIDC discovery endpoint (server-to-server, must be container-reachable) |
 | `OIDC_AUTHORIZATION_ENDPOINT_URL` | *(empty)* | Override the browser-facing authorization URL (must use `localhost`) |
 | `OIDC_ISSUER_URL` | *(empty)* | Override the expected token issuer (must match Keycloak's `KC_HOSTNAME`) |
 | `OIDC_CLIENT_ID` | `django` | OAuth2 client ID (must match Keycloak client config) |
@@ -155,7 +155,7 @@ No additional settings are needed — the JWKS URL and issuer are derived from
 ```bash
 # Get a token
 TOKEN=$(curl -s -X POST \
-  http://localhost:19300/realms/rapsodia/protocol/openid-connect/token \
+  http://localhost:19300/realms/rpsd/protocol/openid-connect/token \
   -d "grant_type=client_credentials&client_id=rpsd-ingest&client_secret=YOUR_SECRET" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
