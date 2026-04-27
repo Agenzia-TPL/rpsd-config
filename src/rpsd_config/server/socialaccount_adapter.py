@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+from django.conf import settings
 
 LOGGER = logging.getLogger(__name__)
 RPSD_ADMIN_GROUP_PATH = "/rpsd/admin"
@@ -52,6 +53,11 @@ def _extract_groups_from_extra_data(extra_data: dict[str, Any]) -> set[str]:
 
 
 class RpsdSocialAccountAdapter(DefaultSocialAccountAdapter):
+    def is_open_for_signup(self, request, sociallogin):
+        if self._is_platform_admin_signup_allowed(sociallogin):
+            return True
+        return super().is_open_for_signup(request, sociallogin)
+
     def pre_social_login(self, request, sociallogin):
         self._sync_staff_from_oidc_groups(sociallogin)
         return super().pre_social_login(request, sociallogin)
@@ -125,3 +131,18 @@ class RpsdSocialAccountAdapter(DefaultSocialAccountAdapter):
             "OIDC staff mapping prepared for new user group=%s",
             RPSD_ADMIN_GROUP_PATH,
         )
+
+    def _is_platform_admin_signup_allowed(self, sociallogin) -> bool:
+        if not getattr(
+            settings,
+            "OIDC_ALLOW_PLATFORM_ADMIN_SIGNUP_WITHOUT_INVITATION",
+            False,
+        ):
+            return False
+
+        account = getattr(sociallogin, "account", None)
+        extra_data = getattr(account, "extra_data", None)
+        if not isinstance(extra_data, dict):
+            return False
+
+        return RPSD_ADMIN_GROUP_PATH in _extract_groups_from_extra_data(extra_data)

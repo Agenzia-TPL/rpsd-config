@@ -3,8 +3,9 @@
 import base64
 import json
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from django.test import RequestFactory, SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from rpsd_config.server.socialaccount_adapter import (
     RpsdSocialAccountAdapter,
@@ -93,6 +94,51 @@ class SocialAccountAdapterTests(SimpleTestCase):
         assert user.is_staff is True
         assert user.is_superuser is True
         assert user.saved_update_fields == ["is_staff"]
+
+    @override_settings(OIDC_ALLOW_PLATFORM_ADMIN_SIGNUP_WITHOUT_INVITATION=True)
+    def test_platform_admin_group_can_signup_without_invitation_when_enabled(self):
+        adapter = RpsdSocialAccountAdapter()
+        request = RequestFactory().get("/accounts/oidc/keycloak/login/")
+        sociallogin = _DummySocialLogin(
+            user=_DummyUser(is_staff=False),
+            extra_data={"id_token": {"groups": ["/rpsd/admin"]}},
+        )
+
+        assert adapter.is_open_for_signup(request, sociallogin) is True
+
+    @override_settings(OIDC_ALLOW_PLATFORM_ADMIN_SIGNUP_WITHOUT_INVITATION=False)
+    def test_platform_admin_group_falls_back_to_default_signup_policy_when_disabled(self):
+        adapter = RpsdSocialAccountAdapter()
+        request = RequestFactory().get("/accounts/oidc/keycloak/login/")
+        sociallogin = _DummySocialLogin(
+            user=_DummyUser(is_staff=False),
+            extra_data={"id_token": {"groups": ["/rpsd/admin"]}},
+        )
+
+        with patch(
+            "allauth.socialaccount.adapter.DefaultSocialAccountAdapter.is_open_for_signup",
+            return_value=False,
+        ) as default_policy:
+            assert adapter.is_open_for_signup(request, sociallogin) is False
+
+        default_policy.assert_called_once_with(request, sociallogin)
+
+    @override_settings(OIDC_ALLOW_PLATFORM_ADMIN_SIGNUP_WITHOUT_INVITATION=True)
+    def test_non_admin_group_falls_back_to_default_signup_policy(self):
+        adapter = RpsdSocialAccountAdapter()
+        request = RequestFactory().get("/accounts/oidc/keycloak/login/")
+        sociallogin = _DummySocialLogin(
+            user=_DummyUser(is_staff=False),
+            extra_data={"id_token": {"groups": ["/rpsd/demo-agency/reader"]}},
+        )
+
+        with patch(
+            "allauth.socialaccount.adapter.DefaultSocialAccountAdapter.is_open_for_signup",
+            return_value=False,
+        ) as default_policy:
+            assert adapter.is_open_for_signup(request, sociallogin) is False
+
+        default_policy.assert_called_once_with(request, sociallogin)
 
     def test_on_authentication_error_logs_diagnostic_fields(self):
         adapter = RpsdSocialAccountAdapter()

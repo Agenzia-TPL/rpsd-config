@@ -256,6 +256,7 @@ class OIDCSettings(BaseSettings):
     OIDC_CLIENT_ID: str = Field(default="django")
     OIDC_CLIENT_SECRET: str = Field(default="django-secret")
     OIDC_FETCH_USERINFO: bool = Field(default=False)
+    OIDC_ALLOW_PLATFORM_ADMIN_SIGNUP_WITHOUT_INVITATION: bool = Field(default=False)
 
     SOCIALACCOUNT_PROVIDERS: dict = Field(default_factory=dict)
 
