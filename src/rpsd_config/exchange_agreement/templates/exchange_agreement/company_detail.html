@@ -201,10 +201,20 @@
         </dd>
         <dt class="col-sm-4 text-body-secondary">Secret corrente</dt>
         <dd class="col-sm-8">
-          {% if m2m_exchange_info.credentials_available %}
+          {% if m2m_exchange_info.revealed_secret %}
+            <code>{{ m2m_exchange_info.revealed_secret }}</code>
+          {% elif m2m_exchange_info.credentials_available %}
             <code>••••••••••••••••</code>
           {% else %}
             <span class="text-body-secondary">Non disponibile</span>
+          {% endif %}
+        </dd>
+        <dt class="col-sm-4 text-body-secondary">Stato</dt>
+        <dd class="col-sm-8">
+          {% if m2m_exchange_info.status %}
+            <span class="badge text-bg-secondary">{{ m2m_exchange_info.status }}</span>
+          {% else %}
+            <span class="text-body-secondary">Non configurato</span>
           {% endif %}
         </dd>
       </dl>
@@ -214,11 +224,26 @@
   <section class="card border-0 shadow-sm" aria-label="Operativita interscambio">
     <div class="card-body">
       <h2 class="h5">Operativita interscambio</h2>
-      <p class="text-body-secondary small mb-3">
-        La rotazione automatica del secret M2M verra' abilitata quando il modello credenziali
-        per azienda sara' disponibile lato backend.
-      </p>
-      <button class="btn btn-outline-primary" disabled>Ruota secret client</button>
+      <div class="d-flex flex-wrap gap-2">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="tab" value="interscambio">
+          <input type="hidden" name="action" value="reveal-client-secret">
+          <button class="btn btn-outline-secondary" {% if not m2m_exchange_info.credentials_available %}disabled{% endif %}>Mostra secret client</button>
+        </form>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="tab" value="interscambio">
+          <input type="hidden" name="action" value="rotate-client-secret">
+          <button class="btn btn-outline-primary" {% if not m2m_exchange_info.can_rotate_secret %}disabled{% endif %}>Ruota secret client</button>
+        </form>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="tab" value="interscambio">
+          <input type="hidden" name="action" value="revoke-client">
+          <button class="btn btn-outline-danger" {% if not m2m_exchange_info.can_revoke_client %}disabled{% endif %}>Revoca client</button>
+        </form>
+      </div>
     </div>
   </section>
 {% endif %}

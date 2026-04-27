@@ -1008,6 +1008,196 @@ class ContractIndicator(models.Model):
         return f"{self.contract.contract_code}:{self.indicator.code}"
 
 
+class IntegrationPrincipal(TimeStampedModel):
+    """Technical M2M client associated with a transport company."""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", _("Active")
+        SUSPENDED = "suspended", _("Suspended")
+        REVOKED = "revoked", _("Revoked")
+
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        related_name="integration_principals",
+    )
+    name = models.CharField(max_length=128)
+    environment = models.CharField(max_length=8, default="prod", db_index=True)
+    keycloak_client_id = models.CharField(max_length=255, unique=True)
+    keycloak_client_uuid = models.CharField(max_length=64, blank=True, default="")
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
+    last_secret_rotation_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    client_secret_ciphertext = models.TextField(blank=True, default="")
+    client_secret_key_id = models.CharField(max_length=64, blank=True, default="")
+    client_secret_updated_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        db_index=True,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="integration_principals_created",
+    )
+
+    class Meta:
+        verbose_name = "Integration principal"
+        verbose_name_plural = "Integration principals"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "name", "environment"],
+                name="unique_integration_principal_per_company_name_env",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["company", "environment"]),
+            models.Index(fields=["company", "status"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.environment = (self.environment or "prod").strip().lower()
+        self.keycloak_client_id = (self.keycloak_client_id or "").strip()
+        self.keycloak_client_uuid = (self.keycloak_client_uuid or "").strip()
+        self.name = (self.name or "").strip()
+        if not self.name:
+            raise ValidationError({"name": _("Name is required.")})
+        if not self.keycloak_client_id:
+            raise ValidationError(
+                {"keycloak_client_id": _("Keycloak client id is required.")}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.keycloak_client_id} ({self.company})"
+
+
+class IntegrationGrant(TimeStampedModel):
+    """Contract-scoped permission assigned to an M2M integration principal."""
+
+    class Action(models.TextChoices):
+        INGEST_WRITE = "ingest:write", _("Ingest write")
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", _("Active")
+        DISABLED = "disabled", _("Disabled")
+
+    principal = models.ForeignKey(
+        IntegrationPrincipal,
+        on_delete=models.CASCADE,
+        related_name="grants",
+    )
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="integration_grants",
+    )
+    action = models.CharField(
+        max_length=64,
+        choices=Action.choices,
+        default=Action.INGEST_WRITE,
+        db_index=True,
+    )
+    data_category = models.CharField(max_length=64, blank=True, null=True)
+    valid_from = models.DateTimeField(blank=True, null=True, db_index=True)
+    valid_to = models.DateTimeField(blank=True, null=True, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
+    notes = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="integration_grants_created",
+    )
+
+    class Meta:
+        verbose_name = "Integration grant"
+        verbose_name_plural = "Integration grants"
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(valid_from__isnull=True)
+                    | models.Q(valid_to__isnull=True)
+                    | models.Q(valid_to__gte=models.F("valid_from"))
+                ),
+                name="integration_grant_valid_window",
+            ),
+            models.UniqueConstraint(
+                fields=["principal", "contract", "action"],
+                condition=models.Q(data_category__isnull=True, status="active"),
+                name="uniq_active_integration_grant_no_category",
+            ),
+            models.UniqueConstraint(
+                fields=["principal", "contract", "action", "data_category"],
+                condition=models.Q(data_category__isnull=False, status="active"),
+                name="uniq_active_integration_grant_with_category",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["principal", "status", "action"],
+                name="ix_igr_pri_stat_act",
+            ),
+            models.Index(
+                fields=["principal", "contract", "status"],
+                name="ix_igr_pri_ctr_stat",
+            ),
+            models.Index(
+                fields=["contract", "status", "action"],
+                name="ix_igr_ctr_stat_act",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        self.action = (self.action or self.Action.INGEST_WRITE).strip()
+        normalized_category = (self.data_category or "").strip().lower()
+        self.data_category = normalized_category or None
+        errors = {}
+        if self.action not in {choice[0] for choice in self.Action.choices}:
+            errors["action"] = _("Unsupported integration grant action.")
+        if self.valid_from and self.valid_to and self.valid_to < self.valid_from:
+            errors["valid_to"] = _(
+                "valid_to must be greater than or equal to valid_from."
+            )
+        principal_company_id = getattr(self.principal, "company_id", None)
+        contract_company_id = getattr(self.contract, "contractor_company_id", None)
+        if principal_company_id and contract_company_id:
+            if principal_company_id != contract_company_id:
+                errors["contract"] = _(
+                    "Integration grant contract must belong to the principal company."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        category = self.data_category or "*"
+        return (
+            f"{self.principal.keycloak_client_id} -> "
+            f"{self.contract.contract_code} {self.action} {category}"
+        )
+
+
 class ContractMembership(TimeStampedModel):
     """
     RBAC assignment scoped to a single contract.

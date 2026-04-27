@@ -350,6 +350,18 @@ class AppSettings(BaseSettings):
     GUNICORN_WORKERS: int = Field(default=2)
     GUNICORN_TIMEOUT: int = Field(default=30)
 
+    # M2M company client defaults (rpsd-config only).
+    M2M_DEFAULT_ENVIRONMENT: str = Field(default="prod")
+    M2M_DEFAULT_CLIENT_SUFFIX: str = Field(default="default-prod")
+    M2M_CLIENT_SECRET_KEY_ID: str = Field(default="local")
+    M2M_CLIENT_SECRET_ENCRYPTION_KEY: str = Field(default="")
+
+    # M2M API authentication (rpsd-config only).
+    M2M_API_ENABLED: bool = Field(default=True)
+    M2M_API_EXPECTED_AUDIENCE: str = Field(default="")
+    M2M_API_CLIENT_ID_CLAIM: str = Field(default="azp")
+    M2M_API_CLOCK_SKEW_SECONDS: int = Field(default=30)
+
 
 class ProjectSettings(
     GeneralSettings,

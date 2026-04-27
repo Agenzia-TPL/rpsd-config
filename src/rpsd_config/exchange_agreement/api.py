@@ -14,6 +14,7 @@ from ninja.errors import HttpError
 from ninja.security import SessionAuth
 
 from rpsd_config.server.bearer_auth import BearerTokenAuth
+from rpsd_config.server.m2m_auth import M2MClientTokenAuth
 
 from .models import (
     Agency,
@@ -26,6 +27,8 @@ from .models import (
     ContractPublication,
     FlowProfile,
     IndicatorDef,
+    IntegrationGrant,
+    IntegrationPrincipal,
     Lot,
     Structure,
 )
@@ -41,6 +44,12 @@ from .services.agency_invitations import (
     AgencyInvitationProvisioningError,
     AgencyInvitationValidationError,
     create_agency_invitation,
+)
+from .services.m2m_audit import audit_m2m_event
+from .services.m2m_grants import (
+    accessible_contracts_for_principal,
+    require_m2m_contract_access,
+    require_m2m_principal,
 )
 from .services.publication import PublishContractError, publish_contract
 
@@ -253,10 +262,46 @@ class ContractPublicationDetailSchema(ContractPublicationSummarySchema):
     snapshot: dict
 
 
+class M2MCompanySchema(Schema):
+    id: int
+    name: str
+
+
+class M2MMeSchema(Schema):
+    keycloak_client_id: str
+    environment: str
+    status: str
+    company: M2MCompanySchema
+
+
+class M2MGrantSchema(Schema):
+    contract_code: str
+    action: str
+    data_category: str | None
+    status: str
+    valid_from: str | None
+    valid_to: str | None
+
+
+class M2MUserSchema(Schema):
+    username: str
+    email: str
+    display_name: str
+    contract_codes: list[str]
+    roles: list[str]
+
+
 api = NinjaAPI(
     title="RPSD Exchange Agreement API",
     version="1.0",
     auth=[SessionAuth(), BearerTokenAuth()],
+)
+
+m2m_api = NinjaAPI(
+    title="RPSD Exchange Agreement M2M API",
+    version="1.0",
+    auth=M2MClientTokenAuth(),
+    urls_namespace="exchange-agreement-m2m-api",
 )
 
 
@@ -567,6 +612,255 @@ def _contract_publication_detail_schema(
     )
 
 
+def _m2m_company_schema(company: Company) -> M2MCompanySchema:
+    return M2MCompanySchema(id=company.id, name=company.name)
+
+
+def _m2m_me_schema(principal: IntegrationPrincipal) -> M2MMeSchema:
+    return M2MMeSchema(
+        keycloak_client_id=principal.keycloak_client_id,
+        environment=principal.environment,
+        status=principal.status,
+        company=_m2m_company_schema(principal.company),
+    )
+
+
+def _m2m_grant_schema(grant: IntegrationGrant) -> M2MGrantSchema:
+    return M2MGrantSchema(
+        contract_code=grant.contract.contract_code,
+        action=grant.action,
+        data_category=grant.data_category,
+        status=grant.status,
+        valid_from=grant.valid_from.isoformat() if grant.valid_from else None,
+        valid_to=grant.valid_to.isoformat() if grant.valid_to else None,
+    )
+
+
+def _contract_required_inputs_schema(contract: Contract) -> RequiredInputsResponse:
+    links = (
+        ContractIndicator.objects.select_related("indicator")
+        .prefetch_related("indicator__structures__dataset")
+        .filter(contract=contract)
+        .order_by("indicator__code")
+    )
+
+    groups: dict[str, dict] = {}
+    for link in links:
+        indicator_code = link.indicator.code
+        for structure in link.indicator.structures.all():
+            dataset = structure.dataset
+            key = dataset.slug
+            group = groups.setdefault(
+                key,
+                {
+                    "dataset": _dataset_ref(dataset),
+                    "structures_by_id": {},
+                    "used_by_indicators": set(),
+                },
+            )
+            group["structures_by_id"][structure.id] = _structure_schema(structure)
+            group["used_by_indicators"].add(indicator_code)
+
+    required_inputs = [
+        RequiredInputGroupSchema(
+            dataset=group["dataset"],
+            structures=list(group["structures_by_id"].values()),
+            used_by_indicators=sorted(group["used_by_indicators"]),
+        )
+        for _, group in sorted(groups.items())
+    ]
+    return RequiredInputsResponse(
+        contract_code=contract.contract_code,
+        required_inputs=required_inputs,
+    )
+
+
+def _contract_indicators_schema(contract: Contract) -> list[ContractIndicatorSchema]:
+    links = (
+        ContractIndicator.objects.select_related("indicator")
+        .prefetch_related("indicator__structures__dataset")
+        .filter(contract=contract)
+        .order_by("indicator__code")
+    )
+    return [
+        ContractIndicatorSchema(
+            indicator=_indicator_schema(link.indicator),
+            contract_params=link.params,
+        )
+        for link in links
+    ]
+
+
+def _m2m_user_schema_map(memberships) -> list[M2MUserSchema]:
+    by_user: dict[int, dict] = {}
+    for membership in memberships:
+        user = membership.user
+        item = by_user.setdefault(
+            user.id,
+            {
+                "user": user,
+                "contract_codes": set(),
+                "roles": set(),
+            },
+        )
+        item["contract_codes"].add(membership.contract.contract_code)
+        item["roles"].add(membership.role)
+
+    result = []
+    for item in by_user.values():
+        user = item["user"]
+        display_name = getattr(user, "get_full_name", lambda: "")() or user.username
+        result.append(
+            M2MUserSchema(
+                username=user.username,
+                email=user.email,
+                display_name=display_name,
+                contract_codes=sorted(item["contract_codes"]),
+                roles=sorted(item["roles"]),
+            )
+        )
+    result.sort(key=lambda user: (user.email, user.username))
+    return result
+
+
+@m2m_api.get("/v1/me", response=M2MMeSchema)
+def m2m_me(request):
+    principal = require_m2m_principal(request)
+    return _m2m_me_schema(principal)
+
+
+@m2m_api.get("/v1/company", response=M2MCompanySchema)
+def m2m_company(request):
+    principal = require_m2m_principal(request)
+    return _m2m_company_schema(principal.company)
+
+
+@m2m_api.get("/v1/grants", response=list[M2MGrantSchema])
+def m2m_grants(request):
+    principal = require_m2m_principal(request)
+    grants = (
+        IntegrationGrant.objects.select_related("contract")
+        .filter(principal=principal)
+        .order_by("contract__contract_code", "action", "data_category", "id")
+    )
+    return [_m2m_grant_schema(grant) for grant in grants]
+
+
+@m2m_api.get("/v1/contracts", response=list[ContractSummarySchema])
+def m2m_contracts(request):
+    principal = require_m2m_principal(request)
+    contracts = accessible_contracts_for_principal(principal).order_by(
+        "-start_date",
+        "contract_code",
+    )
+    audit_m2m_event(
+        "api.contracts_listed",
+        principal_id=principal.pk,
+        company_id=principal.company_id,
+        keycloak_client_id=principal.keycloak_client_id,
+    )
+    return [_contract_summary_schema(contract) for contract in contracts]
+
+
+@m2m_api.get("/v1/contracts/{contract_code}", response=ContractDetailSchema)
+def m2m_contract_detail(request, contract_code: str):
+    principal, contract, _grant = require_m2m_contract_access(
+        request,
+        contract_code=contract_code,
+    )
+    audit_m2m_event(
+        "api.contract_detail",
+        principal_id=principal.pk,
+        company_id=principal.company_id,
+        keycloak_client_id=principal.keycloak_client_id,
+        contract_code=contract.contract_code,
+    )
+    return _contract_detail_schema(request, contract)
+
+
+@m2m_api.get(
+    "/v1/contracts/{contract_code}/flow-profile",
+    response=ContractFlowProfileResponse,
+)
+def m2m_contract_flow_profile(request, contract_code: str):
+    _principal, contract, _grant = require_m2m_contract_access(
+        request,
+        contract_code=contract_code,
+    )
+    return ContractFlowProfileResponse(
+        contract_code=contract.contract_code,
+        flow_profile=_flow_profile_schema(contract.flow_profile)
+        if contract.flow_profile
+        else None,
+    )
+
+
+@m2m_api.get(
+    "/v1/contracts/{contract_code}/required-inputs",
+    response=RequiredInputsResponse,
+)
+def m2m_contract_required_inputs(request, contract_code: str):
+    _principal, contract, _grant = require_m2m_contract_access(
+        request,
+        contract_code=contract_code,
+    )
+    return _contract_required_inputs_schema(contract)
+
+
+@m2m_api.get(
+    "/v1/contracts/{contract_code}/indicators",
+    response=list[ContractIndicatorSchema],
+)
+def m2m_contract_indicators(request, contract_code: str):
+    _principal, contract, _grant = require_m2m_contract_access(
+        request,
+        contract_code=contract_code,
+    )
+    return _contract_indicators_schema(contract)
+
+
+@m2m_api.get(
+    "/v1/contracts/{contract_code}/publications",
+    response=list[ContractPublicationSummarySchema],
+)
+def m2m_contract_publications(request, contract_code: str):
+    _principal, contract, _grant = require_m2m_contract_access(
+        request,
+        contract_code=contract_code,
+    )
+    publications = (
+        ContractPublication.objects.select_related("contract", "published_by")
+        .filter(contract=contract)
+        .order_by("-publication_version")
+    )
+    return [_contract_publication_summary_schema(item) for item in publications]
+
+
+@m2m_api.get("/v1/company/users", response=list[M2MUserSchema])
+def m2m_company_users(request):
+    principal = require_m2m_principal(request)
+    memberships = (
+        ContractMembership.objects.select_related("user", "contract")
+        .filter(contract__contractor_company=principal.company)
+        .order_by("user__email", "user__username", "contract__contract_code")
+    )
+    return _m2m_user_schema_map(memberships)
+
+
+@m2m_api.get("/v1/contracts/{contract_code}/users", response=list[M2MUserSchema])
+def m2m_contract_users(request, contract_code: str):
+    _principal, contract, _grant = require_m2m_contract_access(
+        request,
+        contract_code=contract_code,
+    )
+    memberships = (
+        ContractMembership.objects.select_related("user", "contract")
+        .filter(contract=contract)
+        .order_by("user__email", "user__username")
+    )
+    return _m2m_user_schema_map(memberships)
+
+
 @api.get("/v1/contracts", response=list[ContractSummarySchema])
 def list_contracts(
     request,
@@ -787,19 +1081,7 @@ def get_contract_publication_by_version(
 )
 def list_contract_indicators(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
-    links = (
-        ContractIndicator.objects.select_related("indicator")
-        .prefetch_related("indicator__structures__dataset")
-        .filter(contract=contract)
-        .order_by("indicator__code")
-    )
-    return [
-        ContractIndicatorSchema(
-            indicator=_indicator_schema(link.indicator),
-            contract_params=link.params,
-        )
-        for link in links
-    ]
+    return _contract_indicators_schema(contract)
 
 
 @api.get(
@@ -827,41 +1109,7 @@ def get_contract_indicator(request, contract_code: str, indicator_code: str):
 )
 def get_contract_required_inputs(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
-    links = (
-        ContractIndicator.objects.select_related("indicator")
-        .prefetch_related("indicator__structures__dataset")
-        .filter(contract=contract)
-        .order_by("indicator__code")
-    )
-
-    groups: dict[str, dict] = {}
-    for link in links:
-        indicator_code = link.indicator.code
-        for structure in link.indicator.structures.all():
-            dataset = structure.dataset
-            key = dataset.slug
-            group = groups.setdefault(
-                key,
-                {
-                    "dataset": _dataset_ref(dataset),
-                    "structures_by_id": {},
-                    "used_by_indicators": set(),
-                },
-            )
-            group["structures_by_id"][structure.id] = _structure_schema(structure)
-            group["used_by_indicators"].add(indicator_code)
-
-    required_inputs = [
-        RequiredInputGroupSchema(
-            dataset=group["dataset"],
-            structures=list(group["structures_by_id"].values()),
-            used_by_indicators=sorted(group["used_by_indicators"]),
-        )
-        for _, group in sorted(groups.items())
-    ]
-    return RequiredInputsResponse(
-        contract_code=contract.contract_code, required_inputs=required_inputs
-    )
+    return _contract_required_inputs_schema(contract)
 
 
 @api.get("/v1/indicators", response=list[IndicatorSchema])

@@ -23,7 +23,7 @@ from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
 
-from rpsd_config.exchange_agreement.api import api
+from rpsd_config.exchange_agreement.api import api, m2m_api
 from rpsd_config.exchange_agreement.views import invitation_landing
 from rpsd_config.server.oidc_views import oidc_callback, oidc_login
 from rpsd_config.server.public_views import bootstrap_smoke, home, login_page
@@ -37,6 +37,7 @@ urlpatterns = [
     path("login/", login_page, name="login-page"),
     path("ui/bootstrap-smoke/", bootstrap_smoke, name="bootstrap-smoke"),
     path("admin/", admin.site.urls),
+    path("exchange_agreement/api/m2m/", m2m_api.urls),
     path("exchange_agreement/api/", api.urls),
     path(
         "accounts/oidc/<str:provider_id>/login/",
