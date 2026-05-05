@@ -7,7 +7,7 @@ from allauth.socialaccount.models import SocialAccount
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.test import TestCase
-from django.urls import reverse
+from django.urls import resolve, reverse
 
 from rpsd_config.exchange_agreement.models import (
     Agency,
@@ -173,6 +173,11 @@ class NavigationAndPagesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.agency.name)
         self.assertContains(response, self.other_agency.name)
+
+    def test_agency_bootstrap_url_is_not_captured_by_agency_slug(self):
+        match = resolve("/exchange_agreement/me/agencies/bootstrap/")
+
+        self.assertEqual(match.url_name, "agency-bootstrap")
 
     def test_agency_detail_and_contract_pages(self):
         self.client.force_login(self.regular_user)

@@ -44,6 +44,11 @@ urlpatterns = [
         name="company-detail",
     ),
     path(
+        "me/agencies/bootstrap/",
+        bootstrap_agency_page,
+        name="agency-bootstrap",
+    ),
+    path(
         "me/agencies/<slug:agency_key>/",
         agency_detail_page,
         name="agency-detail",
@@ -74,11 +79,6 @@ urlpatterns = [
         name="platform-configuration",
     ),
     path("me/invitations/", received_invitations, name="received-invitations"),
-    path(
-        "me/agencies/bootstrap/",
-        bootstrap_agency_page,
-        name="agency-bootstrap",
-    ),
     path(
         "me/contract-invitations/new/",
         create_contract_invitation_page,
