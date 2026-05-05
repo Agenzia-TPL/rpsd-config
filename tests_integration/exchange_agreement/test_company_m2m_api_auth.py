@@ -11,6 +11,7 @@ from rpsd_config.exchange_agreement.models import (
     Company,
     Contract,
     ContractMembership,
+    FlowProfile,
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
@@ -48,6 +49,28 @@ class CompanyM2MApiAuthTests(TestCase):
             short_description="M2M-API-OTHER",
             description="Other Lot M2M API",
         )
+        self.flow_profile = FlowProfile.objects.create(
+            code="m2m-api-flow-profile",
+            name="M2M API Flow Profile",
+            options={
+                "general_profile": "m2m-api",
+                "planned_master": {},
+                "data_ingestion": {
+                    "netex": {
+                        "flow": "ingest-flow/netex",
+                        "active": True,
+                        "description": "NeTEx ingest",
+                    },
+                    "siri": {
+                        "flow": "ingest-flow/siri",
+                        "active": False,
+                        "description": "SIRI ingest",
+                    },
+                },
+                "data_retention": {},
+            },
+            is_active=True,
+        )
         self.contract = Contract.objects.create(
             contract_code="CTR-M2M-API-001",
             client_agency=self.agency,
@@ -56,6 +79,7 @@ class CompanyM2MApiAuthTests(TestCase):
             start_date=date(2026, 1, 1),
             end_date=date(2026, 12, 31),
             status=Contract.ContractStatus.ACTIVE,
+            flow_profile=self.flow_profile,
         )
         self.other_contract = Contract.objects.create(
             contract_code="CTR-M2M-API-OTHER",
@@ -156,6 +180,39 @@ class CompanyM2MApiAuthTests(TestCase):
             f"{self.other_contract.contract_code}"
         )
         response = self._get(path)
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_m2m_ingest_authorization_allows_active_data_category(self):
+        path = (
+            "/exchange_agreement/api/m2m/v1/contracts/"
+            f"{self.contract.contract_code}/ingest-authorization"
+        )
+        response = self._get(f"{path}?data_category=netex")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["allowed"])
+        self.assertEqual(payload["contract_code"], self.contract.contract_code)
+        self.assertEqual(payload["data_category"], "netex")
+        self.assertEqual(payload["flow_profile_code"], self.flow_profile.code)
+        self.assertEqual(payload["flow"], "ingest-flow/netex")
+
+    def test_m2m_ingest_authorization_rejects_inactive_data_category(self):
+        path = (
+            "/exchange_agreement/api/m2m/v1/contracts/"
+            f"{self.contract.contract_code}/ingest-authorization"
+        )
+        response = self._get(f"{path}?data_category=siri")
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_m2m_ingest_authorization_requires_contract_grant(self):
+        path = (
+            "/exchange_agreement/api/m2m/v1/contracts/"
+            f"{self.other_contract.contract_code}/ingest-authorization"
+        )
+        response = self._get(f"{path}?data_category=netex")
 
         self.assertEqual(response.status_code, 404)
 

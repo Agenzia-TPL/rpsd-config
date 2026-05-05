@@ -272,6 +272,27 @@ Key endpoints (v1):
   - `GET /exchange_agreement/api/invitations/{token}/check`
   - `POST /exchange_agreement/api/invitations/{token}/start`
 
+M2M company endpoints:
+
+- Base path: `/exchange_agreement/api/m2m/`
+- Company client context:
+  - `GET /exchange_agreement/api/m2m/v1/me`
+  - `GET /exchange_agreement/api/m2m/v1/company`
+  - `GET /exchange_agreement/api/m2m/v1/grants`
+- Granted contracts:
+  - `GET /exchange_agreement/api/m2m/v1/contracts`
+  - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}`
+  - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/flow-profile`
+  - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/required-inputs`
+  - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/ingest-authorization?data_category={what}`
+
+File submission to `rpsd-ingest` is standardized on the M2M company flow:
+company clients obtain a Keycloak token with `client_credentials`, send the
+file to ingest with `Authorization: Bearer <token>`, and Config validates the
+JWT, contract, grant and data category. User-based Config APIs remain available
+for authenticated user workflows, but user-based file submission is not the
+standard ingest path.
+
 ## Admin Backoffice Notes
 
 ### Contract publish action (Django admin)

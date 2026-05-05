@@ -283,6 +283,15 @@ class M2MGrantSchema(Schema):
     valid_to: str | None
 
 
+class M2MIngestAuthorizationResponse(Schema):
+    allowed: bool
+    contract_code: str
+    data_category: str
+    flow_profile_code: str
+    flow: str
+    grant_id: int | None
+
+
 class M2MUserSchema(Schema):
     username: str
     email: str
@@ -792,6 +801,53 @@ def m2m_contract_flow_profile(request, contract_code: str):
         flow_profile=_flow_profile_schema(contract.flow_profile)
         if contract.flow_profile
         else None,
+    )
+
+
+@m2m_api.get(
+    "/v1/contracts/{contract_code}/ingest-authorization",
+    response=M2MIngestAuthorizationResponse,
+)
+def m2m_contract_ingest_authorization(
+    request, contract_code: str, data_category: str
+):
+    data_category = data_category.strip().lower()
+    if not data_category:
+        raise HttpError(400, "data_category is required.")
+
+    _principal, contract, grant = require_m2m_contract_access(
+        request,
+        contract_code=contract_code,
+        data_category=data_category,
+    )
+
+    flow_profile = contract.flow_profile
+    if flow_profile is None:
+        raise HttpError(400, "No flow profile assigned to contract.")
+    if not flow_profile.is_active:
+        raise HttpError(400, "Flow profile is not active.")
+
+    data_ingestion = flow_profile.options.get("data_ingestion")
+    if not isinstance(data_ingestion, dict):
+        raise HttpError(400, "Flow profile has no data_ingestion block.")
+
+    entry = data_ingestion.get(data_category)
+    if not isinstance(entry, dict):
+        raise HttpError(400, "Data category is not supported by flow profile.")
+    if not entry.get("active"):
+        raise HttpError(400, "Data category is inactive for this contract.")
+
+    flow = entry.get("flow")
+    if not isinstance(flow, str) or not flow.strip():
+        raise HttpError(400, "Data category has no valid ingest flow.")
+
+    return M2MIngestAuthorizationResponse(
+        allowed=True,
+        contract_code=contract.contract_code,
+        data_category=data_category,
+        flow_profile_code=flow_profile.code,
+        flow=flow.strip(),
+        grant_id=grant.pk if grant else None,
     )
 
 
