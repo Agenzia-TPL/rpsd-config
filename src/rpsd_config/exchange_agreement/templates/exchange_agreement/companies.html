@@ -14,67 +14,21 @@
 {% endblock %}
 
 {% block content %}
-<div class="row g-4">
-  <div class="col-12 col-xl-5">
-    <section class="card border-0 shadow-sm h-100" aria-label="Nuova azienda">
-      <div class="card-body">
-        <h2 class="h5">Crea nuova azienda</h2>
-        {% if can_create_company %}
-          <p class="text-body-secondary small mb-3">
-            Se il nome e' gia' presente, usa il record esistente dal catalogo.
-          </p>
-        {% else %}
-          <p class="text-body-secondary small mb-3">
-            Permesso non disponibile: la creazione aziende e' riservata ai platform admin.
-          </p>
-        {% endif %}
-
-        {% if error_message %}
-          <div class="alert alert-danger" role="alert">{{ error_message }}</div>
-        {% endif %}
-        {% if success_message %}
-          <div class="alert alert-success" role="alert">{{ success_message }}</div>
-        {% endif %}
-
-        {% if can_create_company %}
-          <form method="post" class="d-grid gap-3">
-            {% csrf_token %}
-            <div>
-              <label class="form-label" for="company_name">Nome azienda</label>
-              <input
-                class="form-control"
-                id="company_name"
-                name="name"
-                type="text"
-                required
-                maxlength="255"
-                value="{{ form_values.name }}"
-              >
-            </div>
-            <div>
-              <label class="form-label" for="company_description">Descrizione (opzionale)</label>
-              <textarea
-                class="form-control"
-                id="company_description"
-                name="description"
-                rows="4"
-              >{{ form_values.description }}</textarea>
-            </div>
-            <div class="d-flex justify-content-end">
-              <button type="submit" class="btn btn-primary">Crea azienda</button>
-            </div>
-          </form>
-        {% endif %}
-      </div>
-    </section>
-  </div>
-
-  <div class="col-12 col-xl-7">
+<div class="row">
+  <div class="col-12">
     <section class="card border-0 shadow-sm" aria-label="Elenco aziende">
       <div class="card-body">
-        <h2 class="h5">Elenco aziende</h2>
+        <div class="app-section-header mb-3">
+          <h2 class="h5 mb-0">Elenco aziende</h2>
+          {% if can_create_company %}
+            <a class="btn btn-primary btn-sm app-icon-button" href="{% url 'exchange_agreement:company-create' %}">
+              {% include "includes/icon.html" with icon_name="plus" %}
+              <span>Nuova azienda</span>
+            </a>
+          {% endif %}
+        </div>
         {% if companies %}
-          <div class="table-responsive mt-3">
+          <div class="table-responsive">
             <table class="table table-sm align-middle">
               <thead>
                 <tr>
@@ -96,9 +50,10 @@
                     <td class="text-end">
                       <a
                         href="{% url 'exchange_agreement:company-detail' company.id %}"
-                        class="btn btn-outline-dark btn-sm"
+                        class="btn btn-outline-dark btn-sm app-icon-button"
                       >
-                        Dettaglio
+                        {% include "includes/icon.html" with icon_name="eye" %}
+                        <span>Dettaglio</span>
                       </a>
                     </td>
                   </tr>

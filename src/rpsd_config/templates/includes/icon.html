@@ -1,0 +1,13 @@
+{% load static %}
+<svg
+  class="app-icon{% if icon_class %} {{ icon_class }}{% endif %}"
+  {% if icon_label %}
+    role="img"
+    aria-label="{{ icon_label }}"
+  {% else %}
+    aria-hidden="true"
+    focusable="false"
+  {% endif %}
+>
+  <use href="{% static 'icons/rpsd-icons.svg' %}#{{ icon_name }}"></use>
+</svg>

@@ -1,0 +1,18 @@
+<nav class="nav flex-column gap-1 app-main-nav" aria-label="Navigazione principale">
+  {% if app_navigation.is_authenticated %}
+    {% for item in app_navigation.items %}
+      {% if item.visible %}
+        <a
+          class="nav-link app-nav-link{% if item.active %} active{% endif %}"
+          href="{{ item.url }}"
+          {% if item.active %}aria-current="page"{% endif %}
+        >
+          {% include "includes/icon.html" with icon_name=item.icon %}
+          <span>{{ item.label }}</span>
+        </a>
+      {% endif %}
+    {% endfor %}
+  {% else %}
+    <span class="small text-body-secondary px-2">Autenticati per vedere il menu operativo.</span>
+  {% endif %}
+</nav>

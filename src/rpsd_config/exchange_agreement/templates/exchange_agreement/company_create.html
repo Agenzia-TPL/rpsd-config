@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Nuova azienda - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1">Nuova azienda</h1>
+    <p class="text-body-secondary mb-0">
+      Crea una nuova azienda TPL e genera le credenziali M2M applicative.
+    </p>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    <section class="card border-0 shadow-sm" aria-label="Nuova azienda">
+      <div class="card-body">
+        <h2 class="h5 mb-3">Dati azienda</h2>
+
+        {% if error_message %}
+          <div class="alert alert-danger" role="alert">{{ error_message }}</div>
+        {% endif %}
+        {% if success_message %}
+          <div class="alert alert-success" role="alert">{{ success_message }}</div>
+        {% endif %}
+
+        <form method="post" class="d-grid gap-3">
+          {% csrf_token %}
+          <div>
+            <label class="form-label" for="company_name">Nome azienda</label>
+            <input
+              class="form-control"
+              id="company_name"
+              name="name"
+              type="text"
+              required
+              maxlength="255"
+              value="{{ form_values.name }}"
+            >
+          </div>
+          <div>
+            <label class="form-label" for="company_description">Descrizione (opzionale)</label>
+            <textarea
+              class="form-control"
+              id="company_description"
+              name="description"
+              rows="4"
+            >{{ form_values.description }}</textarea>
+          </div>
+          <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+            <a class="btn btn-outline-secondary btn-sm app-icon-button" href="{% url 'exchange_agreement:company-list' %}">
+              {% include "includes/icon.html" with icon_name="arrow-left" %}
+              <span>Elenco aziende</span>
+            </a>
+            <button type="submit" class="btn btn-primary app-icon-button">
+              {% include "includes/icon.html" with icon_name="plus" %}
+              <span>Crea azienda</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

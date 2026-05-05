@@ -53,7 +53,12 @@ class AuthorityHidden(_HiddenAdmin):
 
 @admin.register(Lot)
 class LotHidden(_HiddenAdmin):
-    search_fields = ("description",)
+    list_display = ("id", "short_description", "description")
+    readonly_fields = ("id", "created_at", "updated_at")
+    search_fields = ("short_description", "description")
+
+    def get_model_perms(self, request):
+        return admin.ModelAdmin.get_model_perms(self, request)
 
 
 @admin.register(Dataset)

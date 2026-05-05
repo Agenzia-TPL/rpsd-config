@@ -9,15 +9,14 @@
     <p class="text-body-secondary mb-0">Chiave agenzia: <code>{{ agency.agency_key }}</code></p>
   </div>
   <div class="d-flex flex-wrap gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agencies' %}">
-      Torna ad Agenzie
-    </a>
-    <a class="btn btn-outline-primary btn-sm" href="{% url 'exchange_agreement:agency-contracts' agency.agency_key %}">
-      Vedi tutti i contratti
+    <a class="btn btn-outline-primary btn-sm app-icon-button" href="{% url 'exchange_agreement:agency-contracts' agency.agency_key %}">
+      {% include "includes/icon.html" with icon_name="file-text" %}
+      <span>Vedi tutti i contratti</span>
     </a>
     {% if can_create_contract %}
-      <a class="btn btn-primary btn-sm" href="{% url 'exchange_agreement:agency-contract-create' agency.agency_key %}">
-        Crea nuovo contratto
+      <a class="btn btn-primary btn-sm app-icon-button" href="{% url 'exchange_agreement:agency-contract-create' agency.agency_key %}">
+        {% include "includes/icon.html" with icon_name="plus" %}
+        <span>Crea nuovo contratto</span>
       </a>
     {% endif %}
   </div>
@@ -84,10 +83,11 @@
         <h2 class="h5 mb-0">Inviti Agenzia</h2>
         {% if can_create_agency_invites %}
           <a
-            class="btn btn-sm btn-outline-primary"
+            class="btn btn-sm btn-outline-primary app-icon-button"
             href="{% url 'exchange_agreement:agency-invitation-create' %}?agency_key={{ agency.agency_key }}"
           >
-            Crea invito agenzia
+            {% include "includes/icon.html" with icon_name="mail" %}
+            <span>Crea invito agenzia</span>
           </a>
         {% endif %}
       </div>
@@ -140,12 +140,14 @@
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
         <h2 class="h5 mb-0">Contratti dell'agenzia</h2>
         <div class="d-flex gap-2">
-          <a class="btn btn-sm btn-outline-primary" href="{% url 'exchange_agreement:agency-contracts' agency.agency_key %}">
-            Vista completa contratti
+          <a class="btn btn-sm btn-outline-primary app-icon-button" href="{% url 'exchange_agreement:agency-contracts' agency.agency_key %}">
+            {% include "includes/icon.html" with icon_name="file-text" %}
+            <span>Vista completa contratti</span>
           </a>
           {% if can_create_contract %}
-            <a class="btn btn-sm btn-primary" href="{% url 'exchange_agreement:agency-contract-create' agency.agency_key %}">
-              Crea nuovo contratto
+            <a class="btn btn-sm btn-primary app-icon-button" href="{% url 'exchange_agreement:agency-contract-create' agency.agency_key %}">
+              {% include "includes/icon.html" with icon_name="plus" %}
+              <span>Crea nuovo contratto</span>
             </a>
           {% endif %}
         </div>
@@ -213,7 +215,7 @@
           <table class="table align-middle mb-0">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>ID tecnico</th>
                 <th>Sigla</th>
                 <th>Descrizione</th>
                 <th>Contratti agenzia</th>
@@ -225,7 +227,7 @@
               {% for lot in lots %}
                 <tr>
                   <td><code>{{ lot.id }}</code></td>
-                  <td>{{ lot.short_description|default:"-" }}</td>
+                  <td><code>{{ lot.short_description }}</code></td>
                   <td>{{ lot.description }}</td>
                   <td>{{ lot.agency_contract_count }}</td>
                   <td>{{ lot.total_contract_count }}</td>
@@ -253,13 +255,14 @@
           <input type="hidden" name="action" value="create-lot">
           <input type="hidden" name="tab" value="lotti">
           <div class="col-md-3">
-            <label class="form-label" for="short_description">Sigla (opzionale)</label>
+            <label class="form-label" for="short_description">Sigla lotto</label>
             <input
               class="form-control"
               type="text"
               id="short_description"
               name="short_description"
               maxlength="64"
+              required
               value="{{ lot_form_values.short_description }}"
               placeholder="ATM-NORD"
             >
@@ -278,7 +281,10 @@
             >
           </div>
           <div class="col-md-2 d-flex align-items-end">
-            <button class="btn btn-primary w-100" type="submit">Crea lotto</button>
+            <button class="btn btn-primary w-100 app-icon-button justify-content-center" type="submit">
+              {% include "includes/icon.html" with icon_name="plus" %}
+              <span>Crea lotto</span>
+            </button>
           </div>
         </form>
       {% endif %}
@@ -291,10 +297,11 @@
         <h2 class="h5 mb-0">Utenti associati</h2>
         {% if can_create_agency_invites %}
           <a
-            class="btn btn-sm btn-outline-primary"
+            class="btn btn-sm btn-outline-primary app-icon-button"
             href="{% url 'exchange_agreement:agency-invitation-create' %}?agency_key={{ agency.agency_key }}"
           >
-            Crea invito agenzia
+            {% include "includes/icon.html" with icon_name="mail" %}
+            <span>Crea invito agenzia</span>
           </a>
         {% endif %}
       </div>

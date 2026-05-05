@@ -5,16 +5,6 @@
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
   <h1 class="h3 mb-0">Agenzie</h1>
-  <div class="d-flex flex-wrap gap-2">
-    {% if can_bootstrap_agency %}
-      <a class="btn btn-outline-dark btn-sm" href="{% url 'exchange_agreement:agency-bootstrap' %}">
-        Bootstrap Nuova Agenzia
-      </a>
-    {% endif %}
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:user-area' %}">
-      Torna all'Area Utente
-    </a>
-  </div>
 </div>
 <p class="text-body-secondary mb-0">
   Elenco delle agenzie disponibili nel tuo perimetro operativo.
@@ -23,10 +13,20 @@
 
 {% block content %}
 <div class="row">
-  <div class="col-12 col-xl-10">
+  <div class="col-12">
     {% if is_platform_admin %}
       {% include "includes/ui_alert.html" with alert_variant="info" alert_message="Sei platform admin (/rpsd/admin). Questa pagina mostra tutte le agenzie della piattaforma." %}
     {% endif %}
+
+    <div class="app-section-header mb-3">
+      <h2 class="h5 mb-0">Lista agenzie</h2>
+      {% if can_bootstrap_agency %}
+        <a class="btn btn-outline-dark btn-sm app-icon-button" href="{% url 'exchange_agreement:agency-bootstrap' %}">
+          {% include "includes/icon.html" with icon_name="plus" %}
+          <span>Bootstrap Nuova Agenzia</span>
+        </a>
+      {% endif %}
+    </div>
 
     {% if agency_rows %}
       <div class="vstack gap-3">
@@ -43,10 +43,11 @@
                 <div class="d-flex align-items-center gap-2">
                   <span class="badge rounded-pill text-bg-info">{{ row.role_label }}</span>
                   <a
-                    class="btn btn-sm btn-outline-primary"
+                    class="btn btn-sm btn-outline-primary app-icon-button"
                     href="{% url 'exchange_agreement:agency-detail' row.agency.agency_key %}"
                   >
-                    Apri agenzia
+                    {% include "includes/icon.html" with icon_name="eye" %}
+                    <span>Apri agenzia</span>
                   </a>
                 </div>
               </div>

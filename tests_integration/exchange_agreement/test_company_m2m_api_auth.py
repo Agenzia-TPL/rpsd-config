@@ -40,8 +40,14 @@ class CompanyM2MApiAuthTests(TestCase):
         self.agency = Agency.objects.create(name="Agency M2M API")
         self.company = Company.objects.create(name="Company M2M API")
         self.other_company = Company.objects.create(name="Other Company M2M API")
-        self.lot = Lot.objects.create(description="Lot M2M API")
-        self.other_lot = Lot.objects.create(description="Other Lot M2M API")
+        self.lot = Lot.objects.create(
+            short_description="M2M-API",
+            description="Lot M2M API",
+        )
+        self.other_lot = Lot.objects.create(
+            short_description="M2M-API-OTHER",
+            description="Other Lot M2M API",
+        )
         self.contract = Contract.objects.create(
             contract_code="CTR-M2M-API-001",
             client_agency=self.agency,

@@ -902,7 +902,7 @@ def create_contract(request, payload: ContractCreateRequest):
         raise HttpError(404, "Client agency not found.")
     _require_contract_create(request, agency)
 
-    lot = Lot.objects.filter(id=payload.lot_id).first()
+    lot = Lot.objects.filter(id=payload.lot_id, agency=agency).first()
     if lot is None:
         raise HttpError(404, "Lot not found.")
 

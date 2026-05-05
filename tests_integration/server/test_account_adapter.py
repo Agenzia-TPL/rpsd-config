@@ -35,7 +35,10 @@ class AccountAdapterSignupPolicyTests(TestCase):
     def _create_contract(self, contract_code: str) -> Contract:
         agency = Agency.objects.create(name=f"Agency {contract_code}")
         company = Company.objects.create(name=f"Company {contract_code}")
-        lot = Lot.objects.create(description=f"Lot {contract_code}")
+        lot = Lot.objects.create(
+            short_description=f"LOT-{contract_code}",
+            description=f"Lot {contract_code}",
+        )
         return Contract.objects.create(
             contract_code=contract_code,
             client_agency=agency,

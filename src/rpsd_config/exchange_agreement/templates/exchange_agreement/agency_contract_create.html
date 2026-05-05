@@ -8,9 +8,6 @@
     <h1 class="h3 mb-0">Nuovo Contratto</h1>
     <p class="text-body-secondary mb-0">{{ agency.name }} • <code>{{ agency.agency_key }}</code></p>
   </div>
-  <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agency-contracts' agency.agency_key %}">
-    Torna ai contratti
-  </a>
 </div>
 {% endblock %}
 
@@ -74,7 +71,10 @@
           </div>
         </div>
 
-        <button type="submit" class="btn btn-outline-primary mt-4">Crea azienda</button>
+        <button type="submit" class="btn btn-outline-primary mt-4 app-icon-button">
+          {% include "includes/icon.html" with icon_name="plus" %}
+          <span>Crea azienda</span>
+        </button>
       </div>
     </form>
 
@@ -169,7 +169,10 @@
           </div>
         </div>
 
-        <button type="submit" class="btn btn-primary mt-4">Crea contratto</button>
+        <button type="submit" class="btn btn-primary mt-4 app-icon-button">
+          {% include "includes/icon.html" with icon_name="plus" %}
+          <span>Crea contratto</span>
+        </button>
       </div>
     </form>
 

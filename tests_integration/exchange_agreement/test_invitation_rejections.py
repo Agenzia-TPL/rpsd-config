@@ -47,7 +47,10 @@ class InvitationRejectionsServiceTests(TestCase):
             contract_code="CTR-REJECT-SVC",
             client_agency=self.agency,
             contractor_company=Company.objects.create(name="Reject Company"),
-            lot=Lot.objects.create(description="Reject Lot"),
+            lot=Lot.objects.create(
+                short_description="REJECT",
+                description="Reject Lot",
+            ),
             start_date=date(2026, 1, 1),
             status=Contract.ContractStatus.ACTIVE,
         )

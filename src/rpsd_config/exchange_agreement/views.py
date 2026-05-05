@@ -189,6 +189,57 @@ def _build_company_m2m_exchange_info(
     }
 
 
+def _m2m_token_endpoint_url() -> str:
+    issuer_url = (getattr(settings, "OIDC_ISSUER_URL", "") or "").rstrip("/")
+    if issuer_url:
+        return f"{issuer_url}/protocol/openid-connect/token"
+
+    keycloak_base_url = (
+        getattr(settings, "KEYCLOAK_ADMIN_BASE_URL", "") or ""
+    ).rstrip("/")
+    keycloak_realm = getattr(settings, "KEYCLOAK_ADMIN_REALM", "") or ""
+    if keycloak_base_url and keycloak_realm:
+        return (
+            f"{keycloak_base_url}/realms/{keycloak_realm}"
+            "/protocol/openid-connect/token"
+        )
+
+    return ""
+
+
+def _build_contract_m2m_exchange_info(
+    request: HttpRequest,
+    contract: Contract,
+    *,
+    revealed_secret: str = "",
+) -> dict:
+    company_info = _build_company_m2m_exchange_info(
+        contract.contractor_company,
+        revealed_secret=revealed_secret,
+    )
+    contract_code = contract.contract_code
+    return {
+        **company_info,
+        "token_endpoint_url": _m2m_token_endpoint_url(),
+        "m2m_identity_url": request.build_absolute_uri(
+            "/exchange_agreement/api/m2m/v1/me"
+        ),
+        "m2m_contract_url": request.build_absolute_uri(
+            f"/exchange_agreement/api/m2m/v1/contracts/{contract_code}"
+        ),
+        "m2m_flow_profile_url": request.build_absolute_uri(
+            f"/exchange_agreement/api/m2m/v1/contracts/{contract_code}/flow-profile"
+        ),
+        "m2m_required_inputs_url": request.build_absolute_uri(
+            f"/exchange_agreement/api/m2m/v1/contracts/{contract_code}/required-inputs"
+        ),
+        "m2m_contract_users_url": request.build_absolute_uri(
+            f"/exchange_agreement/api/m2m/v1/contracts/{contract_code}/users"
+        ),
+        "ingest_url": "http://localhost:20000/ingest",
+    }
+
+
 def _cleanup_company_m2m_principals_before_delete(*, company: Company, actor) -> None:
     principals = list(
         IntegrationPrincipal.objects.filter(company=company).exclude(
@@ -487,6 +538,11 @@ def _build_identity_privileges(user) -> dict:
 
 @login_required
 def user_area(request: HttpRequest) -> HttpResponse:
+    allowed_tabs = {"utente", "inviti", "membership"}
+    active_tab = (request.GET.get("tab") or "utente").strip().lower()
+    if active_tab not in allowed_tabs:
+        active_tab = "utente"
+
     contract_memberships = (
         ContractMembership.objects.select_related("contract")
         .filter(user=request.user)
@@ -549,6 +605,7 @@ def user_area(request: HttpRequest) -> HttpResponse:
         request,
         "exchange_agreement/user_area.html",
         {
+            "active_tab": active_tab,
             "contract_memberships": contract_memberships,
             "agency_memberships": agency_memberships,
             "can_create_agency_invites": agency_scope.is_platform_admin
@@ -798,14 +855,36 @@ def agencies_page(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
-@require_http_methods(["GET", "POST"])
 def company_list_page(request: HttpRequest) -> HttpResponse:
     if not _can_view_companies(request.user):
         raise PermissionDenied(
             "Solo platform admin, agency admin o superuser possono accedere."
         )
 
-    can_create_company = _can_create_companies(request.user)
+    companies = list(
+        Company.objects.annotate(
+            contract_count=Count("contracts_as_contractor")
+        ).order_by("name")
+    )
+
+    return render(
+        request,
+        "exchange_agreement/companies.html",
+        {
+            "companies": companies,
+            "can_create_company": _can_create_companies(request.user),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def company_create_page(request: HttpRequest) -> HttpResponse:
+    if not _can_create_companies(request.user):
+        raise PermissionDenied(
+            "Solo gli utenti platform admin o superuser possono creare aziende."
+        )
+
     result_context = {
         "error_message": "",
         "success_message": "",
@@ -817,11 +896,6 @@ def company_list_page(request: HttpRequest) -> HttpResponse:
     }
 
     if request.method == "POST":
-        if not can_create_company:
-            raise PermissionDenied(
-                "Solo gli utenti platform admin o superuser possono creare aziende."
-            )
-
         name = request.POST.get("name", "").strip()
         description = request.POST.get("description", "").strip()
         result_context["form_values"] = {
@@ -860,18 +934,10 @@ def company_list_page(request: HttpRequest) -> HttpResponse:
                         "Impossibile creare azienda per un errore di vincolo."
                     )
 
-    companies = list(
-        Company.objects.annotate(
-            contract_count=Count("contracts_as_contractor")
-        ).order_by("name")
-    )
-
     return render(
         request,
-        "exchange_agreement/companies.html",
+        "exchange_agreement/company_create.html",
         {
-            "companies": companies,
-            "can_create_company": can_create_company,
             **result_context,
         },
     )
@@ -1126,14 +1192,19 @@ def _agency_contracts_qs(agency: Agency):
 
 
 def _agency_lots_qs(agency: Agency):
-    return Lot.objects.annotate(
-        agency_contract_count=Count(
-            "contracts",
-            filter=Q(contracts__client_agency=agency),
-            distinct=True,
-        ),
-        total_contract_count=Count("contracts", distinct=True),
-    ).order_by("id")
+    return (
+        Lot.objects.filter(Q(agency=agency) | Q(contracts__client_agency=agency))
+        .distinct()
+        .annotate(
+            agency_contract_count=Count(
+                "contracts",
+                filter=Q(contracts__client_agency=agency),
+                distinct=True,
+            ),
+            total_contract_count=Count("contracts", distinct=True),
+        )
+        .order_by("id")
+    )
 
 
 @login_required
@@ -1199,26 +1270,33 @@ def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
         if action != "create-lot":
             result_context["lot_error_message"] = "Azione non supportata."
         else:
-            short_description = request.POST.get("short_description", "").strip()
+            short_description = Lot.normalize_short_description(
+                request.POST.get("short_description", "")
+            )
             description = request.POST.get("description", "").strip()
             result_context["lot_form_values"] = {
                 "short_description": short_description,
                 "description": description,
             }
 
-            if not description:
+            if not short_description:
+                result_context["lot_error_message"] = (
+                    "La sigla del lotto e' obbligatoria."
+                )
+            elif not description:
                 result_context["lot_error_message"] = (
                     "La descrizione del lotto e' obbligatoria."
                 )
             elif Lot.objects.filter(
+                agency=agency,
                 short_description__iexact=short_description,
-                description__iexact=description,
             ).exists():
                 result_context["lot_error_message"] = (
-                    "Esiste gia' un lotto con questi dati."
+                    "Esiste gia' un lotto con questa sigla."
                 )
             else:
                 created_lot = Lot.objects.create(
+                    agency=agency,
                     short_description=short_description,
                     description=description,
                 )
@@ -1271,14 +1349,7 @@ def agency_lot_detail_page(
         raise PermissionDenied("Non hai accesso a questa agenzia.")
 
     lot = get_object_or_404(
-        Lot.objects.annotate(
-            agency_contract_count=Count(
-                "contracts",
-                filter=Q(contracts__client_agency=agency),
-                distinct=True,
-            ),
-            total_contract_count=Count("contracts", distinct=True),
-        ),
+        _agency_lots_qs(agency),
         pk=lot_id,
     )
     can_edit_lot = _can_create_contract_for_agency(
@@ -1302,26 +1373,30 @@ def agency_lot_detail_page(
                 "Solo platform admin o agency admin possono modificare il lotto."
             )
 
-        short_description = request.POST.get("short_description", "").strip()
+        short_description = Lot.normalize_short_description(
+            request.POST.get("short_description", "")
+        )
         description = request.POST.get("description", "").strip()
         result_context["form_values"] = {
             "short_description": short_description,
             "description": description,
         }
 
-        if not description:
+        if not short_description:
+            result_context["error_message"] = "La sigla del lotto e' obbligatoria."
+        elif not description:
             result_context["error_message"] = (
                 "La descrizione del lotto e' obbligatoria."
             )
         elif (
             Lot.objects.filter(
+                agency=agency,
                 short_description__iexact=short_description,
-                description__iexact=description,
             )
             .exclude(pk=lot.pk)
             .exists()
         ):
-            result_context["error_message"] = "Esiste gia' un lotto con questi dati."
+            result_context["error_message"] = "Esiste gia' un lotto con questa sigla."
         else:
             lot.short_description = short_description
             lot.description = description
@@ -1379,6 +1454,7 @@ def agency_contracts_page(request: HttpRequest, agency_key: str) -> HttpResponse
 
 
 @login_required
+@require_http_methods(["GET", "POST"])
 def agency_contract_detail_page(
     request: HttpRequest,
     agency_key: str,
@@ -1403,17 +1479,63 @@ def agency_contract_detail_page(
         client_agency=agency,
     )
 
+    result_context = {
+        "error_message": "",
+        "success_message": "",
+    }
+    revealed_secret = ""
+    can_manage_contract_m2m = _can_delete_companies(request.user)
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        if action != "reveal-contract-client-secret":
+            result_context["error_message"] = "Azione non supportata."
+        elif not can_manage_contract_m2m:
+            raise PermissionDenied(
+                "Solo platform admin, agency admin o superuser possono gestire M2M."
+            )
+        else:
+            principal = _default_m2m_principal_for_company(
+                contract.contractor_company
+            )
+            if principal is None:
+                result_context["error_message"] = "Nessun client M2M configurato."
+            else:
+                try:
+                    revealed_secret = reveal_client_secret(principal)
+                    audit_m2m_event(
+                        "secret.revealed",
+                        request_id=resolve_request_id(request),
+                        principal_id=principal.pk,
+                        company_id=contract.contractor_company_id,
+                        contract_code=contract.contract_code,
+                        keycloak_client_id=principal.keycloak_client_id,
+                        actor_id=request.user.pk,
+                    )
+                    result_context["success_message"] = "Secret client rivelato."
+                except M2MSecretStoreError as exc:
+                    result_context["error_message"] = str(exc)
+
+    contract_m2m_exchange_info = _build_contract_m2m_exchange_info(
+        request,
+        contract,
+        revealed_secret=revealed_secret,
+    )
+
     return render(
         request,
         "exchange_agreement/agency_contract_detail.html",
         {
             "agency": agency,
             "contract": contract,
+            "contract_m2m_exchange_info": contract_m2m_exchange_info,
+            "can_manage_contract_m2m": can_manage_contract_m2m,
             "can_create_contract_invites": _can_create_contract_invitation_for_agency(
                 user=request.user,
                 agency=agency,
                 agency_scope=agency_scope,
             ),
+            **result_context,
         },
     )
 
@@ -1433,7 +1555,7 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
         )
 
     companies = list(Company.objects.all().order_by("name"))
-    lots = list(Lot.objects.all().order_by("id"))
+    lots = list(Lot.objects.filter(agency=agency).order_by("id"))
     status_choices = [
         (status_value, status_label)
         for status_value, status_label in Contract.ContractStatus.choices
@@ -1548,7 +1670,10 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
                 company = Company.objects.filter(
                     id=form_values["contractor_company_id"]
                 ).first()
-                lot = Lot.objects.filter(id=form_values["lot_id"]).first()
+                lot = Lot.objects.filter(
+                    id=form_values["lot_id"],
+                    agency=agency,
+                ).first()
 
                 if company is None:
                     result_context["error_message"] = "Seleziona una azienda valida."

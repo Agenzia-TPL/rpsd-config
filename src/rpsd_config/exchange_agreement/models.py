@@ -13,7 +13,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import F, Func
-from django.db.models.functions import Now  # for db_default in Django 5.x
+from django.db.models.functions import Lower, Now  # for db_default in Django 5.x
 from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
@@ -296,12 +296,29 @@ class Authority(TimeStampedModel):
 
 
 class Lot(TimeStampedModel):
+    LOT_CODE_REGEX = r"^[A-Z0-9](?:[A-Z0-9-]{0,62}[A-Z0-9])?$"
+    lot_code_validator = RegexValidator(
+        regex=LOT_CODE_REGEX,
+        message=_(
+            "Lot code must contain only uppercase letters, digits and hyphens, "
+            "and cannot start or end with a hyphen."
+        ),
+    )
+
     id = models.BigAutoField(primary_key=True)
     short_description = models.CharField(
         max_length=64,
+        db_index=True,
+        validators=[lot_code_validator],
+        help_text=_("Stable lot code used in business identifiers."),
+    )
+    agency = models.ForeignKey(
+        Agency,
+        on_delete=models.PROTECT,
+        related_name="lots",
         blank=True,
-        default="",
-        help_text="Optional short label for compact displays",
+        null=True,
+        help_text=_("Agency that owns this service lot."),
     )
     description = models.CharField(max_length=255)
     # Consider adding the lot polygon geometry in a future iteration.
@@ -310,10 +327,37 @@ class Lot(TimeStampedModel):
         verbose_name = "Lot"
         verbose_name_plural = "Lots"
         ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(
+                Lower("short_description"),
+                "agency",
+                name="unique_lot_short_description_per_agency_ci",
+            )
+        ]
 
     def __str__(self) -> str:
-        short = f" ({self.short_description})" if self.short_description else ""
-        return f"Lot {self.id}{short} - {self.description}"
+        return f"Lot {self.short_description} - {self.description}"
+
+    @classmethod
+    def normalize_short_description(cls, raw_value: str) -> str:
+        normalized = slugify((raw_value or "").strip(), allow_unicode=False).upper()
+        return normalized[:64].strip("-")
+
+    def clean(self):
+        super().clean()
+        self.short_description = self.normalize_short_description(
+            self.short_description
+        )
+        if not self.short_description:
+            raise ValidationError(
+                {"short_description": _("Lot code is required.")}
+            )
+
+    def save(self, *args, **kwargs):
+        self.short_description = self.normalize_short_description(
+            self.short_description
+        )
+        super().save(*args, **kwargs)
 
 
 # ==========================
@@ -729,6 +773,7 @@ class Contract(TimeStampedModel):
         errors = {}
         replaced_by_id = getattr(self, "replaced_by_id", None)
         lot_id = getattr(self, "lot_id", None)
+        client_agency_id = getattr(self, "client_agency_id", None)
         effective_end_date = self.end_date
         if effective_end_date is None and self.start_date is not None:
             effective_end_date = _add_years_safe(self.start_date, 6)
@@ -767,6 +812,10 @@ class Contract(TimeStampedModel):
             and replaced_by_id == self.pk
         ):
             errors["replaced_by"] = _("A contract cannot replace itself.")
+
+        lot_agency_id = getattr(getattr(self, "lot", None), "agency_id", None)
+        if lot_agency_id and client_agency_id and lot_agency_id != client_agency_id:
+            errors["lot"] = _("Selected lot does not belong to the client agency.")
 
         if lot_id and self.start_date and effective_end_date:
             overlaps = type(self).objects.filter(

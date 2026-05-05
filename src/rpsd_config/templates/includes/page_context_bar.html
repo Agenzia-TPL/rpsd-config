@@ -1,0 +1,23 @@
+{% if app_navigation.context_bar.breadcrumbs or app_navigation.context_bar.back_url %}
+  <div class="app-context-bar d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <nav aria-label="Percorso">
+      <ol class="breadcrumb app-breadcrumb mb-0">
+        {% for crumb in app_navigation.context_bar.breadcrumbs %}
+          <li class="breadcrumb-item{% if crumb.current %} active{% endif %}" {% if crumb.current %}aria-current="page"{% endif %}>
+            {% if crumb.url and not crumb.current %}
+              <a href="{{ crumb.url }}">{{ crumb.label }}</a>
+            {% else %}
+              {{ crumb.label }}
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+    </nav>
+    {% if app_navigation.context_bar.back_url %}
+      <a class="btn btn-outline-secondary btn-sm app-back-link" href="{{ app_navigation.context_bar.back_url }}">
+        {% include "includes/icon.html" with icon_name="arrow-left" %}
+        <span>{{ app_navigation.context_bar.back_label }}</span>
+      </a>
+    {% endif %}
+  </div>
+{% endif %}

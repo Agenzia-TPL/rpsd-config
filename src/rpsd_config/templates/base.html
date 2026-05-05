@@ -21,13 +21,13 @@
         data-bs-toggle="offcanvas"
         data-bs-target="#appSidebarMobile"
         aria-controls="appSidebarMobile"
+        aria-label="Apri menu"
       >
-        Menu
+        {% include "includes/icon.html" with icon_name="menu" %}
       </button>
       <a class="navbar-brand fw-semibold" href="{% url 'home' %}">RPSD Config</a>
       <div class="ms-auto d-flex align-items-center gap-2">
         {% if user.is_authenticated %}
-          <span class="badge text-bg-success">Autenticato</span>
           <span class="small text-body-secondary">{{ user.get_username }}</span>
         {% else %}
           <span class="badge text-bg-secondary">Non autenticato</span>
@@ -41,25 +41,13 @@
       {% if show_sidebar == False %}
       {% else %}
       <aside class="col-lg-2 d-none d-lg-block bg-white border-end app-sidebar p-3">
-        <nav class="nav flex-column gap-1">
-          {% if app_navigation.is_authenticated %}
-          <a class="nav-link" href="{% url 'exchange_agreement:user-area' %}">Area utente</a>
-          <a class="nav-link" href="{% url 'exchange_agreement:agencies' %}">Agenzie</a>
-          {% if app_navigation.can_view_companies %}
-          <a class="nav-link" href="{% url 'exchange_agreement:company-list' %}">Aziende</a>
-          {% endif %}
-          {% if app_navigation.can_view_configuration %}
-          <a class="nav-link" href="{% url 'exchange_agreement:platform-configuration' %}">Configurazione</a>
-          {% endif %}
-          {% else %}
-          <span class="small text-body-secondary px-2">Autenticati per vedere il menu operativo.</span>
-          {% endif %}
-        </nav>
+        {% include "includes/sidebar_nav.html" %}
       </aside>
       {% endif %}
 
       <main class="{% if show_sidebar == False %}col-12{% else %}col-12 col-lg-10{% endif %} py-4 px-3 px-lg-4">
         {% include "includes/messages.html" %}
+        {% include "includes/page_context_bar.html" %}
         {% block page_header %}{% endblock %}
         {% block content %}{% endblock %}
       </main>
@@ -74,27 +62,14 @@
       <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
     </div>
     <div class="offcanvas-body">
-      <nav class="nav flex-column gap-1">
-        {% if app_navigation.is_authenticated %}
-        <a class="nav-link" href="{% url 'exchange_agreement:user-area' %}">Area utente</a>
-        <a class="nav-link" href="{% url 'exchange_agreement:agencies' %}">Agenzie</a>
-        {% if app_navigation.can_view_companies %}
-        <a class="nav-link" href="{% url 'exchange_agreement:company-list' %}">Aziende</a>
-        {% endif %}
-        {% if app_navigation.can_view_configuration %}
-        <a class="nav-link" href="{% url 'exchange_agreement:platform-configuration' %}">Configurazione</a>
-        {% endif %}
-        {% else %}
-        <span class="small text-body-secondary px-2">Autenticati per vedere il menu operativo.</span>
-        {% endif %}
-      </nav>
+      {% include "includes/sidebar_nav.html" %}
     </div>
   </div>
   {% endif %}
 
   <footer class="border-top bg-white py-2">
     <div class="container-fluid small text-body-secondary text-center">
-      RPSD Config • UI Foundation Bootstrap
+      RPSD Config • version alpha-0.0.01
     </div>
   </footer>
 

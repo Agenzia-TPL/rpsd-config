@@ -1,47 +1,83 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}RPSD Config{% endblock %}
 
 {% block page_header %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <h1 class="h3 mb-0">RPSD Config</h1>
-  {% if user.is_authenticated %}
-    <span class="badge text-bg-success">Sessione attiva</span>
-  {% else %}
-    <span class="badge text-bg-secondary">Sessione non attiva</span>
-  {% endif %}
+  <div class="d-flex flex-wrap gap-2">
+    {% if user.is_authenticated %}
+      <span class="badge text-bg-success">Sessione attiva</span>
+      <span class="badge text-bg-success">Autenticato</span>
+    {% else %}
+      <span class="badge text-bg-secondary">Sessione non attiva</span>
+      <span class="badge text-bg-secondary">Non autenticato</span>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}
 
 {% block content %}
-{% url 'exchange_agreement:user-area' as user_area_url %}
 <div class="row g-3">
-  <div class="col-12 col-xl-8">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body">
-        <p class="text-body-secondary mb-3">
-          Servizio di configurazione della piattaforma Rapsodia.
-          Da qui puoi accedere ai flussi di login, area utente e strumenti di amministrazione.
-        </p>
-        {% if user.is_authenticated %}
-          {% if user.is_staff or user.is_superuser %}
-            {% include "includes/action_bar.html" with primary_href=admin_url primary_label="Admin Django" secondary_href=user_area_url secondary_label="Area utente" danger_href="/accounts/logout/" danger_label="Logout" %}
-          {% else %}
-            {% include "includes/action_bar.html" with primary_href=user_area_url primary_label="Area utente" danger_href="/accounts/logout/" danger_label="Logout" %}
-          {% endif %}
-        {% else %}
-          {% include "includes/action_bar.html" with primary_href=oidc_login_url primary_label="Accedi con Keycloak" secondary_href=admin_url secondary_label="Admin Django" %}
-        {% endif %}
+  <div class="col-12">
+    <div class="card border-0 shadow-sm app-intro-card">
+      <div class="card-body d-flex align-items-end">
+        <h2 class="display-5 fw-semibold mb-0">Rapsodia Config</h2>
       </div>
     </div>
   </div>
 
-  <div class="col-12 col-xl-4">
-    {% if user.is_authenticated %}
-      {% include "includes/info_card.html" with card_title="Stato accesso" card_text="Autenticato. Sessione utente attiva." %}
-    {% else %}
-      {% include "includes/info_card.html" with card_title="Stato accesso" card_text="Utente anonimo. Effettua login per accedere alle funzionalita' protette." %}
+  {% if user.is_authenticated %}
+    {% for item in app_navigation.items %}
+      {% if item.visible %}
+        <div class="col-12 col-xl-6">
+          <a class="card border-0 shadow-sm app-home-section-card h-100 text-decoration-none" href="{{ item.url }}">
+            <span class="card-body d-flex align-items-center gap-3">
+              <span class="app-home-section-icon">
+                {% include "includes/icon.html" with icon_name=item.icon %}
+              </span>
+              <span class="d-block">
+                <span class="h5 d-block mb-1 text-body">{{ item.label }}</span>
+                <span class="small text-body-secondary">Apri sezione</span>
+              </span>
+            </span>
+          </a>
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+
+  {% if not user.is_authenticated %}
+    <div class="col-12 col-xl-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-body">
+          <h2 class="h5">Accesso</h2>
+          <p class="text-body-secondary">
+            Accedi con Keycloak per usare le funzionalita' protette.
+          </p>
+          {% include "includes/action_bar.html" with primary_href=oidc_login_url primary_label="Accedi con Keycloak" %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if user.is_authenticated %}
+    {% if user.is_staff or user.is_superuser %}
+      <div class="col-12 col-xl-6">
+        <a class="card border-0 shadow-sm app-home-section-card h-100 text-decoration-none" href="{{ admin_url }}">
+          <span class="card-body d-flex align-items-center gap-3">
+            <span class="app-home-section-icon">
+              {% include "includes/icon.html" with icon_name="rocket-takeoff" %}
+            </span>
+            <span class="d-block">
+              <span class="h5 d-block mb-1 text-body">Amministrazione Django</span>
+              <span class="small text-body-secondary">Admin Django</span>
+            </span>
+          </span>
+        </a>
+      </div>
     {% endif %}
-  </div>
+  {% endif %}
 </div>
 {% endblock %}

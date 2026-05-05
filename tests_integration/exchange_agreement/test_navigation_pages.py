@@ -15,7 +15,11 @@ from rpsd_config.exchange_agreement.models import (
     Company,
     Contract,
     ContractMembership,
+    IntegrationPrincipal,
     Lot,
+)
+from rpsd_config.exchange_agreement.services.m2m_secret_store import (
+    store_client_secret,
 )
 
 
@@ -80,7 +84,11 @@ class NavigationAndPagesTests(TestCase):
             },
         )
         self.company = Company.objects.create(name="Azienda TPL Navigation")
-        self.lot = Lot.objects.create(description="Lotto test navigation")
+        self.lot = Lot.objects.create(
+            agency=self.agency,
+            short_description="NAV",
+            description="Lotto test navigation",
+        )
         self.contract = Contract.objects.create(
             contract_code="NAV-001",
             client_agency=self.agency,
@@ -227,6 +235,38 @@ class NavigationAndPagesTests(TestCase):
         self.assertEqual(contract_detail.status_code, 200)
         self.assertContains(contract_detail, self.contract.contract_code)
 
+    def test_contract_detail_shows_company_m2m_exchange_card(self):
+        principal = IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment="prod",
+            keycloak_client_id="tpl-navigation-default-prod",
+            keycloak_client_uuid="uuid-navigation",
+        )
+        store_client_secret(principal, client_secret="secret-navigation")
+        detail_url = reverse(
+            "exchange_agreement:agency-contract-detail",
+            args=[self.agency.agency_key, self.contract.contract_code],
+        )
+
+        self.client.force_login(self.regular_user)
+        regular_response = self.client.get(detail_url)
+        self.assertEqual(regular_response.status_code, 200)
+        self.assertContains(regular_response, "Interscambio dati azienda")
+        self.assertContains(regular_response, principal.keycloak_client_id)
+        self.assertContains(regular_response, "api/m2m/v1/contracts/NAV-001")
+        self.assertNotContains(regular_response, "secret-navigation")
+        self.assertNotContains(regular_response, "Mostra secret client")
+
+        self.client.force_login(self.agency_admin)
+        reveal_response = self.client.post(
+            detail_url,
+            {"action": "reveal-contract-client-secret"},
+        )
+        self.assertEqual(reveal_response.status_code, 200)
+        self.assertContains(reveal_response, "Secret client rivelato.")
+        self.assertContains(reveal_response, "secret-navigation")
+
     def test_lot_management_from_agency_detail_and_lot_detail(self):
         agency_detail_url = reverse(
             "exchange_agreement:agency-detail", args=[self.agency.agency_key]
@@ -263,6 +303,7 @@ class NavigationAndPagesTests(TestCase):
         created_lot = Lot.objects.get(
             short_description="NORD", description="Lotto Nord"
         )
+        self.assertEqual(created_lot.agency, self.agency)
         self.assertContains(
             create_response,
             reverse(

@@ -5,15 +5,6 @@
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
   <h1 class="h3 mb-0">Nuovo Invito Contratto</h1>
-  {% if selected_contract %}
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agency-contract-detail' selected_contract.client_agency.agency_key selected_contract.contract_code %}">
-      Torna al dettaglio contratto
-    </a>
-  {% else %}
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:user-area' %}">
-      Torna all'Area Utente
-    </a>
-  {% endif %}
 </div>
 <p class="text-body-secondary mb-0">
   Crea un invito contratto con ruoli limitati a editor o reader.
@@ -76,7 +67,10 @@
             <div class="form-text">Se vuota, il token e' open invitation (monouso).</div>
           </div>
 
-          <button type="submit" class="btn btn-primary">Crea invito contratto</button>
+          <button type="submit" class="btn btn-primary app-icon-button">
+            {% include "includes/icon.html" with icon_name="mail" %}
+            <span>Crea invito contratto</span>
+          </button>
         </div>
       </form>
     {% endif %}

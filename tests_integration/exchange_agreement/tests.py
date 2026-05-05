@@ -125,7 +125,10 @@ class InvitationOnboardingFlowTests(TestCase):
     def _create_contract(self, contract_code: str) -> Contract:
         agency = Agency.objects.create(name=f"Agency {contract_code}")
         company = Company.objects.create(name=f"Company {contract_code}")
-        lot = Lot.objects.create(description=f"Lot {contract_code}")
+        lot = Lot.objects.create(
+            short_description=f"LOT-{contract_code}",
+            description=f"Lot {contract_code}",
+        )
         return Contract.objects.create(
             contract_code=contract_code,
             client_agency=agency,
@@ -454,7 +457,10 @@ class AgencyRbacModelTests(TestCase):
     def test_contract_invitation_rejected_requires_reject_audit_fields(self):
         agency = Agency.objects.create(name="ATPL Como")
         company = Company.objects.create(name="Company Como")
-        lot = Lot.objects.create(description="Lot Como")
+        lot = Lot.objects.create(
+            short_description="COMO",
+            description="Lot Como",
+        )
         contract = Contract.objects.create(
             contract_code="CTR-REJECT-001",
             client_agency=agency,

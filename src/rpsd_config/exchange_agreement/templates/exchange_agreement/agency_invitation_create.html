@@ -5,15 +5,6 @@
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
   <h1 class="h3 mb-0">Nuovo Invito Agenzia</h1>
-  {% if selected_agency %}
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agency-detail' selected_agency.agency_key %}">
-      Torna al dettaglio agenzia
-    </a>
-  {% else %}
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:user-area' %}">
-      Torna all'Area Utente
-    </a>
-  {% endif %}
 </div>
 <p class="text-body-secondary mb-0">
   Crea un invito agenzia e prepara automaticamente i gruppi IAM in Keycloak.
@@ -78,7 +69,10 @@
             <div class="form-text">Se valorizzata, il sistema tenta il provisioning utente Keycloak se assente.</div>
           </div>
 
-          <button type="submit" class="btn btn-primary">Crea invito agenzia</button>
+          <button type="submit" class="btn btn-primary app-icon-button">
+            {% include "includes/icon.html" with icon_name="mail" %}
+            <span>Crea invito agenzia</span>
+          </button>
         </div>
       </form>
     {% endif %}

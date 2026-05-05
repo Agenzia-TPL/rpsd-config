@@ -10,6 +10,7 @@ from .views import (
     agency_detail_page,
     agency_lot_detail_page,
     bootstrap_agency_page,
+    company_create_page,
     company_detail_page,
     company_list_page,
     create_agency_contract_page,
@@ -36,6 +37,7 @@ urlpatterns = [
     path("me/contracts/", user_area, name="user-area-legacy"),
     path("me/agencies/", agencies_page, name="agencies"),
     path("me/companies/", company_list_page, name="company-list"),
+    path("me/companies/new/", company_create_page, name="company-create"),
     path(
         "me/companies/<int:company_id>/",
         company_detail_page,

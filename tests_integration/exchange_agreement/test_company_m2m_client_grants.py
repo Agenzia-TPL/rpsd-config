@@ -81,7 +81,10 @@ class CompanyM2MClientGrantsTests(TestCase):
         self.agency = Agency.objects.create(name="Agency M2M")
         self.company = Company.objects.create(name="Company M2M")
         self.other_company = Company.objects.create(name="Other Company M2M")
-        self.lot = Lot.objects.create(description="Lot M2M")
+        self.lot = Lot.objects.create(
+            short_description="M2M-GRANTS",
+            description="Lot M2M",
+        )
         self.contract = Contract.objects.create(
             contract_code="CTR-M2M-001",
             client_agency=self.agency,

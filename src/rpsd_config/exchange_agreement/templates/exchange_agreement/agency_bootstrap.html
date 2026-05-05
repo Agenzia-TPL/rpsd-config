@@ -5,9 +5,6 @@
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
   <h1 class="h3 mb-0">Bootstrap Nuova Agenzia</h1>
-  <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:user-area' %}">
-    Torna all'Area Utente
-  </a>
 </div>
 <p class="text-body-secondary mb-0">
   Crea una nuova agenzia e genera contestualmente il primo invito admin.
@@ -69,7 +66,10 @@
           </div>
         </div>
 
-        <button type="submit" class="btn btn-primary">Esegui bootstrap</button>
+        <button type="submit" class="btn btn-primary app-icon-button">
+          {% include "includes/icon.html" with icon_name="plus" %}
+          <span>Esegui bootstrap</span>
+        </button>
       </div>
     </form>
 

@@ -8,16 +8,6 @@
     <h1 class="h3 mb-0">Contratti Agenzia</h1>
     <p class="text-body-secondary mb-0">{{ agency.name }} • <code>{{ agency.agency_key }}</code></p>
   </div>
-  <div class="d-flex flex-wrap gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:agency-detail' agency.agency_key %}">
-      Torna al dettaglio agenzia
-    </a>
-    {% if can_create_contract %}
-      <a class="btn btn-primary btn-sm" href="{% url 'exchange_agreement:agency-contract-create' agency.agency_key %}">
-        Crea nuovo contratto
-      </a>
-    {% endif %}
-  </div>
 </div>
 {% endblock %}
 
@@ -26,6 +16,15 @@
   <div class="col-12">
     <section class="card border-0 shadow-sm">
       <div class="card-body">
+        <div class="app-section-header mb-3">
+          <h2 class="h5 mb-0">Lista contratti</h2>
+          {% if can_create_contract %}
+            <a class="btn btn-primary btn-sm app-icon-button" href="{% url 'exchange_agreement:agency-contract-create' agency.agency_key %}">
+              {% include "includes/icon.html" with icon_name="plus" %}
+              <span>Crea nuovo contratto</span>
+            </a>
+          {% endif %}
+        </div>
         {% if contracts %}
           <div class="table-responsive">
             <table class="table align-middle mb-0">
@@ -51,10 +50,11 @@
                     <td>{{ contract.get_status_display }}</td>
                     <td class="text-end">
                       <a
-                        class="btn btn-sm btn-outline-primary"
+                        class="btn btn-sm btn-outline-primary app-icon-button"
                         href="{% url 'exchange_agreement:agency-contract-detail' agency.agency_key contract.contract_code %}"
                       >
-                        Dettaglio
+                        {% include "includes/icon.html" with icon_name="eye" %}
+                        <span>Dettaglio</span>
                       </a>
                     </td>
                   </tr>

@@ -54,7 +54,16 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
         self.agency_a = Agency.objects.create(name="ATPL Milano")
         self.agency_b = Agency.objects.create(name="ATPL Bergamo")
         self.company = Company.objects.create(name="ATM")
-        self.lot = Lot.objects.create(description="Lot A")
+        self.lot = Lot.objects.create(
+            agency=self.agency_a,
+            short_description="LOT-A",
+            description="Lot A",
+        )
+        self.lot_b = Lot.objects.create(
+            agency=self.agency_b,
+            short_description="LOT-B",
+            description="Lot B",
+        )
 
         self.contract_a = Contract.objects.create(
             contract_code="CTR-A-001",
@@ -68,7 +77,7 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
             contract_code="CTR-B-001",
             client_agency=self.agency_b,
             contractor_company=self.company,
-            lot=self.lot,
+            lot=self.lot_b,
             start_date=date(2035, 1, 2),
             status=Contract.ContractStatus.DRAFT,
         )
@@ -315,6 +324,34 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
         created_company = Company.objects.get(name="TPER Bologna")
         self.assertContains(response, f'value="{created_company.id}" selected')
         self.assertContains(response, 'value="CTR-A-UI-001"')
+
+    def test_agency_contract_create_page_lot_choices_are_scoped_to_agency(self):
+        self.client.force_login(self.agency_admin_a)
+        url = reverse(
+            "exchange_agreement:agency-contract-create",
+            args=[self.agency_a.agency_key],
+        )
+
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'value="{self.lot.id}"')
+        self.assertNotContains(response, f'value="{self.lot_b.id}"')
+
+        rejected = self.client.post(
+            url,
+            {
+                "action": "create-contract",
+                "contract_code": "CTR-A-WRONG-LOT",
+                "contractor_company_id": self.company.id,
+                "lot_id": self.lot_b.id,
+                "start_date": "2036-01-01",
+                "end_date": "",
+                "tender_id": "",
+                "status": Contract.ContractStatus.DRAFT,
+            },
+        )
+        self.assertEqual(rejected.status_code, 200)
+        self.assertContains(rejected, "Seleziona un lotto valido.")
 
     def test_agency_contract_create_page_rejects_duplicate_company_case_insensitive(
         self,
