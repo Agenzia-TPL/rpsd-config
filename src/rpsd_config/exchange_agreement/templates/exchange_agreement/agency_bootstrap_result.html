@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Bootstrap completato - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h1 class="h3 mb-0">Bootstrap completato</h1>
+</div>
+<p class="text-body-secondary mb-0">
+  Agenzia creata e invito admin iniziale generato.
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-xl-9 col-xxl-8">
+    <section class="card border-0 shadow-sm" aria-label="Dettagli bootstrap agenzia">
+      <div class="card-body p-4">
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-body-secondary">Agenzia</dt>
+          <dd class="col-sm-8">{{ created_bootstrap.agency_name }}</dd>
+
+          <dt class="col-sm-4 text-body-secondary">ID agenzia</dt>
+          <dd class="col-sm-8"><code>{{ created_bootstrap.agency_id }}</code></dd>
+
+          <dt class="col-sm-4 text-body-secondary">Chiave agenzia</dt>
+          <dd class="col-sm-8"><code>{{ created_bootstrap.agency_key }}</code></dd>
+
+          <dt class="col-sm-4 text-body-secondary">Gruppo IAM assegnato</dt>
+          <dd class="col-sm-8"><code>{{ created_bootstrap.assigned_group_path }}</code></dd>
+
+          <dt class="col-sm-4 text-body-secondary">Email admin invitato</dt>
+          <dd class="col-sm-8">{{ created_bootstrap.invitation_email }}</dd>
+
+          <dt class="col-sm-4 text-body-secondary">Scadenza invito</dt>
+          <dd class="col-sm-8">{{ created_bootstrap.invitation_expires_at }}</dd>
+
+          <dt class="col-sm-4 text-body-secondary">Token invito</dt>
+          <dd class="col-sm-8"><code>{{ created_bootstrap.invitation_token }}</code></dd>
+
+          <dt class="col-sm-4 text-body-secondary">Link invito</dt>
+          <dd class="col-sm-8">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <a id="bootstrap-invite-url" href="{{ created_bootstrap.invitation_url }}">{{ created_bootstrap.invitation_url }}</a>
+              <button
+                class="btn btn-outline-secondary btn-sm app-icon-button"
+                type="button"
+                data-copy-target="bootstrap-invite-url"
+              >
+                {% include "includes/icon.html" with icon_name="copy" %}
+                <span>Copia</span>
+              </button>
+            </div>
+          </dd>
+
+          {% if created_bootstrap.provisioned_user_id %}
+            <dt class="col-sm-4 text-body-secondary">User Keycloak</dt>
+            <dd class="col-sm-8"><code>{{ created_bootstrap.provisioned_user_id }}</code></dd>
+          {% endif %}
+        </dl>
+      </div>
+    </section>
+
+    <div class="d-flex justify-content-end gap-2 flex-wrap mt-3">
+      <a class="btn btn-outline-secondary app-icon-button" href="{% url 'exchange_agreement:agencies' %}">
+        {% include "includes/icon.html" with icon_name="arrow-left" %}
+        <span>Torna alle agenzie</span>
+      </a>
+      <a class="btn btn-primary app-icon-button" href="{% url 'exchange_agreement:agency-bootstrap' %}">
+        {% include "includes/icon.html" with icon_name="plus" %}
+        <span>Crea un'altra agenzia</span>
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll("[data-copy-target]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const target = document.getElementById(button.dataset.copyTarget);
+      if (!target) return;
+      const text = target.textContent.trim();
+      try {
+        await navigator.clipboard.writeText(text);
+        const label = button.querySelector("span");
+        if (!label) return;
+        const original = label.textContent;
+        label.textContent = "Copiato";
+        window.setTimeout(() => {
+          label.textContent = original;
+        }, 1800);
+      } catch (_) {
+        window.prompt("Copia link invito", text);
+      }
+    });
+  });
+</script>
+{% endblock %}

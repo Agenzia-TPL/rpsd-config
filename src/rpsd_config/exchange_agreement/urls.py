@@ -10,6 +10,7 @@ from .views import (
     agency_detail_page,
     agency_lot_detail_page,
     bootstrap_agency_page,
+    bootstrap_agency_result_page,
     company_create_page,
     company_detail_page,
     company_list_page,
@@ -47,6 +48,11 @@ urlpatterns = [
         "me/agencies/bootstrap/",
         bootstrap_agency_page,
         name="agency-bootstrap",
+    ),
+    path(
+        "me/agencies/bootstrap/result/",
+        bootstrap_agency_result_page,
+        name="agency-bootstrap-result",
     ),
     path(
         "me/agencies/<slug:agency_key>/",

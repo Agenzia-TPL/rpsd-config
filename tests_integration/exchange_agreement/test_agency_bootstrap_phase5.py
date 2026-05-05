@@ -212,9 +212,16 @@ class AgencyBootstrapPhase5Tests(TestCase):
                 },
             )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Bootstrap agenzia completato con successo.")
-        self.assertContains(response, "agenzia-tpl-monza")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response["Location"],
+            reverse("exchange_agreement:agency-bootstrap-result"),
+        )
+        result_response = self.client.get(response["Location"])
+        self.assertEqual(result_response.status_code, 200)
+        self.assertContains(result_response, "Bootstrap completato")
+        self.assertContains(result_response, "agenzia-tpl-monza")
+        self.assertContains(result_response, "Copia")
         self.assertTrue(Agency.objects.filter(agency_key="agenzia-tpl-monza").exists())
 
     def test_agencies_page_shows_bootstrap_action_for_platform_admin_only(self):

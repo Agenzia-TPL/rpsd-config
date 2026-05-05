@@ -34,7 +34,7 @@
   </div>
 </div>
 <p class="text-body-secondary mb-0">
-  Conferma l'invito, prepara le credenziali e prosegui con l'accesso tramite identity provider.
+  Completa il percorso previsto per il tuo stato di accesso.
 </p>
 {% endblock %}
 
@@ -115,8 +115,8 @@
           <label class="form-label" for="password2">Conferma password</label>
           <input class="form-control" id="password2" name="password2" type="password" required minlength="8">
         </div>
-        <button type="submit" class="btn btn-outline-primary">
-          Salva credenziali
+        <button type="submit" class="btn btn-primary">
+          Crea credenziali iniziali
         </button>
         {% if prepared_username %}
         <p class="small text-body-secondary mt-3 mb-0">
@@ -130,15 +130,27 @@
     <form method="post" class="card border-0 shadow-sm">
       {% csrf_token %}
       <div class="card-body p-4 d-flex flex-wrap align-items-center gap-3">
-        <button
-          type="submit"
-          name="action"
-          value="continue-login"
-          class="btn btn-primary"
-          {% if not can_continue %}disabled{% endif %}
-        >
-          {{ continue_button_label }}
-        </button>
+        {% if request.user.is_authenticated or not credential_setup_required %}
+          <button
+            type="submit"
+            name="action"
+            value="continue-login"
+            class="btn btn-primary"
+            {% if not can_continue %}disabled{% endif %}
+          >
+            {{ continue_button_label }}
+          </button>
+        {% else %}
+          <button
+            type="submit"
+            name="action"
+            value="continue-login"
+            class="btn btn-outline-primary"
+            {% if not can_continue %}disabled{% endif %}
+          >
+            Ho gia' un account: accedi e accetta invito
+          </button>
+        {% endif %}
         {% if can_reject %}
         <button
           type="submit"

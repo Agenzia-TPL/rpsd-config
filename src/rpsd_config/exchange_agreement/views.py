@@ -2207,20 +2207,20 @@ def bootstrap_agency_page(request: HttpRequest) -> HttpResponse:
                     kwargs={"token": created.invitation.token},
                 )
             )
-            result_context["success_message"] = (
-                "Bootstrap agenzia completato con successo."
-            )
-            result_context["created_bootstrap"] = {
+            request.session["agency_bootstrap_result"] = {
                 "agency_id": created.agency.id,
                 "agency_name": created.agency.name,
                 "agency_key": created.agency.agency_key,
-                "invitation_token": created.invitation.token,
+                "invitation_token": str(created.invitation.token),
                 "invitation_url": invite_url,
                 "invitation_email": created.invitation.email,
-                "invitation_expires_at": created.invitation.expires_at,
+                "invitation_expires_at": created.invitation.expires_at.strftime(
+                    "%d/%m/%Y %H:%M UTC"
+                ),
                 "assigned_group_path": created.assigned_group_path,
                 "provisioned_user_id": created.provisioned_user_id,
             }
+            return redirect("exchange_agreement:agency-bootstrap-result")
         except AgencyBootstrapPermissionError as exc:
             result_context["error_message"] = str(exc)
         except (
@@ -2233,6 +2233,24 @@ def bootstrap_agency_page(request: HttpRequest) -> HttpResponse:
         request,
         "exchange_agreement/agency_bootstrap.html",
         result_context,
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def bootstrap_agency_result_page(request: HttpRequest) -> HttpResponse:
+    agency_scope = resolve_user_agency_scope(request.user)
+    if not (request.user.is_superuser or agency_scope.is_platform_admin):
+        raise PermissionDenied("Platform admin scope required.")
+
+    created_bootstrap = request.session.get("agency_bootstrap_result")
+    if not created_bootstrap:
+        return redirect("exchange_agreement:agency-bootstrap")
+
+    return render(
+        request,
+        "exchange_agreement/agency_bootstrap_result.html",
+        {"created_bootstrap": created_bootstrap},
     )
 
 
@@ -2297,6 +2315,11 @@ def invitation_landing(request: HttpRequest, token: str) -> HttpResponse:
         state = "expired"
         can_continue = False
 
+    credentials_prepared = (
+        request.session.get("prepared_invitation_credentials_token")
+        == str(invitation.token)
+    )
+
     context.update(
         {
             "invitation": invitation,
@@ -2315,8 +2338,12 @@ def invitation_landing(request: HttpRequest, token: str) -> HttpResponse:
                 if request.user.is_authenticated
                 else "Accedi e accetta invito"
             ),
+            "credentials_prepared": credentials_prepared,
             "credential_setup_required": bool(
-                can_continue and invitation.email and not request.user.is_authenticated
+                can_continue
+                and invitation.email
+                and not request.user.is_authenticated
+                and not credentials_prepared
             ),
         }
     )
@@ -2359,9 +2386,17 @@ def invitation_landing(request: HttpRequest, token: str) -> HttpResponse:
                 )
 
             context["success_message"] = (
-                "Credenziali iniziali impostate correttamente. Procedi con la login."
+                "Credenziali iniziali impostate correttamente. Ora accedi per "
+                "accettare l'invito."
             )
             context["prepared_username"] = username
+            context["credentials_prepared"] = True
+            context["credential_setup_required"] = False
+            request.session["onboarding_invitation_token"] = str(invitation.token)
+            request.session["onboarding_invitation_kind"] = invitation_type
+            request.session["prepared_invitation_credentials_token"] = str(
+                invitation.token
+            )
             return render(
                 request, "exchange_agreement/invitation_landing.html", context
             )

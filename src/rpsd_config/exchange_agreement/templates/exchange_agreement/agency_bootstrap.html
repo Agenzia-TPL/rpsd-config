@@ -73,43 +73,6 @@
       </div>
     </form>
 
-    {% if created_bootstrap %}
-      <section class="card border-0 shadow-sm" aria-label="Dettagli bootstrap agenzia">
-        <div class="card-body p-4">
-          <h2 class="h5 mb-3">Bootstrap completato</h2>
-          <dl class="row mb-0">
-            <dt class="col-sm-4 text-body-secondary">Agenzia</dt>
-            <dd class="col-sm-8">{{ created_bootstrap.agency_name }}</dd>
-
-            <dt class="col-sm-4 text-body-secondary">ID agenzia</dt>
-            <dd class="col-sm-8"><code>{{ created_bootstrap.agency_id }}</code></dd>
-
-            <dt class="col-sm-4 text-body-secondary">Chiave agenzia</dt>
-            <dd class="col-sm-8"><code>{{ created_bootstrap.agency_key }}</code></dd>
-
-            <dt class="col-sm-4 text-body-secondary">Gruppo IAM assegnato</dt>
-            <dd class="col-sm-8"><code>{{ created_bootstrap.assigned_group_path }}</code></dd>
-
-            <dt class="col-sm-4 text-body-secondary">Email admin invitato</dt>
-            <dd class="col-sm-8">{{ created_bootstrap.invitation_email }}</dd>
-
-            <dt class="col-sm-4 text-body-secondary">Scadenza invito</dt>
-            <dd class="col-sm-8">{{ created_bootstrap.invitation_expires_at|date:"d/m/Y H:i" }} UTC</dd>
-
-            <dt class="col-sm-4 text-body-secondary">Token invito</dt>
-            <dd class="col-sm-8"><code>{{ created_bootstrap.invitation_token }}</code></dd>
-
-            <dt class="col-sm-4 text-body-secondary">Link invito</dt>
-            <dd class="col-sm-8"><a href="{{ created_bootstrap.invitation_url }}">{{ created_bootstrap.invitation_url }}</a></dd>
-
-            {% if created_bootstrap.provisioned_user_id %}
-              <dt class="col-sm-4 text-body-secondary">User Keycloak</dt>
-              <dd class="col-sm-8"><code>{{ created_bootstrap.provisioned_user_id }}</code></dd>
-            {% endif %}
-          </dl>
-        </div>
-      </section>
-    {% endif %}
   </div>
 </div>
 {% endblock %}

@@ -209,7 +209,17 @@ class AgencyInvitationApiAndOnboardingTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Credenziali iniziali impostate correttamente")
-        self.assertContains(response, "operatore-pavia@example.com")
+        self.assertContains(response, "Accedi e accetta invito")
+        self.assertNotContains(response, "Crea credenziali iniziali")
+        self.assertEqual(
+            self.client.session.get("onboarding_invitation_token"),
+            str(invitation.token),
+        )
+        self.assertEqual(self.client.session.get("onboarding_invitation_kind"), "agency")
+        self.assertEqual(
+            self.client.session.get("prepared_invitation_credentials_token"),
+            str(invitation.token),
+        )
         self.assertIn(
             ("operatore-pavia@example.com", "operatore-pavia@example.com"),
             fake_keycloak.ensure_user_calls,
