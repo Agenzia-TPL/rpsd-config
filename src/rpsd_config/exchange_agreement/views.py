@@ -59,6 +59,7 @@ from .services.invitation_rejections import (
     reject_contract_invitation_for_user,
 )
 from .services.m2m_audit import audit_m2m_event, resolve_request_id
+from .services.m2m_grants import ensure_default_contract_ingest_grant
 from .services.m2m_provisioning import (
     M2MProvisioningError,
     provision_default_m2m_principal_for_company,
@@ -1704,16 +1705,21 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
 
                         if not result_context["error_message"]:
                             try:
-                                contract = Contract.objects.create(
-                                    contract_code=form_values["contract_code"],
-                                    client_agency=agency,
-                                    contractor_company=company,
-                                    lot=lot,
-                                    start_date=start_date_value,
-                                    end_date=end_date_value,
-                                    tender_id=form_values["tender_id"],
-                                    status=form_values["status"],
-                                )
+                                with transaction.atomic():
+                                    contract = Contract.objects.create(
+                                        contract_code=form_values["contract_code"],
+                                        client_agency=agency,
+                                        contractor_company=company,
+                                        lot=lot,
+                                        start_date=start_date_value,
+                                        end_date=end_date_value,
+                                        tender_id=form_values["tender_id"],
+                                        status=form_values["status"],
+                                    )
+                                    ensure_default_contract_ingest_grant(
+                                        contract=contract,
+                                        actor=request.user,
+                                    )
                                 result_context["success_message"] = (
                                     "Contratto creato correttamente."
                                 )

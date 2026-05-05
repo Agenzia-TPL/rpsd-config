@@ -17,6 +17,8 @@ from rpsd_config.exchange_agreement.models import (
     ContractInvitation,
     ContractMembership,
     FlowProfile,
+    IntegrationGrant,
+    IntegrationPrincipal,
     Lot,
 )
 
@@ -130,6 +132,13 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
         return user
 
     def test_agency_admin_can_create_contract_only_in_own_scope(self):
+        principal = IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment="prod",
+            keycloak_client_id="atm-default-prod",
+            keycloak_client_uuid="uuid-atm",
+        )
         self.client.force_login(self.agency_admin_a)
 
         in_scope_response = self.client.post(
@@ -147,6 +156,16 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(in_scope_response.status_code, 200)
+        created_contract = Contract.objects.get(contract_code="CTR-A-NEW-001")
+        self.assertTrue(
+            IntegrationGrant.objects.filter(
+                principal=principal,
+                contract=created_contract,
+                action=IntegrationGrant.Action.INGEST_WRITE,
+                data_category__isnull=True,
+                status=IntegrationGrant.Status.ACTIVE,
+            ).exists()
+        )
 
         out_scope_response = self.client.post(
             "/exchange_agreement/api/v1/contracts",
@@ -163,6 +182,47 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(out_scope_response.status_code, 403)
+
+    def test_agency_contract_create_page_auto_creates_m2m_grant(self):
+        principal = IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment="prod",
+            keycloak_client_id="atm-ui-default-prod",
+            keycloak_client_uuid="uuid-atm-ui",
+        )
+        self.client.force_login(self.agency_admin_a)
+        url = reverse(
+            "exchange_agreement:agency-contract-create",
+            args=[self.agency_a.agency_key],
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "action": "create-contract",
+                "contract_code": "CTR-A-UI-GRANT",
+                "contractor_company_id": self.company.id,
+                "lot_id": self.lot.id,
+                "start_date": "2036-01-01",
+                "end_date": "",
+                "tender_id": "",
+                "status": Contract.ContractStatus.DRAFT,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Contratto creato correttamente.")
+        created_contract = Contract.objects.get(contract_code="CTR-A-UI-GRANT")
+        self.assertTrue(
+            IntegrationGrant.objects.filter(
+                principal=principal,
+                contract=created_contract,
+                action=IntegrationGrant.Action.INGEST_WRITE,
+                data_category__isnull=True,
+                status=IntegrationGrant.Status.ACTIVE,
+            ).exists()
+        )
 
     def test_agency_editor_cannot_create_contract(self):
         self.client.force_login(self.agency_editor_a)

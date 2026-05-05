@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
@@ -48,6 +48,7 @@ from .services.agency_invitations import (
 from .services.m2m_audit import audit_m2m_event
 from .services.m2m_grants import (
     accessible_contracts_for_principal,
+    ensure_default_contract_ingest_grant,
     require_m2m_contract_access,
     require_m2m_principal,
 )
@@ -973,16 +974,21 @@ def create_contract(request, payload: ContractCreateRequest):
         raise HttpError(400, "Closed contracts cannot be created directly.")
 
     try:
-        contract = Contract.objects.create(
-            contract_code=payload.contract_code,
-            client_agency=agency,
-            contractor_company=company,
-            lot=lot,
-            start_date=payload.start_date,
-            end_date=payload.end_date,
-            tender_id=payload.tender_id,
-            status=payload.status,
-        )
+        with transaction.atomic():
+            contract = Contract.objects.create(
+                contract_code=payload.contract_code,
+                client_agency=agency,
+                contractor_company=company,
+                lot=lot,
+                start_date=payload.start_date,
+                end_date=payload.end_date,
+                tender_id=payload.tender_id,
+                status=payload.status,
+            )
+            ensure_default_contract_ingest_grant(
+                contract=contract,
+                actor=request.user,
+            )
     except ValidationError as exc:
         raise HttpError(400, f"Contract validation failed: {exc}") from exc
     except IntegrityError as exc:

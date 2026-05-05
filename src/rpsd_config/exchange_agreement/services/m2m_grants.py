@@ -68,6 +68,54 @@ def require_m2m_principal(request) -> IntegrationPrincipal:
     return principal
 
 
+def default_active_principal_for_company(
+    company_id: int,
+    *,
+    environment: str = "prod",
+) -> IntegrationPrincipal | None:
+    return (
+        IntegrationPrincipal.objects.filter(
+            company_id=company_id,
+            environment=(environment or "prod").strip().lower(),
+            status=IntegrationPrincipal.Status.ACTIVE,
+        )
+        .order_by("id")
+        .first()
+    )
+
+
+def ensure_default_contract_ingest_grant(
+    *,
+    contract: Contract,
+    actor=None,
+    environment: str = "prod",
+) -> IntegrationGrant | None:
+    """Ensure the contractor company's default M2M client can ingest for contract.
+
+    The grant is intentionally category-neutral: the contract flow profile
+    remains responsible for selecting the admissible data categories.
+    """
+
+    principal = default_active_principal_for_company(
+        contract.contractor_company_id,
+        environment=environment,
+    )
+    if principal is None:
+        return None
+
+    grant, _created = IntegrationGrant.objects.get_or_create(
+        principal=principal,
+        contract=contract,
+        action=IntegrationGrant.Action.INGEST_WRITE,
+        data_category=None,
+        defaults={
+            "status": IntegrationGrant.Status.ACTIVE,
+            "created_by": actor if getattr(actor, "pk", None) else None,
+        },
+    )
+    return grant
+
+
 def require_m2m_contract_access(
     request,
     *,

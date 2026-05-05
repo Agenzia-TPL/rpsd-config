@@ -16,6 +16,7 @@ from rpsd_config.exchange_agreement.models import (
 )
 from rpsd_config.exchange_agreement.services.m2m_grants import (
     can_client_ingest_for_contract,
+    ensure_default_contract_ingest_grant,
 )
 from rpsd_config.exchange_agreement.services.m2m_provisioning import (
     provision_default_m2m_principal_for_company,
@@ -152,6 +153,67 @@ class CompanyM2MClientGrantsTests(TestCase):
 
         self.assertTrue(decision.allowed)
         self.assertEqual(decision.reason, "grant-active")
+
+    def test_auto_grant_creates_generic_ingest_grant_for_default_principal(self):
+        principal = IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment="prod",
+            keycloak_client_id="auto-m2m-default-prod",
+            keycloak_client_uuid="uuid-auto",
+            created_by=self.actor,
+        )
+
+        grant = ensure_default_contract_ingest_grant(
+            contract=self.contract,
+            actor=self.actor,
+        )
+
+        self.assertIsNotNone(grant)
+        self.assertEqual(grant.principal, principal)
+        self.assertEqual(grant.contract, self.contract)
+        self.assertEqual(grant.action, IntegrationGrant.Action.INGEST_WRITE)
+        self.assertIsNone(grant.data_category)
+        self.assertEqual(grant.status, IntegrationGrant.Status.ACTIVE)
+
+    def test_auto_grant_is_idempotent(self):
+        IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment="prod",
+            keycloak_client_id="idempotent-m2m-default-prod",
+            keycloak_client_uuid="uuid-idempotent",
+        )
+
+        first = ensure_default_contract_ingest_grant(contract=self.contract)
+        second = ensure_default_contract_ingest_grant(contract=self.contract)
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            IntegrationGrant.objects.filter(
+                contract=self.contract,
+                action=IntegrationGrant.Action.INGEST_WRITE,
+                data_category__isnull=True,
+            ).count(),
+            1,
+        )
+
+    def test_auto_grant_returns_none_without_active_principal(self):
+        IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment="prod",
+            keycloak_client_id="revoked-m2m-default-prod",
+            keycloak_client_uuid="uuid-revoked",
+            status=IntegrationPrincipal.Status.REVOKED,
+        )
+
+        grant = ensure_default_contract_ingest_grant(contract=self.contract)
+
+        self.assertIsNone(grant)
+        self.assertFalse(
+            IntegrationGrant.objects.filter(contract=self.contract).exists()
+        )
 
     def test_provisioning_creates_principal_and_encrypted_secret(self):
         keycloak = _FakeM2MKeycloak()
