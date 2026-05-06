@@ -135,7 +135,7 @@ No additional settings are needed — the JWKS URL and issuer are derived from
 
 #### Keycloak setup (one-time per service)
 
-1. In Keycloak Admin, go to the `rapsodia` realm → **Clients** → **Create client**
+1. In Keycloak Admin, go to the `rpsd` realm → **Clients** → **Create client**
 2. Set **Client ID** (e.g., `rpsd-ingest`), **Client authentication** = On
 3. Under **Capability config**: enable **Service accounts roles**, disable **Standard flow**
 4. Save, then go to the **Credentials** tab and note the client secret

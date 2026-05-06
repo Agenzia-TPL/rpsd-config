@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.urls import NoReverseMatch, reverse
 
+from rpsd_config.exchange_agreement.models import ContractMembership
 from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
 
 
@@ -12,6 +13,8 @@ _ACTIVE_SECTION_BY_URL_NAME = {
     "user-area-legacy": "user",
     "received-invitations": "user",
     "contract-invitation-create": "user",
+    "user-contracts": "contracts",
+    "user-contract-detail": "contracts",
     "agencies": "agencies",
     "agency-bootstrap": "agencies",
     "agency-detail": "agencies",
@@ -49,6 +52,7 @@ def _context_bar_for_request(request) -> dict:
 
     platform_url = _reverse_url("home")
     user_area_url = _reverse_url("exchange_agreement:user-area")
+    user_contracts_url = _reverse_url("exchange_agreement:user-contracts")
     agencies_url = _reverse_url("exchange_agreement:agencies")
     companies_url = _reverse_url("exchange_agreement:company-list")
     agency_key = kwargs.get("agency_key", "")
@@ -93,6 +97,22 @@ def _context_bar_for_request(request) -> dict:
             ],
             "back_url": user_area_url,
             "back_label": "Area utente",
+        }
+    if url_name == "user-contracts":
+        return {
+            "breadcrumbs": [*base, _crumb("Contratti", current=True)],
+            "back_url": "",
+            "back_label": "",
+        }
+    if url_name == "user-contract-detail":
+        return {
+            "breadcrumbs": [
+                *base,
+                _crumb("Contratti", user_contracts_url),
+                _crumb(str(contract_code), current=True),
+            ],
+            "back_url": user_contracts_url,
+            "back_label": "Contratti",
         }
     if url_name == "agencies":
         return {
@@ -217,6 +237,7 @@ def navigation_context(request):
     is_authenticated = bool(getattr(user, "is_authenticated", False))
     can_view_configuration = False
     can_view_companies = False
+    has_contract_memberships = False
     resolver_match = getattr(request, "resolver_match", None)
     url_name = getattr(resolver_match, "url_name", "") or ""
     active_section = _ACTIVE_SECTION_BY_URL_NAME.get(url_name, "")
@@ -229,6 +250,9 @@ def navigation_context(request):
             or user.is_superuser
             or bool(agency_scope.admin_agency_keys)
         )
+        has_contract_memberships = ContractMembership.objects.filter(
+            user=user
+        ).exists()
 
     nav_items = [
         {
@@ -238,6 +262,14 @@ def navigation_context(request):
             "icon": "agency",
             "visible": is_authenticated,
             "active": active_section == "agencies",
+        },
+        {
+            "section": "contracts",
+            "label": "Contratti",
+            "url": _reverse_url("exchange_agreement:user-contracts"),
+            "icon": "file-text",
+            "visible": has_contract_memberships,
+            "active": active_section == "contracts",
         },
         {
             "section": "companies",
@@ -272,6 +304,7 @@ def navigation_context(request):
             "can_view_agencies": is_authenticated,
             "can_view_configuration": can_view_configuration,
             "can_view_companies": can_view_companies,
+            "can_view_contracts": has_contract_memberships,
             "active_section": active_section,
             "items": nav_items,
             "context_bar": _context_bar_for_request(request),

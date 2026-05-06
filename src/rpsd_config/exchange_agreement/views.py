@@ -1164,6 +1164,54 @@ def _can_create_contract_invitation_for_agency(
     )
 
 
+def _contract_membership_for_user(*, user, contract: Contract):
+    return ContractMembership.objects.filter(contract=contract, user=user).first()
+
+
+def _can_view_contract_directly(*, user, contract: Contract) -> bool:
+    if user.is_superuser:
+        return True
+    return _contract_membership_for_user(user=user, contract=contract) is not None
+
+
+def _can_manage_contract_from_membership(*, user, contract: Contract) -> bool:
+    if user.is_superuser:
+        return True
+    membership = _contract_membership_for_user(user=user, contract=contract)
+    return bool(membership and membership.can_manage_contract)
+
+
+def _render_contract_detail(
+    request: HttpRequest,
+    *,
+    contract: Contract,
+    can_manage_contract_m2m: bool,
+    can_reveal_contract_m2m: bool,
+    can_create_contract_invites: bool,
+    result_context: dict,
+) -> HttpResponse:
+    revealed_secret = result_context.pop("revealed_secret", "")
+    contract_m2m_exchange_info = _build_contract_m2m_exchange_info(
+        request,
+        contract,
+        revealed_secret=revealed_secret,
+    )
+
+    return render(
+        request,
+        "exchange_agreement/agency_contract_detail.html",
+        {
+            "agency": contract.client_agency,
+            "contract": contract,
+            "contract_m2m_exchange_info": contract_m2m_exchange_info,
+            "can_manage_contract_m2m": can_manage_contract_m2m,
+            "can_reveal_contract_m2m": can_reveal_contract_m2m,
+            "can_create_contract_invites": can_create_contract_invites,
+            **result_context,
+        },
+    )
+
+
 def _agency_invitation_summary(agency: Agency) -> dict[str, int]:
     return {
         "pending": AgencyInvitation.objects.filter(
@@ -1455,6 +1503,92 @@ def agency_contracts_page(request: HttpRequest, agency_key: str) -> HttpResponse
 
 
 @login_required
+def user_contracts_page(request: HttpRequest) -> HttpResponse:
+    memberships = (
+        ContractMembership.objects.select_related(
+            "contract",
+            "contract__client_agency",
+            "contract__contractor_company",
+            "contract__lot",
+        )
+        .filter(user=request.user)
+        .order_by("contract__contract_code")
+    )
+    return render(
+        request,
+        "exchange_agreement/user_contracts.html",
+        {
+            "memberships": list(memberships),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def user_contract_detail_page(
+    request: HttpRequest,
+    contract_code: str,
+) -> HttpResponse:
+    contract = get_object_or_404(
+        Contract.objects.select_related(
+            "lot",
+            "client_agency",
+            "contractor_company",
+            "flow_profile",
+            "replaced_by",
+        ),
+        contract_code=contract_code,
+    )
+    if not _can_view_contract_directly(user=request.user, contract=contract):
+        raise PermissionDenied("Non hai accesso a questo contratto.")
+
+    result_context = {
+        "error_message": "",
+        "success_message": "",
+        "revealed_secret": "",
+    }
+    can_manage_contract = _can_manage_contract_from_membership(
+        user=request.user,
+        contract=contract,
+    )
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        if action != "reveal-contract-client-secret":
+            result_context["error_message"] = "Azione non supportata."
+        else:
+            principal = _default_m2m_principal_for_company(
+                contract.contractor_company
+            )
+            if principal is None:
+                result_context["error_message"] = "Nessun client M2M configurato."
+            else:
+                try:
+                    result_context["revealed_secret"] = reveal_client_secret(principal)
+                    audit_m2m_event(
+                        "secret.revealed",
+                        request_id=resolve_request_id(request),
+                        principal_id=principal.pk,
+                        company_id=contract.contractor_company_id,
+                        contract_code=contract.contract_code,
+                        keycloak_client_id=principal.keycloak_client_id,
+                        actor_id=request.user.pk,
+                    )
+                    result_context["success_message"] = "Secret client rivelato."
+                except M2MSecretStoreError as exc:
+                    result_context["error_message"] = str(exc)
+
+    return _render_contract_detail(
+        request,
+        contract=contract,
+        can_manage_contract_m2m=False,
+        can_reveal_contract_m2m=True,
+        can_create_contract_invites=can_manage_contract,
+        result_context=result_context,
+    )
+
+
+@login_required
 @require_http_methods(["GET", "POST"])
 def agency_contract_detail_page(
     request: HttpRequest,
@@ -1483,8 +1617,8 @@ def agency_contract_detail_page(
     result_context = {
         "error_message": "",
         "success_message": "",
+        "revealed_secret": "",
     }
-    revealed_secret = ""
     can_manage_contract_m2m = _can_delete_companies(request.user)
 
     if request.method == "POST":
@@ -1503,7 +1637,7 @@ def agency_contract_detail_page(
                 result_context["error_message"] = "Nessun client M2M configurato."
             else:
                 try:
-                    revealed_secret = reveal_client_secret(principal)
+                    result_context["revealed_secret"] = reveal_client_secret(principal)
                     audit_m2m_event(
                         "secret.revealed",
                         request_id=resolve_request_id(request),
@@ -1517,27 +1651,17 @@ def agency_contract_detail_page(
                 except M2MSecretStoreError as exc:
                     result_context["error_message"] = str(exc)
 
-    contract_m2m_exchange_info = _build_contract_m2m_exchange_info(
+    return _render_contract_detail(
         request,
-        contract,
-        revealed_secret=revealed_secret,
-    )
-
-    return render(
-        request,
-        "exchange_agreement/agency_contract_detail.html",
-        {
-            "agency": agency,
-            "contract": contract,
-            "contract_m2m_exchange_info": contract_m2m_exchange_info,
-            "can_manage_contract_m2m": can_manage_contract_m2m,
-            "can_create_contract_invites": _can_create_contract_invitation_for_agency(
-                user=request.user,
-                agency=agency,
-                agency_scope=agency_scope,
-            ),
-            **result_context,
-        },
+        contract=contract,
+        can_manage_contract_m2m=can_manage_contract_m2m,
+        can_reveal_contract_m2m=can_manage_contract_m2m,
+        can_create_contract_invites=_can_create_contract_invitation_for_agency(
+            user=request.user,
+            agency=agency,
+            agency_scope=agency_scope,
+        ),
+        result_context=result_context,
     )
 
 
@@ -1966,9 +2090,17 @@ def _contracts_available_for_contract_invites(user):
     allowed_agency_keys = set(agency_scope.admin_agency_keys) | set(
         agency_scope.editor_agency_keys
     )
-    if not allowed_agency_keys:
-        return Contract.objects.none()
-    return contracts.filter(client_agency__agency_key__in=allowed_agency_keys)
+    membership_contract_ids = ContractMembership.objects.filter(
+        user=user,
+        role__in={
+            ContractMembership.Role.CONTRACT_ADMIN,
+            ContractMembership.Role.CONTRACT_EDITOR,
+        },
+    ).values("contract_id")
+    return contracts.filter(
+        Q(client_agency__agency_key__in=allowed_agency_keys)
+        | Q(id__in=membership_contract_ids)
+    ).distinct()
 
 
 @login_required

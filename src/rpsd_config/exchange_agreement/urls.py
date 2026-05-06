@@ -21,6 +21,8 @@ from .views import (
     onboarding_callback,
     platform_configuration_page,
     received_invitations,
+    user_contract_detail_page,
+    user_contracts_page,
     user_area,
 )
 
@@ -35,7 +37,12 @@ urlpatterns = [
     path("invite/<uuid:token>/", invitation_landing, name="invitation-landing"),
     path("onboarding/callback/", onboarding_callback, name="onboarding-callback"),
     path("me/", user_area, name="user-area"),
-    path("me/contracts/", user_area, name="user-area-legacy"),
+    path("me/contracts/", user_contracts_page, name="user-contracts"),
+    path(
+        "me/contracts/<str:contract_code>/",
+        user_contract_detail_page,
+        name="user-contract-detail",
+    ),
     path("me/agencies/", agencies_page, name="agencies"),
     path("me/companies/", company_list_page, name="company-list"),
     path("me/companies/new/", company_create_page, name="company-create"),

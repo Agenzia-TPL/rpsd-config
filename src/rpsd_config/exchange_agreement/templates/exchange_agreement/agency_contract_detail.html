@@ -130,7 +130,7 @@
           </dd>
         </dl>
 
-        {% if can_manage_contract_m2m %}
+        {% if can_reveal_contract_m2m %}
           <form method="post" class="mb-4">
             {% csrf_token %}
             <input type="hidden" name="action" value="reveal-contract-client-secret">

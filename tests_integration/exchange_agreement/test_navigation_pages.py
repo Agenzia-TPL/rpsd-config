@@ -43,6 +43,11 @@ class NavigationAndPagesTests(TestCase):
             email="agency-user-nav@example.com",
             password="agency-pass",
         )
+        self.company_user = user_model.objects.create_user(
+            username="company-user-nav",
+            email="company-user-nav@example.com",
+            password="company-pass",
+        )
         self.agency_admin = user_model.objects.create_user(
             username="agency-admin-nav",
             email="agency-admin-nav@example.com",
@@ -109,6 +114,12 @@ class NavigationAndPagesTests(TestCase):
             role=ContractMembership.Role.CONTRACT_EDITOR,
             created_by=self.platform_admin,
         )
+        ContractMembership.objects.create(
+            contract=self.contract,
+            user=self.company_user,
+            role=ContractMembership.Role.CONTRACT_READER,
+            created_by=self.platform_admin,
+        )
 
     def test_sidebar_for_regular_user_hides_platform_configuration_and_companies(self):
         self.client.force_login(self.regular_user)
@@ -117,10 +128,70 @@ class NavigationAndPagesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("exchange_agreement:user-area"))
         self.assertContains(response, reverse("exchange_agreement:agencies"))
+        self.assertContains(response, reverse("exchange_agreement:user-contracts"))
         self.assertNotContains(response, reverse("exchange_agreement:company-list"))
         self.assertNotContains(
             response, reverse("exchange_agreement:platform-configuration")
         )
+
+    def test_sidebar_for_contract_member_shows_contracts_without_agency_access(self):
+        self.client.force_login(self.company_user)
+        response = self.client.get(reverse("exchange_agreement:user-area"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("exchange_agreement:user-contracts"))
+        self.assertContains(response, "Contratti")
+
+    def test_user_contracts_page_lists_membership_contracts(self):
+        self.client.force_login(self.company_user)
+        response = self.client.get(reverse("exchange_agreement:user-contracts"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.contract.contract_code)
+        self.assertContains(response, self.contract.client_agency.name)
+        self.assertContains(
+            response,
+            reverse(
+                "exchange_agreement:user-contract-detail",
+                args=[self.contract.contract_code],
+            ),
+        )
+
+    def test_contract_member_can_open_direct_detail_without_agency_access(self):
+        principal = IntegrationPrincipal.objects.create(
+            company=self.company,
+            name="default",
+            environment="prod",
+            keycloak_client_id="company-user-nav-default-prod",
+            keycloak_client_uuid="uuid-company-user-nav",
+        )
+        store_client_secret(principal, client_secret="secret-company-user-nav")
+        agency_url = reverse(
+            "exchange_agreement:agency-detail", args=[self.agency.agency_key]
+        )
+        direct_url = reverse(
+            "exchange_agreement:user-contract-detail",
+            args=[self.contract.contract_code],
+        )
+
+        self.client.force_login(self.company_user)
+        agency_response = self.client.get(agency_url)
+        self.assertEqual(agency_response.status_code, 403)
+
+        direct_response = self.client.get(direct_url)
+        self.assertEqual(direct_response.status_code, 200)
+        self.assertContains(direct_response, self.contract.contract_code)
+        self.assertContains(direct_response, "Interscambio dati azienda")
+        self.assertContains(direct_response, principal.keycloak_client_id)
+        self.assertContains(direct_response, "Mostra secret client")
+
+        reveal_response = self.client.post(
+            direct_url,
+            {"action": "reveal-contract-client-secret"},
+        )
+        self.assertEqual(reveal_response.status_code, 200)
+        self.assertContains(reveal_response, "Secret client rivelato.")
+        self.assertContains(reveal_response, "secret-company-user-nav")
 
     def test_sidebar_for_platform_admin_shows_platform_configuration_and_companies(
         self,
