@@ -29,37 +29,40 @@
     </div>
 
     {% if agency_rows %}
-      <div class="vstack gap-3">
+      <div class="row g-3">
         {% for row in agency_rows %}
-          <article class="card border-0 shadow-sm">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-                <div>
-                  <h2 class="h5 mb-1">{{ row.agency.name }}</h2>
-                  <p class="small text-body-secondary mb-0">
+          <div class="col-12 col-xl-6">
+            <a
+              class="card border-0 shadow-sm app-home-section-card h-100 text-decoration-none"
+              href="{% url 'exchange_agreement:agency-detail' row.agency.agency_key %}"
+            >
+              <span class="card-body d-flex align-items-start gap-3">
+                <span class="app-home-section-icon">
+                  {% include "includes/icon.html" with icon_name="agency" %}
+                </span>
+                <span class="d-block flex-grow-1">
+                  <span class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-1">
+                    <span class="h5 d-block mb-0 text-body">{{ row.agency.name }}</span>
+                    <span class="badge rounded-pill text-bg-info">{{ row.role_label }}</span>
+                  </span>
+                  <span class="small text-body-secondary d-block mb-2">
                     Chiave agenzia: <code>{{ row.agency.agency_key }}</code>
-                  </p>
-                </div>
-                <div class="d-flex align-items-center gap-2">
-                  <span class="badge rounded-pill text-bg-info">{{ row.role_label }}</span>
-                  <a
-                    class="btn btn-sm btn-outline-primary app-icon-button"
-                    href="{% url 'exchange_agreement:agency-detail' row.agency.agency_key %}"
-                  >
+                  </span>
+                  <span class="small text-body-secondary d-block">
+                    {% if row.membership %}
+                      Membership locale creata il {{ row.membership.created_at|date:"d/m/Y H:i" }} UTC
+                    {% else %}
+                      Accesso derivato dai gruppi IAM.
+                    {% endif %}
+                  </span>
+                  <span class="small text-primary d-inline-flex align-items-center gap-1 mt-3">
                     {% include "includes/icon.html" with icon_name="eye" %}
                     <span>Apri agenzia</span>
-                  </a>
-                </div>
-              </div>
-              <p class="small text-body-secondary mb-0 mt-2">
-                {% if row.membership %}
-                  Membership locale creata il {{ row.membership.created_at|date:"d/m/Y H:i" }} UTC
-                {% else %}
-                  Accesso derivato dai gruppi IAM.
-                {% endif %}
-              </p>
-            </div>
-          </article>
+                  </span>
+                </span>
+              </span>
+            </a>
+          </div>
         {% endfor %}
       </div>
     {% else %}
