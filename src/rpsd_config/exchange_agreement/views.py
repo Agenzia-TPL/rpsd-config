@@ -264,6 +264,62 @@ def _build_contract_m2m_exchange_info(
     }
 
 
+def _can_view_contract_via_membership_or_agency(*, user, contract: Contract) -> bool:
+    if _can_view_contract_directly(user=user, contract=contract):
+        return True
+
+    agency_scope = resolve_user_agency_scope(user)
+    return _can_view_agency(
+        user=user,
+        agency=contract.client_agency,
+        agency_scope=agency_scope,
+    )
+
+
+def _can_reveal_contract_m2m_secret(*, user, contract: Contract) -> bool:
+    if _can_view_contract_directly(user=user, contract=contract):
+        return True
+    if not _can_delete_companies(user):
+        return False
+
+    agency_scope = resolve_user_agency_scope(user)
+    return _can_view_agency(
+        user=user,
+        agency=contract.client_agency,
+        agency_scope=agency_scope,
+    )
+
+
+def _contract_m2m_config_payload(
+    request: HttpRequest,
+    *,
+    contract: Contract,
+    include_secret: bool,
+) -> dict:
+    principal = _default_m2m_principal_for_company(contract.contractor_company)
+    client_secret = "REPLACE_WITH_CLIENT_SECRET"
+    if include_secret and principal is not None:
+        client_secret = reveal_client_secret(principal)
+        audit_m2m_event(
+            "secret.exported",
+            request_id=resolve_request_id(request),
+            principal_id=principal.pk,
+            company_id=contract.contractor_company_id,
+            contract_code=contract.contract_code,
+            keycloak_client_id=principal.keycloak_client_id,
+            actor_id=request.user.pk,
+        )
+
+    return {
+        "client_id": principal.keycloak_client_id if principal is not None else "",
+        "client_secret": client_secret,
+        "contract_code": contract.contract_code,
+        "token_url": _m2m_token_endpoint_url(),
+        "config_base_url": request.build_absolute_uri("/").rstrip("/"),
+        "ingest_url": "http://localhost:20000/ingest",
+    }
+
+
 def _cleanup_company_m2m_principals_before_delete(*, company: Company, actor) -> None:
     principals = list(
         IntegrationPrincipal.objects.filter(company=company).exclude(
@@ -1726,6 +1782,46 @@ def user_contract_detail_page(
         can_create_contract_invites=can_manage_contract,
         result_context=result_context,
     )
+
+
+@login_required
+def contract_m2m_config_download_page(
+    request: HttpRequest,
+    contract_code: str,
+) -> HttpResponse:
+    contract = get_object_or_404(
+        Contract.objects.select_related(
+            "client_agency",
+            "contractor_company",
+        ),
+        contract_code=contract_code,
+    )
+    if not _can_view_contract_via_membership_or_agency(
+        user=request.user,
+        contract=contract,
+    ):
+        raise PermissionDenied("Non hai accesso a questo contratto.")
+
+    include_secret = _can_reveal_contract_m2m_secret(
+        user=request.user,
+        contract=contract,
+    )
+    try:
+        payload = _contract_m2m_config_payload(
+            request,
+            contract=contract,
+            include_secret=include_secret,
+        )
+    except M2MSecretStoreError as exc:
+        raise PermissionDenied(str(exc)) from exc
+
+    filename = f"rpsd-m2m-{contract.contract_code}.json"
+    response = HttpResponse(
+        json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8"),
+        content_type="application/json; charset=utf-8",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 @login_required

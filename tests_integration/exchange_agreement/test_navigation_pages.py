@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
+import json
 from datetime import date
 from unittest.mock import patch
 
@@ -193,6 +194,32 @@ class NavigationAndPagesTests(TestCase):
         self.assertContains(reveal_response, "Secret client rivelato.")
         self.assertContains(reveal_response, "secret-company-user-nav")
 
+        config_response = self.client.get(
+            reverse(
+                "exchange_agreement:contract-m2m-config-download",
+                args=[self.contract.contract_code],
+            )
+        )
+        self.assertEqual(config_response.status_code, 200)
+        self.assertEqual(
+            config_response.headers["Content-Type"],
+            "application/json; charset=utf-8",
+        )
+        self.assertIn(
+            f"rpsd-m2m-{self.contract.contract_code}.json",
+            config_response.headers["Content-Disposition"],
+        )
+        payload = json.loads(config_response.content.decode("utf-8"))
+        self.assertEqual(payload["client_id"], principal.keycloak_client_id)
+        self.assertEqual(payload["client_secret"], "secret-company-user-nav")
+        self.assertEqual(payload["contract_code"], self.contract.contract_code)
+        self.assertIn("token_url", payload)
+        self.assertIn("config_base_url", payload)
+        self.assertIn("ingest_url", payload)
+        self.assertNotIn("data_category", payload)
+        self.assertNotIn("file_path", payload)
+        self.assertNotIn("content_type", payload)
+
     def test_sidebar_for_platform_admin_shows_platform_configuration_and_companies(
         self,
     ):
@@ -331,6 +358,7 @@ class NavigationAndPagesTests(TestCase):
         self.assertContains(regular_response, "Interscambio dati azienda")
         self.assertContains(regular_response, principal.keycloak_client_id)
         self.assertContains(regular_response, "api/m2m/v1/contracts/NAV-001")
+        self.assertContains(regular_response, "Scarica config M2M")
         self.assertNotContains(regular_response, "secret-navigation")
         self.assertNotContains(regular_response, "Mostra secret client")
 
