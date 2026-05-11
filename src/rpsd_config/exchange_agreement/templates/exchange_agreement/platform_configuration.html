@@ -36,6 +36,11 @@
       Inizializzazione sistema
     </a>
   </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'flussi' %}active{% endif %}" href="?tab=flussi">
+      Profili flussi
+    </a>
+  </li>
 </ul>
 
 {% if active_tab == "globali" %}
@@ -120,6 +125,368 @@
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
+{% elif active_tab == "flussi" %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <div>
+          <h2 class="h5 mb-1">Profili flussi dati</h2>
+          <p class="text-body-secondary mb-0">
+            Configurazione piattaforma usata dai contratti per stabilire quali dati possono essere inviati.
+          </p>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="tab" value="flussi">
+          <input type="hidden" name="action" value="init-standard-flow-profiles">
+          <button class="btn btn-outline-primary btn-sm app-icon-button" type="submit">
+            {% include "includes/icon.html" with icon_name="settings" %}
+            <span>Ripristina standard</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-xl-7">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <h3 class="h5 mb-3">Flow operativi Prefect</h3>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Flow</th>
+                  <th>What</th>
+                  <th>Deployment</th>
+                  <th>Stato</th>
+                  <th>Profili</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in operational_flow_rows %}
+                  <tr>
+                    <td>
+                      <code>{{ row.flow.code }}</code>
+                      {% if row.flow.description %}
+                        <div class="small text-body-secondary">{{ row.flow.description }}</div>
+                      {% endif %}
+                    </td>
+                    <td><code>{{ row.flow.supported_what }}</code></td>
+                    <td><code>{{ row.flow.deployment_name }}</code></td>
+                    <td>
+                      {% if row.flow.status == "active" %}
+                        <span class="badge text-bg-success">Attivo</span>
+                      {% elif row.flow.status == "deprecated" %}
+                        <span class="badge text-bg-warning">Deprecato</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">Disabilitato</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ row.referenced_count }}</td>
+                    <td class="text-end">
+                      <form method="post" class="d-flex gap-1">
+                        {% csrf_token %}
+                        <input type="hidden" name="tab" value="flussi">
+                        <input type="hidden" name="action" value="set-operational-flow-status">
+                        <input type="hidden" name="flow_id" value="{{ row.flow.id }}">
+                        <select class="form-select form-select-sm" name="status" aria-label="Stato flow operativo">
+                          {% for value, label in operational_flow_status_choices %}
+                            <option value="{{ value }}" {% if row.flow.status == value %}selected{% endif %}>{{ label }}</option>
+                          {% endfor %}
+                        </select>
+                        <button class="btn btn-sm btn-outline-primary" type="submit">Salva</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="6" class="text-body-secondary">Nessun flow operativo registrato.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-5">
+      <form method="post" class="card border-0 shadow-sm h-100">
+        {% csrf_token %}
+        <input type="hidden" name="tab" value="flussi">
+        <input type="hidden" name="action" value="create-operational-flow">
+        <div class="card-body">
+          <h3 class="h5 mb-3">Nuovo flow operativo</h3>
+          <div class="row g-2">
+            <div class="col-12">
+              <label class="form-label" for="operational_flow_code">Codice</label>
+              <input class="form-control" id="operational_flow_code" name="operational_flow_code" type="text" value="{{ operational_flow_form_values.code }}" placeholder="siri-pt_001" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="operational_flow_supported_what">What supportato</label>
+              <input class="form-control" id="operational_flow_supported_what" name="operational_flow_supported_what" type="text" value="{{ operational_flow_form_values.supported_what }}" placeholder="siri-pt" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="operational_flow_deployment_name">Deployment Prefect</label>
+              <input class="form-control" id="operational_flow_deployment_name" name="operational_flow_deployment_name" type="text" value="{{ operational_flow_form_values.deployment_name }}" placeholder="validators/siri-pt-default" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="operational_flow_version">Versione</label>
+              <input class="form-control" id="operational_flow_version" name="operational_flow_version" type="text" value="{{ operational_flow_form_values.version }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="operational_flow_status">Stato</label>
+              <select class="form-select" id="operational_flow_status" name="operational_flow_status">
+                {% for value, label in operational_flow_status_choices %}
+                  <option value="{{ value }}" {% if operational_flow_form_values.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="operational_flow_description">Descrizione</label>
+              <textarea class="form-control" id="operational_flow_description" name="operational_flow_description" rows="2">{{ operational_flow_form_values.description }}</textarea>
+            </div>
+          </div>
+          <button class="btn btn-primary mt-3 app-icon-button" type="submit">
+            {% include "includes/icon.html" with icon_name="plus" %}
+            <span>Crea flow</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+        <div>
+          <h2 class="h5 mb-1">Asset configurazione piattaforma</h2>
+          <div class="small text-body-secondary">
+            File versionati salvati nello storage condiviso e disponibili via API M2M.
+          </div>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>Versione</th>
+              <th>Stato</th>
+              <th>Checksum</th>
+              <th>Pubblicazione</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for asset in configuration_assets %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ asset.label|default:asset.original_filename }}</div>
+                  <div class="small text-body-secondary">
+                    <code>{{ asset.asset_type }}</code>
+                    {% if asset.what %}<code>{{ asset.what }}</code>{% endif %}
+                  </div>
+                  <div class="small text-body-secondary text-break">
+                    {{ asset.original_filename }} · {{ asset.size_bytes }} byte
+                  </div>
+                </td>
+                <td>v{{ asset.version }}</td>
+                <td>
+                  {% if asset.is_active %}
+                    <span class="badge text-bg-success">Attivo</span>
+                  {% elif asset.status == "archived" %}
+                    <span class="badge text-bg-secondary">Archiviato</span>
+                  {% else %}
+                    <span class="badge text-bg-light border">Salvato</span>
+                  {% endif %}
+                </td>
+                <td><code class="small">{{ asset.checksum_sha256|slice:":12" }}...</code></td>
+                <td>
+                  {% if asset.publish_status == "published" %}
+                    <span class="badge text-bg-success">Evento pubblicato</span>
+                  {% elif asset.publish_status == "failed" %}
+                    <span class="badge text-bg-warning">Evento fallito</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">Evento pending</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <div class="d-inline-flex gap-1">
+                    <a class="btn btn-sm btn-outline-secondary" href="{% url 'exchange_agreement:configuration-asset-download' asset.id %}">Scarica</a>
+                    {% if not asset.is_active %}
+                      <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="tab" value="inizializzazione">
+                        <input type="hidden" name="action" value="set-config-asset-active">
+                        <input type="hidden" name="asset_id" value="{{ asset.id }}">
+                        <button class="btn btn-sm btn-outline-primary" type="submit">Attiva</button>
+                      </form>
+                    {% endif %}
+                    {% if asset.status != "archived" %}
+                      <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="tab" value="inizializzazione">
+                        <input type="hidden" name="action" value="archive-config-asset">
+                        <input type="hidden" name="asset_id" value="{{ asset.id }}">
+                        <button class="btn btn-sm btn-outline-secondary" type="submit">Archivia</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6" class="text-body-secondary">
+                  Nessun asset configurazione caricato.
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-xl-7">
+      {% for row in flow_profile_rows %}
+        <div class="card border-0 shadow-sm mb-3">
+          <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+              <div>
+                <h3 class="h5 mb-1">{{ row.profile.name }}</h3>
+                <div class="text-body-secondary small">
+                  <code>{{ row.profile.code }}</code> · schema {{ row.profile.schema_version }}
+                </div>
+              </div>
+              <div class="d-flex flex-wrap gap-1">
+                {% if row.profile.is_active %}
+                  <span class="badge text-bg-success">Attivo</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">Non attivo</span>
+                {% endif %}
+                <span class="badge text-bg-light border">Contratti: {{ row.contract_count }}</span>
+              </div>
+            </div>
+            {% if row.profile.description %}
+              <p class="text-body-secondary">{{ row.profile.description }}</p>
+            {% endif %}
+
+            <h4 class="h6">Input ingest</h4>
+            <div class="table-responsive mb-3">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Categoria</th>
+                    <th>Stato</th>
+                    <th>Flow</th>
+                    <th>Descrizione</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for item in row.summary.data_ingestion %}
+                    <tr>
+                      <td><code>{{ item.data_category }}</code></td>
+                      <td>
+                        {% if item.active %}
+                          <span class="badge text-bg-success">Abilitato</span>
+                        {% else %}
+                          <span class="badge text-bg-secondary">Disabilitato</span>
+                        {% endif %}
+                      </td>
+                      <td><code>{{ item.flow }}</code></td>
+                      <td>{{ item.description|default:"-" }}</td>
+                    </tr>
+                  {% empty %}
+                    <tr>
+                      <td colspan="4" class="text-body-secondary">Nessun input ingest dichiarato.</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2">
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="tab" value="flussi">
+                <input type="hidden" name="action" value="set-flow-profile-active">
+                <input type="hidden" name="profile_id" value="{{ row.profile.id }}">
+                <input type="hidden" name="set_active" value="{% if row.profile.is_active %}0{% else %}1{% endif %}">
+                <button class="btn btn-sm {% if row.profile.is_active %}btn-outline-secondary{% else %}btn-outline-primary{% endif %}" type="submit">
+                  {% if row.profile.is_active %}Disattiva{% else %}Attiva{% endif %}
+                </button>
+              </form>
+              <form method="post" class="d-flex gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="tab" value="flussi">
+                <input type="hidden" name="action" value="duplicate-flow-profile">
+                <input type="hidden" name="profile_id" value="{{ row.profile.id }}">
+                <input class="form-control form-control-sm" name="new_code" type="text" placeholder="{{ row.profile.code }}-v2" required>
+                <button class="btn btn-sm btn-outline-primary" type="submit">Duplica/versiona</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <div class="card border-0 shadow-sm">
+          <div class="card-body text-body-secondary">
+            Nessun profilo flussi presente. Usa "Ripristina standard".
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="col-12 col-xl-5">
+      <form method="post" class="card border-0 shadow-sm">
+        {% csrf_token %}
+        <input type="hidden" name="tab" value="flussi">
+        <input type="hidden" name="action" value="create-flow-profile">
+        <div class="card-body">
+          <h3 class="h5 mb-3">Nuovo profilo</h3>
+          <div class="row g-2">
+            <div class="col-12">
+              <label class="form-label" for="flow_code">Codice</label>
+              <input class="form-control" id="flow_code" name="flow_code" type="text" value="{{ flow_profile_form_values.code }}" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="flow_name">Nome</label>
+              <input class="form-control" id="flow_name" name="flow_name" type="text" value="{{ flow_profile_form_values.name }}" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="flow_description">Descrizione</label>
+              <textarea class="form-control" id="flow_description" name="flow_description" rows="2">{{ flow_profile_form_values.description }}</textarea>
+            </div>
+            <div class="col-6">
+              <label class="form-label" for="flow_schema_version">Schema</label>
+              <input class="form-control" id="flow_schema_version" name="flow_schema_version" type="text" value="{{ flow_profile_form_values.schema_version }}" required>
+            </div>
+            <div class="col-6 d-flex align-items-end">
+              <div class="form-check mb-2">
+                <input class="form-check-input" id="flow_is_active" name="flow_is_active" type="checkbox" {% if flow_profile_form_values.is_active %}checked{% endif %}>
+                <label class="form-check-label" for="flow_is_active">Attivo</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <label class="form-label" for="flow_options">Options JSON</label>
+              <textarea class="form-control font-monospace" id="flow_options" name="flow_options" rows="16" required>{{ flow_profile_form_values.options }}</textarea>
+              <div class="form-text">
+                Campo tecnico riservato ai platform admin. Gli operatori agenzia vedono solo riepiloghi e selezione profilo.
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-primary mt-3 app-icon-button" type="submit">
+            {% include "includes/icon.html" with icon_name="plus" %}
+            <span>Crea profilo</span>
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 {% else %}

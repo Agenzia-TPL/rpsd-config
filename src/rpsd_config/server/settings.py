@@ -362,6 +362,23 @@ class AppSettings(BaseSettings):
     M2M_API_CLIENT_ID_CLAIM: str = Field(default="azp")
     M2M_API_CLOCK_SKEW_SECONDS: int = Field(default=30)
 
+    # Platform configuration assets.
+    CONFIG_ASSETS_STORAGE_PROVIDER: str = Field(default="fs")
+    CONFIG_ASSETS_STORAGE_FS_BASE_PATH: str = Field(default="/tmp/rpsd-config-assets")
+    CONFIG_ASSETS_STORAGE_S3_BUCKET_NAME: str = Field(default="")
+    CONFIG_ASSETS_STORAGE_S3_REGION_NAME: str = Field(default="")
+    CONFIG_ASSETS_STORAGE_S3_ENDPOINT_URL: str = Field(default="")
+    CONFIG_ASSETS_STORAGE_S3_AWS_ACCESS_KEY_ID: str = Field(default="")
+    CONFIG_ASSETS_STORAGE_S3_AWS_SECRET_ACCESS_KEY: str = Field(default="")
+    CONFIG_ASSETS_STORAGE_S3_AWS_SESSION_TOKEN: str = Field(default="")
+    CONFIG_ASSETS_M2M_ALLOWED_CLIENT_IDS: str = Field(
+        default="rpsd-validator,rpsd-config-admin-api"
+    )
+    CONFIG_ASSETS_RABBITMQ_ENABLED: bool = Field(default=True)
+    CONFIG_ASSETS_RABBITMQ_URL: str = Field(default="amqp://guest:guest@rabbitmq/")
+    CONFIG_ASSETS_RABBITMQ_EXCHANGE: str = Field(default="rpsd.config.assets")
+    CONFIG_ASSETS_RABBITMQ_EXCHANGE_TYPE: str = Field(default="topic")
+
 
 class ProjectSettings(
     GeneralSettings,

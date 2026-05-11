@@ -4,7 +4,6 @@ import hashlib
 import re
 from dataclasses import dataclass
 
-from allauth.socialaccount.models import SocialAccount
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -18,6 +17,11 @@ from ..models import Agency, AgencyInvitation, AgencyMembership
 from ..rbac import (
     agency_role_to_group_suffix,
     resolve_user_agency_scope,
+)
+from .agency_memberships import (
+    AgencyMembershipProvisioningError,
+    AgencyMembershipValidationError,
+    assign_agency_membership,
 )
 
 
@@ -56,33 +60,6 @@ def _username_candidate_from_email(email: str) -> str:
     local_part = re.sub(r"-+", "-", local_part).strip("-._") or "invited-user"
     digest = hashlib.sha1(b"invited-user").hexdigest()[:8]
     return f"{local_part}-{digest}"
-
-
-def _resolve_keycloak_user_id_for_logged_user(
-    *,
-    user,
-    keycloak: KeycloakAdminService,
-) -> str:
-    social = (
-        SocialAccount.objects.filter(user=user)
-        .order_by("-last_login", "-date_joined")
-        .first()
-    )
-    if social and social.uid:
-        return str(social.uid)
-
-    if not user.email:
-        raise AgencyInvitationValidationError(
-            "Authenticated user has no email, unable to resolve Keycloak identity."
-        )
-
-    ensured = keycloak.ensure_user(
-        username=(
-            getattr(user, "username", "") or _username_candidate_from_email(user.email)
-        ),
-        email=user.email,
-    )
-    return ensured.id
 
 
 def create_agency_invitation(
@@ -185,37 +162,25 @@ def accept_agency_invitation_for_user(
     keycloak_service = keycloak or KeycloakAdminService.from_settings()
 
     try:
-        role_suffix = agency_role_to_group_suffix(invitation.role_to_assign)
-        groups = keycloak_service.ensure_agency_groups(invitation.agency.agency_key)
-        group_ref = groups[role_suffix]
-
-        keycloak_user_id = _resolve_keycloak_user_id_for_logged_user(
+        membership = assign_agency_membership(
+            actor=invitation.invited_by,
+            agency=invitation.agency,
             user=user,
+            role=invitation.role_to_assign,
             keycloak=keycloak_service,
+            source=AgencyMembership.Source.INVITATION,
+            enforce_actor_permission=False,
+            preserve_higher_local_role=True,
         )
-        keycloak_service.assign_user_to_group(
-            user_id=keycloak_user_id,
-            group_id=group_ref.id,
-        )
-    except (KeycloakAdminConfigError, KeycloakAdminAPIError) as exc:
+    except (
+        AgencyMembershipProvisioningError,
+        AgencyMembershipValidationError,
+        KeycloakAdminConfigError,
+        KeycloakAdminAPIError,
+    ) as exc:
         raise AgencyInvitationProvisioningError(
             f"Unable to assign agency group in Keycloak: {exc}"
         ) from exc
-
-    membership, _ = AgencyMembership.objects.get_or_create(
-        agency=invitation.agency,
-        user=user,
-        defaults={
-            "role": invitation.role_to_assign,
-            "created_by": invitation.invited_by,
-        },
-    )
-
-    invitation_rank = AgencyMembership.role_rank(invitation.role_to_assign)
-    current_rank = AgencyMembership.role_rank(membership.role)
-    if invitation_rank > current_rank:
-        membership.role = invitation.role_to_assign
-        membership.save(update_fields=["role", "updated_at"])
 
     invitation.status = AgencyInvitation.Status.ACCEPTED
     invitation.accepted_by = user
@@ -227,5 +192,5 @@ def accept_agency_invitation_for_user(
     return AgencyInvitationAcceptResult(
         invitation=invitation,
         membership=membership,
-        assigned_group_path=group_ref.path,
+        assigned_group_path=membership.keycloak_group_path,
     )

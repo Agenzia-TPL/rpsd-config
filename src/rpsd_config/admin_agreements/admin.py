@@ -1,6 +1,11 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
+from datetime import datetime
+
 from django.contrib import admin, messages
+from django.db.models.expressions import DatabaseDefault
+from django.utils import timezone
+from django.utils.formats import date_format
 
 from rpsd_config import admin_hidden  # noqa: F401
 from rpsd_config.exchange_agreement.models import Contract
@@ -17,6 +22,7 @@ from .proxies import (
     ContractMembershipAdminProxy,
     ContractPublicationAdminProxy,
     FlowProfileAdminProxy,
+    OperationalFlowAdminProxy,
 )
 
 
@@ -52,8 +58,32 @@ class ContractInvitationInline(admin.TabularInline):
     show_change_link = True
 
 
+class _HumanReadableTimestampsMixin:
+    @staticmethod
+    def _format_timestamp(value):
+        if value is None or isinstance(value, DatabaseDefault):
+            return "-"
+        if not isinstance(value, datetime):
+            return str(value)
+        if timezone.is_naive(value):
+            value = timezone.make_aware(value, timezone.get_current_timezone())
+        return date_format(timezone.localtime(value), "DATETIME_FORMAT")
+
+    @admin.display(description="Created at")
+    def created_at_human(self, obj):
+        if obj is None:
+            return "-"
+        return self._format_timestamp(getattr(obj, "created_at", None))
+
+    @admin.display(description="Updated at")
+    def updated_at_human(self, obj):
+        if obj is None:
+            return "-"
+        return self._format_timestamp(getattr(obj, "updated_at", None))
+
+
 @admin.register(ContractAdminProxy)
-class ContractAdmin(admin.ModelAdmin):
+class ContractAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     list_display = (
         "contract_code",
         "client_agency",
@@ -102,7 +132,12 @@ class ContractAdmin(admin.ModelAdmin):
         "replaced_by",
         "flow_profile",
     )
-    readonly_fields = ("contract_type", "version", "created_at", "updated_at")
+    readonly_fields = (
+        "contract_type",
+        "version",
+        "created_at_human",
+        "updated_at_human",
+    )
     fieldsets = (
         (None, {"fields": ("contract_code", "contract_type", "version")}),
         ("Parties", {"fields": ("client_agency", "contractor_company", "lot")}),
@@ -113,7 +148,7 @@ class ContractAdmin(admin.ModelAdmin):
         ),
         ("Tender", {"fields": ("tender_id",)}),
         ("Program", {"fields": ("contract_program_file", "flow_profile")}),
-        ("Audit", {"fields": ("created_at", "updated_at")}),
+        ("Audit", {"fields": ("created_at_human", "updated_at_human")}),
     )
     actions = ("publish_selected_contracts",)
 
@@ -204,11 +239,11 @@ class ContractAdmin(admin.ModelAdmin):
 
 
 @admin.register(ContractDocumentAdminProxy)
-class ContractDocumentAdmin(admin.ModelAdmin):
+class ContractDocumentAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     list_display = ("contract", "name", "file", "created_at")
     search_fields = ("contract__contract_code", "name", "file")
     autocomplete_fields = ("contract",)
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("created_at_human", "updated_at_human")
 
 
 @admin.register(ContractIndicatorAdminProxy)
@@ -220,16 +255,16 @@ class ContractIndicatorAdmin(admin.ModelAdmin):
 
 
 @admin.register(ContractMembershipAdminProxy)
-class ContractMembershipAdmin(admin.ModelAdmin):
+class ContractMembershipAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     list_display = ("contract", "user", "role", "created_at")
     list_filter = ("role",)
     search_fields = ("contract__contract_code", "user__username", "user__email")
     autocomplete_fields = ("contract", "user", "created_by")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("created_at_human", "updated_at_human")
 
 
 @admin.register(ContractInvitationAdminProxy)
-class ContractInvitationAdmin(admin.ModelAdmin):
+class ContractInvitationAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     list_display = (
         "contract",
         "email",
@@ -241,15 +276,65 @@ class ContractInvitationAdmin(admin.ModelAdmin):
     list_filter = ("status", "role_to_assign", "contract")
     search_fields = ("contract__contract_code", "email", "token")
     autocomplete_fields = ("contract", "invited_by", "accepted_by")
-    readonly_fields = ("token", "created_at", "updated_at")
+    readonly_fields = ("token", "created_at_human", "updated_at_human")
 
 
 @admin.register(FlowProfileAdminProxy)
-class FlowProfileAdmin(admin.ModelAdmin):
-    list_display = ("code", "name", "schema_version", "is_active", "updated_at")
+class FlowProfileAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
+    list_display = (
+        "code",
+        "name",
+        "schema_version",
+        "is_active",
+        "contract_count",
+        "updated_at",
+    )
     list_filter = ("is_active", "schema_version")
     search_fields = ("code", "name", "description")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("created_at_human", "updated_at_human")
+
+    def contract_count(self, obj):
+        return obj.contracts.count()
+
+    contract_count.short_description = "Contracts"
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None and obj.contracts.exists():
+            fields.extend(["code", "schema_version", "options"])
+        return fields
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.contracts.exists():
+            return False
+        return super().has_delete_permission(request, obj)
+
+
+@admin.register(OperationalFlowAdminProxy)
+class OperationalFlowAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
+    list_display = (
+        "code",
+        "engine",
+        "supported_what",
+        "deployment_name",
+        "status",
+        "version",
+        "updated_at",
+    )
+    list_filter = ("engine", "status", "supported_what")
+    search_fields = ("code", "deployment_name", "supported_what", "description")
+    readonly_fields = ("created_at_human", "updated_at_human")
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None and obj.is_referenced_by_flow_profiles():
+            fields.extend(["code", "engine", "deployment_name", "supported_what"])
+        return fields
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.is_referenced_by_flow_profiles():
+            return False
+        return super().has_delete_permission(request, obj)
 
 
 @admin.register(ContractPublicationAdminProxy)

@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
 import base64
+import io
 import json
 from datetime import date
 from urllib.parse import urlencode
@@ -13,7 +14,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
-from django.http import HttpRequest, HttpResponse
+from django.http import FileResponse, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
@@ -30,13 +31,16 @@ from .models import (
     AgencyInvitation,
     AgencyMembership,
     Company,
+    ConfigurationAsset,
     Contract,
     ContractInvitation,
     ContractMembership,
+    FlowProfile,
     IndicatorProfile,
     IntegrationPrincipal,
     Lot,
     NetexValidationProfile,
+    OperationalFlow,
     SiriValidationProfile,
 )
 from .rbac import resolve_user_agency_scope
@@ -53,6 +57,13 @@ from .services.agency_invitations import (
     accept_agency_invitation_for_user,
     create_agency_invitation,
 )
+from .services.agency_memberships import (
+    AgencyMembershipPermissionError,
+    AgencyMembershipProvisioningError,
+    AgencyMembershipValidationError,
+    change_agency_membership_role,
+    revoke_agency_membership,
+)
 from .services.invitation_rejections import (
     InvitationRejectValidationError,
     reject_agency_invitation_for_user,
@@ -67,6 +78,18 @@ from .services.m2m_provisioning import (
     rotate_m2m_principal_secret,
 )
 from .services.m2m_secret_store import M2MSecretStoreError, reveal_client_secret
+from .services.flow_profiles import (
+    ensure_standard_flow_profiles,
+    ensure_standard_operational_flows,
+    get_default_flow_profile,
+    summarize_flow_profile_options,
+)
+from .services.configuration_assets import (
+    activate_configuration_asset,
+    archive_configuration_asset,
+    load_configuration_asset_content,
+    store_configuration_asset,
+)
 
 
 def _cache_group_membership_for_current_session(*, user, group_path: str) -> None:
@@ -551,7 +574,7 @@ def user_area(request: HttpRequest) -> HttpResponse:
     )
     agency_memberships = (
         AgencyMembership.objects.select_related("agency")
-        .filter(user=request.user)
+        .filter(user=request.user, status=AgencyMembership.Status.ACTIVE)
         .order_by("agency__name")
     )
     agency_scope = resolve_user_agency_scope(request.user)
@@ -750,6 +773,14 @@ def _build_initialization_state() -> dict:
     indicator_profiles = list(
         IndicatorProfile.objects.all().order_by("-created_at", "-id")
     )
+    configuration_assets = list(
+        ConfigurationAsset.objects.all().order_by(
+            "asset_type",
+            "what",
+            "-version",
+            "-created_at",
+        )
+    )
 
     netex_active_count = sum(1 for profile in netex_profiles if profile.is_active)
     siri_active_count = sum(1 for profile in siri_profiles if profile.is_active)
@@ -778,6 +809,7 @@ def _build_initialization_state() -> dict:
         "netex_profiles": netex_profiles,
         "siri_profiles": siri_profiles,
         "indicator_profiles": indicator_profiles,
+        "configuration_assets": configuration_assets,
         "summary": {
             "netex_active_count": netex_active_count,
             "siri_active_count": siri_active_count,
@@ -786,6 +818,39 @@ def _build_initialization_state() -> dict:
             "initialized": initialized,
         },
     }
+
+
+def _build_flow_profile_rows() -> list[dict]:
+    profiles = (
+        FlowProfile.objects.annotate(contract_count=Count("contracts"))
+        .order_by("name", "code")
+    )
+    return [
+        {
+            "profile": profile,
+            "contract_count": profile.contract_count,
+            "summary": summarize_flow_profile_options(profile.options),
+        }
+        for profile in profiles
+    ]
+
+
+def _build_operational_flow_rows() -> list[dict]:
+    flows = OperationalFlow.objects.all().order_by("supported_what", "code")
+    rows = []
+    for flow in flows:
+        referenced_count = 0
+        for profile in FlowProfile.objects.all().only("options"):
+            data_ingestion = profile.options.get("data_ingestion")
+            if not isinstance(data_ingestion, dict):
+                continue
+            if any(
+                isinstance(item, dict) and item.get("flow") == flow.code
+                for item in data_ingestion.values()
+            ):
+                referenced_count += 1
+        rows.append({"flow": flow, "referenced_count": referenced_count})
+    return rows
 
 
 def _normalize_boolean_flag(value: str) -> bool:
@@ -798,7 +863,7 @@ def agencies_page(request: HttpRequest) -> HttpResponse:
     membership_by_agency_id = {
         membership.agency_id: membership
         for membership in AgencyMembership.objects.select_related("agency")
-        .filter(user=request.user)
+        .filter(user=request.user, status=AgencyMembership.Status.ACTIVE)
         .order_by("agency__name")
     }
 
@@ -1145,7 +1210,11 @@ def _can_view_agency(*, user, agency: Agency, agency_scope) -> bool:
     ):
         return True
 
-    return AgencyMembership.objects.filter(user=user, agency=agency).exists()
+    return AgencyMembership.objects.filter(
+        user=user,
+        agency=agency,
+        status=AgencyMembership.Status.ACTIVE,
+    ).exists()
 
 
 def _can_create_contract_for_agency(*, user, agency: Agency, agency_scope) -> bool:
@@ -1203,6 +1272,9 @@ def _render_contract_detail(
         {
             "agency": contract.client_agency,
             "contract": contract,
+            "flow_profile_summary": summarize_flow_profile_options(
+                contract.flow_profile.options if contract.flow_profile else None
+            ),
             "contract_m2m_exchange_info": contract_m2m_exchange_info,
             "can_manage_contract_m2m": can_manage_contract_m2m,
             "can_reveal_contract_m2m": can_reveal_contract_m2m,
@@ -1267,12 +1339,14 @@ def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
         raise PermissionDenied("Non hai accesso a questa agenzia.")
 
     membership = AgencyMembership.objects.filter(
-        user=request.user, agency=agency
+        user=request.user,
+        agency=agency,
+        status=AgencyMembership.Status.ACTIVE,
     ).first()
     agency_memberships = list(
         AgencyMembership.objects.select_related("user", "created_by")
         .filter(agency=agency)
-        .order_by("role", "user__username")
+        .order_by("status", "role", "user__username")
     )
     allowed_tabs = {"descrizione", "inviti", "contratti", "lotti", "utenti"}
     active_tab = (
@@ -1295,6 +1369,11 @@ def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
         agency=agency,
         agency_scope=agency_scope,
     )
+    can_manage_agency_memberships = (
+        request.user.is_superuser
+        or agency_scope.is_platform_admin
+        or agency.agency_key in agency_scope.admin_agency_keys
+    )
     contracts = list(_agency_contracts_qs(agency))
     lots = list(_agency_lots_qs(agency))
 
@@ -1310,15 +1389,68 @@ def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
     }
 
     if request.method == "POST":
-        if not can_manage_lots:
-            raise PermissionDenied(
-                "Solo platform admin o agency admin possono creare lotti."
-            )
-
         action = (request.POST.get("action") or "").strip()
+        if action == "revoke-agency-membership":
+            if not can_manage_agency_memberships:
+                raise PermissionDenied(
+                    "Solo platform admin o agency admin possono revocare utenti."
+                )
+            membership_id = request.POST.get("membership_id")
+            target_membership = get_object_or_404(
+                AgencyMembership.objects.select_related("agency", "user"),
+                id=membership_id,
+                agency=agency,
+            )
+            try:
+                revoke_agency_membership(
+                    actor=request.user,
+                    membership=target_membership,
+                )
+            except (
+                AgencyMembershipPermissionError,
+                AgencyMembershipProvisioningError,
+                AgencyMembershipValidationError,
+            ) as exc:
+                messages.error(request, str(exc))
+            else:
+                messages.success(request, "Membership agenzia revocata.")
+            return redirect(f"{request.path}?tab=utenti")
+
+        if action == "change-agency-membership-role":
+            if not can_manage_agency_memberships:
+                raise PermissionDenied(
+                    "Solo platform admin o agency admin possono modificare ruoli."
+                )
+            membership_id = request.POST.get("membership_id")
+            new_role = request.POST.get("role") or ""
+            target_membership = get_object_or_404(
+                AgencyMembership.objects.select_related("agency", "user"),
+                id=membership_id,
+                agency=agency,
+            )
+            try:
+                change_agency_membership_role(
+                    actor=request.user,
+                    membership=target_membership,
+                    new_role=new_role,
+                )
+            except (
+                AgencyMembershipPermissionError,
+                AgencyMembershipProvisioningError,
+                AgencyMembershipValidationError,
+            ) as exc:
+                messages.error(request, str(exc))
+            else:
+                messages.success(request, "Ruolo membership agenzia aggiornato.")
+            return redirect(f"{request.path}?tab=utenti")
+
         if action != "create-lot":
             result_context["lot_error_message"] = "Azione non supportata."
         else:
+            if not can_manage_lots:
+                raise PermissionDenied(
+                    "Solo platform admin o agency admin possono creare lotti."
+                )
             short_description = Lot.normalize_short_description(
                 request.POST.get("short_description", "")
             )
@@ -1357,6 +1489,12 @@ def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
                 }
                 lots = list(_agency_lots_qs(agency))
 
+        agency_memberships = list(
+            AgencyMembership.objects.select_related("user", "created_by")
+            .filter(agency=agency)
+            .order_by("status", "role", "user__username")
+        )
+
     return render(
         request,
         "exchange_agreement/agency_detail.html",
@@ -1372,6 +1510,8 @@ def agency_detail_page(request: HttpRequest, agency_key: str) -> HttpResponse:
             "can_create_agency_invites": request.user.is_superuser
             or agency_scope.is_platform_admin
             or agency.agency_key in agency_scope.admin_agency_keys,
+            "can_manage_agency_memberships": can_manage_agency_memberships,
+            "agency_membership_role_choices": list(AgencyMembership.Role.choices),
             "can_create_contract": _can_create_contract_for_agency(
                 user=request.user,
                 agency=agency,
@@ -1681,6 +1821,8 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
 
     companies = list(Company.objects.all().order_by("name"))
     lots = list(Lot.objects.filter(agency=agency).order_by("id"))
+    active_flow_profiles = list(FlowProfile.objects.filter(is_active=True).order_by("name"))
+    default_flow_profile = get_default_flow_profile()
     status_choices = [
         (status_value, status_label)
         for status_value, status_label in Contract.ContractStatus.choices
@@ -1701,6 +1843,9 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
             "end_date": "",
             "tender_id": "",
             "status": Contract.ContractStatus.DRAFT,
+            "flow_profile_id": str(default_flow_profile.id)
+            if default_flow_profile is not None
+            else "",
         },
         "company_form_values": {
             "name": "",
@@ -1721,6 +1866,7 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
             "tender_id": request.POST.get("tender_id", "").strip(),
             "status": request.POST.get("status", "").strip()
             or Contract.ContractStatus.DRAFT,
+            "flow_profile_id": request.POST.get("flow_profile_id", "").strip(),
         }
         result_context["form_values"] = form_values
 
@@ -1809,6 +1955,28 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
                 }:
                     result_context["error_message"] = "Stato contratto non supportato."
                 else:
+                    flow_profile = FlowProfile.objects.filter(
+                        id=form_values["flow_profile_id"],
+                        is_active=True,
+                    ).first()
+                    if flow_profile is None:
+                        result_context["error_message"] = (
+                            "Seleziona un profilo flussi attivo. Se non sono "
+                            "presenti profili attivi, configura prima i profili "
+                            "nella sezione Configurazione."
+                        )
+                        return render(
+                            request,
+                            "exchange_agreement/agency_contract_create.html",
+                            {
+                                "agency": agency,
+                                "companies": companies,
+                                "lots": lots,
+                                "active_flow_profiles": active_flow_profiles,
+                                "status_choices": status_choices,
+                                **result_context,
+                            },
+                        )
                     try:
                         start_date_value = date.fromisoformat(form_values["start_date"])
                     except ValueError:
@@ -1839,6 +2007,7 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
                                         end_date=end_date_value,
                                         tender_id=form_values["tender_id"],
                                         status=form_values["status"],
+                                        flow_profile=flow_profile,
                                     )
                                     ensure_default_contract_ingest_grant(
                                         contract=contract,
@@ -1865,6 +2034,7 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
             "agency": agency,
             "companies": companies,
             "lots": lots,
+            "active_flow_profiles": active_flow_profiles,
             "status_choices": status_choices,
             **result_context,
         },
@@ -1880,7 +2050,7 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "Solo platform admin o superuser possono accedere alla configurazione."
         )
 
-    allowed_tabs = {"globali", "utenti", "inizializzazione"}
+    allowed_tabs = {"globali", "utenti", "inizializzazione", "flussi"}
     active_tab = (
         (request.POST.get("tab") or request.GET.get("tab") or "globali").strip().lower()
     )
@@ -1899,6 +2069,22 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "siri_is_active": False,
             "indicator_label": "",
             "indicator_is_active": False,
+        },
+        "flow_profile_form_values": {
+            "code": "",
+            "name": "",
+            "description": "",
+            "schema_version": "1.0",
+            "options": "",
+            "is_active": True,
+        },
+        "operational_flow_form_values": {
+            "code": "",
+            "deployment_name": "",
+            "supported_what": "",
+            "description": "",
+            "version": "001",
+            "status": OperationalFlow.Status.ACTIVE,
         },
     }
 
@@ -1922,13 +2108,162 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                 request.POST.get("indicator_is_active", "")
             ),
         }
+        result_context["flow_profile_form_values"] = {
+            "code": request.POST.get("flow_code", "").strip(),
+            "name": request.POST.get("flow_name", "").strip(),
+            "description": request.POST.get("flow_description", "").strip(),
+            "schema_version": request.POST.get("flow_schema_version", "").strip()
+            or "1.0",
+            "options": request.POST.get("flow_options", "").strip(),
+            "is_active": _normalize_boolean_flag(request.POST.get("flow_is_active", "")),
+        }
+        result_context["operational_flow_form_values"] = {
+            "code": request.POST.get("operational_flow_code", "").strip(),
+            "deployment_name": request.POST.get(
+                "operational_flow_deployment_name", ""
+            ).strip(),
+            "supported_what": request.POST.get(
+                "operational_flow_supported_what", ""
+            ).strip(),
+            "description": request.POST.get(
+                "operational_flow_description", ""
+            ).strip(),
+            "version": request.POST.get("operational_flow_version", "").strip()
+            or "001",
+            "status": request.POST.get(
+                "operational_flow_status",
+                OperationalFlow.Status.ACTIVE,
+            ).strip(),
+        }
 
         try:
-            if action == "upload-netex":
+            if action == "init-standard-flow-profiles":
+                ensure_standard_operational_flows()
+                ensure_standard_flow_profiles()
+                result_context["success_message"] = (
+                    "Flow operativi e profili flussi standard inizializzati."
+                )
+
+            elif action == "create-operational-flow":
+                status = result_context["operational_flow_form_values"]["status"]
+                if status not in {choice[0] for choice in OperationalFlow.Status.choices}:
+                    raise ValidationError("Stato flow operativo non supportato.")
+                flow = OperationalFlow(
+                    code=result_context["operational_flow_form_values"]["code"],
+                    engine=OperationalFlow.Engine.PREFECT,
+                    deployment_name=result_context[
+                        "operational_flow_form_values"
+                    ]["deployment_name"],
+                    supported_what=result_context["operational_flow_form_values"][
+                        "supported_what"
+                    ],
+                    status=status,
+                    description=result_context["operational_flow_form_values"][
+                        "description"
+                    ],
+                    version=result_context["operational_flow_form_values"][
+                        "version"
+                    ],
+                )
+                flow.full_clean()
+                flow.save()
+                result_context["success_message"] = "Flow operativo creato."
+                result_context["operational_flow_form_values"] = {
+                    "code": "",
+                    "deployment_name": "",
+                    "supported_what": "",
+                    "description": "",
+                    "version": "001",
+                    "status": OperationalFlow.Status.ACTIVE,
+                }
+
+            elif action == "set-operational-flow-status":
+                flow_id = int(request.POST.get("flow_id", "0"))
+                status = request.POST.get("status", "").strip()
+                if status not in {choice[0] for choice in OperationalFlow.Status.choices}:
+                    raise ValidationError("Stato flow operativo non supportato.")
+                flow = OperationalFlow.objects.filter(pk=flow_id).first()
+                if flow is None:
+                    raise ValidationError("Flow operativo non trovato.")
+                flow.status = status
+                flow.save(update_fields=["status", "updated_at"])
+                result_context["success_message"] = "Stato flow operativo aggiornato."
+
+            elif action == "create-flow-profile":
+                raw_options = result_context["flow_profile_form_values"]["options"]
+                try:
+                    parsed_options = json.loads(raw_options)
+                except json.JSONDecodeError as exc:
+                    raise ValidationError(f"JSON options non valido: {exc}") from exc
+                profile = FlowProfile(
+                    code=result_context["flow_profile_form_values"]["code"],
+                    name=result_context["flow_profile_form_values"]["name"],
+                    description=result_context["flow_profile_form_values"][
+                        "description"
+                    ],
+                    schema_version=result_context["flow_profile_form_values"][
+                        "schema_version"
+                    ],
+                    options=parsed_options,
+                    is_active=result_context["flow_profile_form_values"]["is_active"],
+                )
+                profile.full_clean()
+                profile.save()
+                result_context["success_message"] = "Profilo flussi creato."
+                result_context["flow_profile_form_values"] = {
+                    "code": "",
+                    "name": "",
+                    "description": "",
+                    "schema_version": "1.0",
+                    "options": "",
+                    "is_active": True,
+                }
+
+            elif action == "duplicate-flow-profile":
+                profile_id = int(request.POST.get("profile_id", "0"))
+                source = FlowProfile.objects.filter(pk=profile_id).first()
+                if source is None:
+                    raise ValidationError("Profilo flussi non trovato.")
+                new_code = request.POST.get("new_code", "").strip()
+                if not new_code:
+                    raise ValidationError("Il nuovo codice profilo e' obbligatorio.")
+                duplicated = FlowProfile(
+                    code=new_code,
+                    name=f"{source.name} - nuova versione",
+                    description=source.description,
+                    schema_version=source.schema_version,
+                    options=source.options,
+                    is_active=False,
+                )
+                duplicated.full_clean()
+                duplicated.save()
+                result_context["success_message"] = (
+                    "Nuova versione profilo creata come non attiva."
+                )
+
+            elif action == "set-flow-profile-active":
+                profile_id = int(request.POST.get("profile_id", "0"))
+                profile = FlowProfile.objects.filter(pk=profile_id).first()
+                if profile is None:
+                    raise ValidationError("Profilo flussi non trovato.")
+                profile.is_active = _normalize_boolean_flag(
+                    request.POST.get("set_active", "")
+                )
+                profile.save(update_fields=["is_active", "updated_at"])
+                result_context["success_message"] = "Stato profilo flussi aggiornato."
+
+            elif action == "upload-netex":
                 uploaded_file = request.FILES.get("netex_file")
                 if uploaded_file is None:
                     raise ValidationError("Seleziona un file Netex (.xsd).")
                 set_active = result_context["upload_form_values"]["netex_is_active"]
+                stored = store_configuration_asset(
+                    uploaded_file=uploaded_file,
+                    asset_type=ConfigurationAsset.AssetType.NETEX_XSD,
+                    label=result_context["upload_form_values"]["netex_label"],
+                    activate=set_active,
+                    uploaded_by=request.user,
+                )
                 with transaction.atomic():
                     if set_active:
                         NetexValidationProfile.objects.filter(is_active=True).update(
@@ -1938,6 +2273,7 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                         label=result_context["upload_form_values"]["netex_label"],
                         file=uploaded_file,
                         is_active=set_active,
+                        configuration_asset=stored.asset,
                     )
                     profile.full_clean()
                     profile.save()
@@ -1956,7 +2292,22 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                     choice[0] for choice in SiriValidationProfile.ProfileType.choices
                 }:
                     raise ValidationError("Tipo profilo SIRI non valido.")
+                filename_what = ConfigurationAsset.validate_filename_for_type(
+                    ConfigurationAsset.AssetType.SIRI_PROFILE,
+                    uploaded_file.name,
+                )
+                if filename_what != siri_type:
+                    raise ValidationError(
+                        "Il nome file deve corrispondere al tipo SIRI selezionato."
+                    )
                 set_active = result_context["upload_form_values"]["siri_is_active"]
+                stored = store_configuration_asset(
+                    uploaded_file=uploaded_file,
+                    asset_type=ConfigurationAsset.AssetType.SIRI_PROFILE,
+                    label=result_context["upload_form_values"]["siri_label"],
+                    activate=set_active,
+                    uploaded_by=request.user,
+                )
                 with transaction.atomic():
                     if set_active:
                         SiriValidationProfile.objects.filter(
@@ -1968,6 +2319,7 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                         label=result_context["upload_form_values"]["siri_label"],
                         file=uploaded_file,
                         is_active=set_active,
+                        configuration_asset=stored.asset,
                     )
                     profile.full_clean()
                     profile.save()
@@ -1981,12 +2333,22 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                 uploaded_file = request.FILES.get("indicator_file")
                 if uploaded_file is None:
                     raise ValidationError("Seleziona un file indicatori (.yml/.yaml).")
+                stored = store_configuration_asset(
+                    uploaded_file=uploaded_file,
+                    asset_type=ConfigurationAsset.AssetType.INDICATOR_YAML,
+                    label=result_context["upload_form_values"]["indicator_label"],
+                    activate=result_context["upload_form_values"][
+                        "indicator_is_active"
+                    ],
+                    uploaded_by=request.user,
+                )
                 profile = IndicatorProfile(
                     label=result_context["upload_form_values"]["indicator_label"],
                     file=uploaded_file,
                     is_active=result_context["upload_form_values"][
                         "indicator_is_active"
                     ],
+                    configuration_asset=stored.asset,
                 )
                 profile.full_clean()
                 profile.save()
@@ -2009,6 +2371,11 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                         ).update(is_active=False)
                     profile.is_active = set_active
                     profile.save(update_fields=["is_active", "updated_at"])
+                if set_active and profile.configuration_asset_id:
+                    activate_configuration_asset(
+                        asset=profile.configuration_asset,
+                        actor=request.user,
+                    )
                 result_context["success_message"] = "Stato profilo Netex aggiornato."
 
             elif action == "set-siri-active":
@@ -2025,6 +2392,11 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                         ).exclude(pk=profile.pk).update(is_active=False)
                     profile.is_active = set_active
                     profile.save(update_fields=["is_active", "updated_at"])
+                if set_active and profile.configuration_asset_id:
+                    activate_configuration_asset(
+                        asset=profile.configuration_asset,
+                        actor=request.user,
+                    )
                 result_context["success_message"] = "Stato profilo SIRI aggiornato."
 
             elif action == "set-indicator-active":
@@ -2035,9 +2407,30 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                     raise ValidationError("Profilo indicatori non trovato.")
                 profile.is_active = set_active
                 profile.save(update_fields=["is_active", "updated_at"])
+                if set_active and profile.configuration_asset_id:
+                    activate_configuration_asset(
+                        asset=profile.configuration_asset,
+                        actor=request.user,
+                    )
                 result_context["success_message"] = (
                     "Stato profilo indicatori aggiornato."
                 )
+
+            elif action == "set-config-asset-active":
+                asset_id = int(request.POST.get("asset_id", "0"))
+                asset = ConfigurationAsset.objects.filter(pk=asset_id).first()
+                if asset is None:
+                    raise ValidationError("Asset configurazione non trovato.")
+                activate_configuration_asset(asset=asset, actor=request.user)
+                result_context["success_message"] = "Asset configurazione attivato."
+
+            elif action == "archive-config-asset":
+                asset_id = int(request.POST.get("asset_id", "0"))
+                asset = ConfigurationAsset.objects.filter(pk=asset_id).first()
+                if asset is None:
+                    raise ValidationError("Asset configurazione non trovato.")
+                archive_configuration_asset(asset=asset)
+                result_context["success_message"] = "Asset configurazione archiviato."
 
             else:
                 raise ValidationError("Azione non supportata.")
@@ -2054,6 +2447,8 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
 
     platform_users, platform_user_summary = _build_platform_user_rows()
     initialization_state = _build_initialization_state()
+    flow_profile_rows = _build_flow_profile_rows()
+    operational_flow_rows = _build_operational_flow_rows()
 
     return render(
         request,
@@ -2069,11 +2464,39 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "netex_profiles": initialization_state["netex_profiles"],
             "siri_profiles": initialization_state["siri_profiles"],
             "indicator_profiles": initialization_state["indicator_profiles"],
+            "configuration_assets": initialization_state["configuration_assets"],
+            "configuration_asset_type_choices": ConfigurationAsset.AssetType.choices,
+            "flow_profile_rows": flow_profile_rows,
+            "operational_flow_rows": operational_flow_rows,
+            "operational_flow_status_choices": OperationalFlow.Status.choices,
             "initialization_summary": initialization_state["summary"],
             "siri_type_choices": SiriValidationProfile.ProfileType.choices,
             **result_context,
         },
     )
+
+
+@login_required
+@require_http_methods(["GET"])
+def configuration_asset_download_page(
+    request: HttpRequest,
+    asset_id: int,
+) -> HttpResponse:
+    agency_scope = resolve_user_agency_scope(request.user)
+    if not (request.user.is_superuser or agency_scope.is_platform_admin):
+        raise PermissionDenied(
+            "Solo platform admin o superuser possono scaricare asset configurazione."
+        )
+    asset = get_object_or_404(ConfigurationAsset, pk=asset_id)
+    content = load_configuration_asset_content(asset)
+    response = FileResponse(
+        io.BytesIO(content),
+        as_attachment=True,
+        filename=asset.original_filename,
+        content_type=asset.content_type or "application/octet-stream",
+    )
+    response["X-RPSD-Checksum-SHA256"] = asset.checksum_sha256
+    return response
 
 
 def _contracts_available_for_contract_invites(user):

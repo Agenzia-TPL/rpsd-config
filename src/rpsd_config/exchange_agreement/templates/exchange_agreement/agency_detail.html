@@ -314,8 +314,14 @@
                 <th>Utente</th>
                 <th>Email</th>
                 <th>Ruolo</th>
+                <th>Stato</th>
+                <th>Origine</th>
+                <th>Ultimo sync</th>
                 <th>Assegnato il</th>
                 <th>Creato da</th>
+                {% if can_manage_agency_memberships %}
+                  <th class="text-end">Azioni</th>
+                {% endif %}
               </tr>
             </thead>
             <tbody>
@@ -324,8 +330,61 @@
                   <td>{{ member.user.username }}</td>
                   <td>{{ member.user.email|default:"-" }}</td>
                   <td>{{ member.get_role_display }}</td>
+                  <td>
+                    {% if member.status == "active" %}
+                      <span class="badge text-bg-success">{{ member.get_status_display }}</span>
+                    {% elif member.status == "sync_error" %}
+                      <span class="badge text-bg-warning">{{ member.get_status_display }}</span>
+                    {% else %}
+                      <span class="badge text-bg-secondary">{{ member.get_status_display }}</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ member.get_source_display }}</td>
+                  <td>
+                    {% if member.last_synced_at %}
+                      {{ member.last_synced_at|date:"d/m/Y H:i" }} UTC
+                    {% else %}
+                      -
+                    {% endif %}
+                    {% if member.last_sync_error %}
+                      <div class="small text-danger">{{ member.last_sync_error }}</div>
+                    {% endif %}
+                  </td>
                   <td>{{ member.created_at|date:"d/m/Y H:i" }} UTC</td>
                   <td>{{ member.created_by.username|default:"-" }}</td>
+                  {% if can_manage_agency_memberships %}
+                    <td class="text-end">
+                      <div class="d-flex justify-content-end gap-2">
+                        <form method="post" class="d-flex gap-2">
+                          {% csrf_token %}
+                          <input type="hidden" name="tab" value="utenti">
+                          <input type="hidden" name="action" value="change-agency-membership-role">
+                          <input type="hidden" name="membership_id" value="{{ member.id }}">
+                          <select class="form-select form-select-sm" name="role" aria-label="Ruolo {{ member.user.username }}">
+                            {% for value,label in agency_membership_role_choices %}
+                              <option value="{{ value }}" {% if member.role == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                          </select>
+                          <button class="btn btn-sm btn-outline-primary app-icon-button" type="submit">
+                            {% include "includes/icon.html" with icon_name="save" %}
+                            <span>Salva</span>
+                          </button>
+                        </form>
+                        {% if member.status == "active" %}
+                          <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="tab" value="utenti">
+                            <input type="hidden" name="action" value="revoke-agency-membership">
+                            <input type="hidden" name="membership_id" value="{{ member.id }}">
+                            <button class="btn btn-sm btn-outline-danger app-icon-button" type="submit">
+                              {% include "includes/icon.html" with icon_name="x" %}
+                              <span>Revoca</span>
+                            </button>
+                          </form>
+                        {% endif %}
+                      </div>
+                    </td>
+                  {% endif %}
                 </tr>
               {% endfor %}
             </tbody>

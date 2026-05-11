@@ -646,3 +646,10 @@ class KeycloakAdminService:
             f"users/{user_id}/groups/{group_id}",
             expected_status=(204,),
         )
+
+    def remove_user_from_group(self, *, user_id: str, group_id: str) -> None:
+        self._request(
+            "DELETE",
+            f"users/{user_id}/groups/{group_id}",
+            expected_status=(204,),
+        )

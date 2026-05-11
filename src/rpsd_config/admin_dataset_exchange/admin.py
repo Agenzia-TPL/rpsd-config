@@ -10,6 +10,8 @@ from django.utils.formats import date_format
 from rpsd_config import admin_hidden  # noqa: F401
 
 from .proxies import (
+    ConfigurationAssetAdminProxy,
+    ConfigurationAssetEventAdminProxy,
     DatasetAdminProxy,
     IndicatorDefAdminProxy,
     IndicatorProfileAdminProxy,
@@ -118,3 +120,28 @@ class IndicatorProfileAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     list_filter = ("is_active",)
     search_fields = ("label", "file")
     readonly_fields = ("created_at_human", "updated_at_human")
+
+
+@admin.register(ConfigurationAssetAdminProxy)
+class ConfigurationAssetAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
+    list_display = (
+        "asset_type",
+        "what",
+        "version",
+        "label",
+        "is_active",
+        "status",
+        "publish_status",
+        "updated_at",
+    )
+    list_filter = ("asset_type", "what", "status", "is_active", "publish_status")
+    search_fields = ("label", "original_filename", "storage_url", "checksum_sha256")
+    readonly_fields = ("created_at_human", "updated_at_human")
+
+
+@admin.register(ConfigurationAssetEventAdminProxy)
+class ConfigurationAssetEventAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
+    list_display = ("event_type", "asset", "status", "attempts", "created_at")
+    list_filter = ("event_type", "status")
+    search_fields = ("routing_key", "last_error")
+    readonly_fields = ("created_at_human", "updated_at_human", "payload")

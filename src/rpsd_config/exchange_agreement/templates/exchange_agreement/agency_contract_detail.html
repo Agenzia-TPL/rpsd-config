@@ -69,8 +69,20 @@
           {% endif %}
 
           {% if contract.flow_profile %}
-            <dt class="col-sm-4 text-body-secondary">Flow profile</dt>
-            <dd class="col-sm-8">{{ contract.flow_profile.code }}</dd>
+            <dt class="col-sm-4 text-body-secondary">Profilo flussi</dt>
+            <dd class="col-sm-8">
+              <div class="fw-semibold">{{ contract.flow_profile.name }}</div>
+              <div class="small text-body-secondary"><code>{{ contract.flow_profile.code }}</code></div>
+              {% if flow_profile_summary.data_ingestion %}
+                <div class="d-flex flex-wrap gap-1 mt-2">
+                  {% for item in flow_profile_summary.data_ingestion %}
+                    <span class="badge {% if item.active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                      {{ item.data_category }}
+                    </span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </dd>
           {% endif %}
         </dl>
       </div>

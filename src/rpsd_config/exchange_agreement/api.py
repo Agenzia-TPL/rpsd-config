@@ -6,20 +6,27 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.http import HttpResponse
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
-from ninja.security import SessionAuth
+from ninja.security import HttpBearer, SessionAuth
 
 from rpsd_config.server.bearer_auth import BearerTokenAuth
-from rpsd_config.server.m2m_auth import M2MClientTokenAuth
+from rpsd_config.server.m2m_auth import (
+    M2MClientTokenAuth,
+    M2MTokenValidationError,
+    extract_m2m_client_id,
+    validate_m2m_token,
+)
 
 from .models import (
     Agency,
     AgencyInvitation,
     Company,
+    ConfigurationAsset,
     Contract,
     ContractIndicator,
     ContractInvitation,
@@ -52,7 +59,9 @@ from .services.m2m_grants import (
     require_m2m_contract_access,
     require_m2m_principal,
 )
+from .services.flow_profiles import get_default_flow_profile
 from .services.publication import PublishContractError, publish_contract
+from .services.configuration_assets import load_configuration_asset_content
 
 
 class InvitationCheckResponse(Schema):
@@ -226,6 +235,7 @@ class ContractCreateRequest(Schema):
     end_date: date | None = None
     tender_id: str = ""
     status: str = Contract.ContractStatus.DRAFT
+    flow_profile_code: str | None = None
 
 
 class ContractInvitationCreateRequest(Schema):
@@ -301,6 +311,50 @@ class M2MUserSchema(Schema):
     roles: list[str]
 
 
+class ConfigurationAssetSchema(Schema):
+    id: int
+    asset_type: str
+    what: str
+    label: str
+    version: int
+    status: str
+    is_active: bool
+    storage_url: str
+    checksum_sha256: str
+    content_type: str
+    size_bytes: int
+    original_filename: str
+    uploaded_at: str
+    activated_at: str | None
+    download_url: str
+
+
+class ConfigAssetM2MTokenAuth(HttpBearer):
+    def authenticate(self, request, token):
+        try:
+            claims = validate_m2m_token(token)
+            client_id = extract_m2m_client_id(claims)
+        except M2MTokenValidationError as exc:
+            setattr(request, "m2m_auth_reason", exc.reason)
+            return None
+
+        allowed = {
+            item.strip()
+            for item in getattr(
+                settings,
+                "CONFIG_ASSETS_M2M_ALLOWED_CLIENT_IDS",
+                "",
+            ).split(",")
+            if item.strip()
+        }
+        if client_id not in allowed:
+            setattr(request, "m2m_auth_reason", "config-asset-client-not-allowed")
+            return None
+        request.integration_client_id = client_id
+        request.integration_claims = claims
+        return client_id
+
+
 api = NinjaAPI(
     title="RPSD Exchange Agreement API",
     version="1.0",
@@ -313,6 +367,8 @@ m2m_api = NinjaAPI(
     auth=M2MClientTokenAuth(),
     urls_namespace="exchange-agreement-m2m-api",
 )
+
+config_asset_m2m_auth = ConfigAssetM2MTokenAuth()
 
 
 def _oidc_provider_id() -> str:
@@ -733,6 +789,36 @@ def _m2m_user_schema_map(memberships) -> list[M2MUserSchema]:
     return result
 
 
+def _configuration_asset_schema(request, asset: ConfigurationAsset):
+    return ConfigurationAssetSchema(
+        id=asset.pk,
+        asset_type=asset.asset_type,
+        what=asset.what,
+        label=asset.label,
+        version=asset.version,
+        status=asset.status,
+        is_active=asset.is_active,
+        storage_url=asset.storage_url,
+        checksum_sha256=asset.checksum_sha256,
+        content_type=asset.content_type,
+        size_bytes=asset.size_bytes,
+        original_filename=asset.original_filename,
+        uploaded_at=asset.uploaded_at.isoformat(),
+        activated_at=asset.activated_at.isoformat() if asset.activated_at else None,
+        download_url=request.build_absolute_uri(
+            f"/exchange_agreement/api/m2m/v1/config-assets/{asset.pk}/download"
+        ),
+    )
+
+
+def _configuration_assets_qs():
+    return ConfigurationAsset.objects.all().order_by(
+        "asset_type",
+        "what",
+        "-version",
+    )
+
+
 @m2m_api.get("/v1/me", response=M2MMeSchema)
 def m2m_me(request):
     principal = require_m2m_principal(request)
@@ -904,6 +990,77 @@ def m2m_company_users(request):
     return _m2m_user_schema_map(memberships)
 
 
+@m2m_api.get(
+    "/v1/config-assets",
+    response=list[ConfigurationAssetSchema],
+    auth=config_asset_m2m_auth,
+)
+def m2m_config_assets(
+    request,
+    asset_type: str | None = None,
+    status: str | None = None,
+    what: str | None = None,
+):
+    qs = _configuration_assets_qs()
+    if asset_type:
+        qs = qs.filter(asset_type=asset_type.strip())
+    if status:
+        qs = qs.filter(status=status.strip())
+    if what:
+        qs = qs.filter(what=what.strip().lower())
+    return [_configuration_asset_schema(request, asset) for asset in qs]
+
+
+@m2m_api.get(
+    "/v1/config-assets/active",
+    response=ConfigurationAssetSchema,
+    auth=config_asset_m2m_auth,
+)
+def m2m_active_config_asset(request, asset_type: str, what: str | None = None):
+    qs = _configuration_assets_qs().filter(
+        asset_type=asset_type.strip(),
+        is_active=True,
+    )
+    if what:
+        qs = qs.filter(what=what.strip().lower())
+    asset = qs.first()
+    if asset is None:
+        raise HttpError(404, "Active configuration asset not found.")
+    return _configuration_asset_schema(request, asset)
+
+
+@m2m_api.get(
+    "/v1/config-assets/{asset_id}",
+    response=ConfigurationAssetSchema,
+    auth=config_asset_m2m_auth,
+)
+def m2m_config_asset_detail(request, asset_id: int):
+    asset = ConfigurationAsset.objects.filter(pk=asset_id).first()
+    if asset is None:
+        raise HttpError(404, "Configuration asset not found.")
+    return _configuration_asset_schema(request, asset)
+
+
+@m2m_api.get("/v1/config-assets/{asset_id}/download", auth=config_asset_m2m_auth)
+def m2m_config_asset_download(request, asset_id: int):
+    asset = ConfigurationAsset.objects.filter(pk=asset_id).first()
+    if asset is None:
+        raise HttpError(404, "Configuration asset not found.")
+    try:
+        content = load_configuration_asset_content(asset)
+    except ValidationError as exc:
+        raise HttpError(500, f"Configuration asset integrity error: {exc}") from exc
+    response = HttpResponse(
+        content,
+        content_type=asset.content_type or "application/octet-stream",
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="{asset.original_filename}"'
+    )
+    response["X-RPSD-Checksum-SHA256"] = asset.checksum_sha256
+    return response
+
+
 @m2m_api.get("/v1/contracts/{contract_code}/users", response=list[M2MUserSchema])
 def m2m_contract_users(request, contract_code: str):
     _principal, contract, _grant = require_m2m_contract_access(
@@ -973,6 +1130,20 @@ def create_contract(request, payload: ContractCreateRequest):
     if payload.status == Contract.ContractStatus.CLOSED:
         raise HttpError(400, "Closed contracts cannot be created directly.")
 
+    if payload.flow_profile_code:
+        flow_profile = FlowProfile.objects.filter(
+            code=payload.flow_profile_code,
+            is_active=True,
+        ).first()
+    else:
+        flow_profile = get_default_flow_profile()
+    if flow_profile is None:
+        raise HttpError(
+            400,
+            "No active flow profile is available. Configure a flow profile "
+            "before creating contracts.",
+        )
+
     try:
         with transaction.atomic():
             contract = Contract.objects.create(
@@ -984,6 +1155,7 @@ def create_contract(request, payload: ContractCreateRequest):
                 end_date=payload.end_date,
                 tender_id=payload.tender_id,
                 status=payload.status,
+                flow_profile=flow_profile,
             )
             ensure_default_contract_ingest_grant(
                 contract=contract,

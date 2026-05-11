@@ -99,6 +99,32 @@ def agency_role_to_group_suffix(role: str) -> str:
     return mapping[role]
 
 
+def agency_group_suffix_to_role(suffix: str) -> str:
+    mapping = {
+        "admin": AgencyMembership.Role.AGENCY_ADMIN,
+        "editor": AgencyMembership.Role.AGENCY_EDITOR,
+        "reader": AgencyMembership.Role.AGENCY_READER,
+    }
+    if suffix not in mapping:
+        raise ValueError(f"Unsupported agency group suffix: {suffix}")
+    return mapping[suffix]
+
+
 def agency_role_to_group_path(*, agency_key: str, role: str) -> str:
     suffix = agency_role_to_group_suffix(role)
     return f"{group_root_path()}/{agency_key}/{suffix}"
+
+
+def iter_agency_group_assignments(groups: set[str] | list[str] | tuple[str, ...]):
+    regex = _agency_group_regex()
+    for group in groups:
+        if not isinstance(group, str):
+            continue
+        match = regex.match(group)
+        if not match:
+            continue
+        yield {
+            "group_path": group,
+            "agency_key": match.group(1),
+            "role": agency_group_suffix_to_role(match.group(2)),
+        }

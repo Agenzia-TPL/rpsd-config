@@ -40,6 +40,7 @@
       <input type="hidden" name="end_date" value="{{ form_values.end_date }}">
       <input type="hidden" name="tender_id" value="{{ form_values.tender_id }}">
       <input type="hidden" name="status" value="{{ form_values.status }}">
+      <input type="hidden" name="flow_profile_id" value="{{ form_values.flow_profile_id }}">
       <div class="card-body p-4">
         <h2 class="h5 mb-3">Nuova azienda TPL</h2>
         <p class="text-body-secondary small mb-3">
@@ -169,10 +170,31 @@
           </div>
         </div>
 
-        <button type="submit" class="btn btn-primary mt-4 app-icon-button">
+        <div class="mt-3">
+          <label class="form-label" for="flow_profile_id">Profilo flussi dati</label>
+          <select class="form-select" id="flow_profile_id" name="flow_profile_id" required {% if not active_flow_profiles %}disabled{% endif %}>
+            {% for flow_profile in active_flow_profiles %}
+              <option value="{{ flow_profile.id }}" {% if form_values.flow_profile_id == flow_profile.id|stringformat:"s" %}selected{% endif %}>
+                {{ flow_profile.name }} - {{ flow_profile.description|default:flow_profile.code }}
+              </option>
+            {% empty %}
+              <option value="">Nessun profilo attivo disponibile</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">
+            I profili sono definiti dai platform admin. L'agenzia sceglie solo tra profili attivi.
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-4 app-icon-button" {% if not active_flow_profiles %}disabled{% endif %}>
           {% include "includes/icon.html" with icon_name="plus" %}
           <span>Crea contratto</span>
         </button>
+        {% if not active_flow_profiles %}
+          <div class="alert alert-warning mt-3 mb-0">
+            Non ci sono profili flussi attivi. Prima di creare contratti serve configurarli nella sezione Configurazione.
+          </div>
+        {% endif %}
       </div>
     </form>
 

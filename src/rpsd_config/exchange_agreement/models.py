@@ -38,6 +38,21 @@ class TimeStampedModel(models.Model):
         abstract = True
 
 
+CANONICAL_VALIDATION_WHATS = (
+    "netex",
+    "siri-pt",
+    "siri-et",
+    "siri-st",
+    "siri-sm",
+    "siri-vm",
+    "siri-ct",
+    "siri-cm",
+    "siri-gm",
+    "siri-fm",
+    "siri-sx",
+)
+
+
 # ==========================
 # Stakeholders
 # ==========================
@@ -159,6 +174,198 @@ def indicator_profile_upload_path(instance, filename):
     return _platform_initialization_file_path(category="indicators", filename=filename)
 
 
+class ConfigurationAsset(TimeStampedModel):
+    class AssetType(models.TextChoices):
+        NETEX_XSD = "netex_xsd", _("NeTEx XSD")
+        SIRI_PROFILE = "siri_profile", _("SIRI profile")
+        INDICATOR_YAML = "indicator_yaml", _("Indicator YAML")
+
+    class Status(models.TextChoices):
+        STORED = "stored", _("Stored")
+        ACTIVE = "active", _("Active")
+        ARCHIVED = "archived", _("Archived")
+
+    ASSET_TYPE_EXTENSIONS = {
+        AssetType.NETEX_XSD: {"xsd"},
+        AssetType.SIRI_PROFILE: {"xsd", "xml"},
+        AssetType.INDICATOR_YAML: {"yml", "yaml"},
+    }
+
+    asset_type = models.CharField(
+        max_length=32,
+        choices=AssetType.choices,
+        db_index=True,
+    )
+    what = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    label = models.CharField(max_length=128, blank=True, default="")
+    version = models.PositiveIntegerField(default=1)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.STORED,
+        db_index=True,
+    )
+    is_active = models.BooleanField(default=False, db_index=True)
+    storage_url = models.CharField(max_length=1024)
+    storage_provider = models.CharField(max_length=32)
+    storage_key = models.CharField(max_length=512, blank=True, default="")
+    original_filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=128, blank=True, default="")
+    checksum_sha256 = models.CharField(max_length=64, db_index=True)
+    size_bytes = models.PositiveBigIntegerField(default=0)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="configuration_assets_uploaded",
+    )
+    uploaded_at = models.DateTimeField(default=timezone.now, db_index=True)
+    activated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="configuration_assets_activated",
+    )
+    activated_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    archived_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    publish_status = models.CharField(max_length=16, blank=True, default="")
+    last_publish_error = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Configuration asset"
+        verbose_name_plural = "Configuration assets"
+        ordering = ["asset_type", "what", "-version", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["asset_type", "what", "version"],
+                name="uniq_config_asset_type_what_version",
+            ),
+            models.UniqueConstraint(
+                fields=["asset_type", "what"],
+                condition=models.Q(is_active=True),
+                name="uniq_active_config_asset_type_what",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["asset_type", "what", "status"],
+                name="exchange_ag_asset__0b9d8a_idx",
+            ),
+            models.Index(
+                fields=["is_active", "asset_type", "what"],
+                name="exchange_ag_is_act_0a33d7_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        target = self.what or self.asset_type
+        return f"{target} v{self.version} ({self.status})"
+
+    @classmethod
+    def normalize_what_from_filename(cls, filename: str) -> str:
+        return Path(filename or "").name.rsplit(".", 1)[0].strip().lower()
+
+    @classmethod
+    def validate_filename_for_type(cls, asset_type: str, filename: str) -> str:
+        name = Path(filename or "").name.strip()
+        suffix = Path(name).suffix.lower().lstrip(".")
+        if not name or not suffix:
+            raise ValidationError(_("Asset filename must include an extension."))
+        allowed = cls.ASSET_TYPE_EXTENSIONS.get(asset_type)
+        if allowed is None or suffix not in allowed:
+            raise ValidationError(_("Asset filename extension is not supported."))
+
+        what = cls.normalize_what_from_filename(name)
+        if asset_type == cls.AssetType.NETEX_XSD and name.lower() != "netex.xsd":
+            raise ValidationError(_("NeTEx validation asset must be named netex.xsd."))
+        if asset_type == cls.AssetType.SIRI_PROFILE and what not in {
+            item for item in CANONICAL_VALIDATION_WHATS if item.startswith("siri-")
+        }:
+            raise ValidationError(
+                _("SIRI asset filename must use a canonical name like siri-pt.xsd.")
+            )
+        if asset_type == cls.AssetType.INDICATOR_YAML:
+            what = "indicators"
+        return what
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        try:
+            expected_what = self.validate_filename_for_type(
+                self.asset_type,
+                self.original_filename,
+            )
+            if self.what and self.what != expected_what:
+                errors["what"] = _("what does not match the canonical filename stem.")
+            self.what = expected_what
+        except ValidationError as exc:
+            errors["original_filename"] = exc.messages
+
+        if self.is_active:
+            self.status = self.Status.ACTIVE
+            if self.activated_at is None:
+                self.activated_at = timezone.now()
+        elif self.status == self.Status.ACTIVE:
+            self.is_active = True
+            if self.activated_at is None:
+                self.activated_at = timezone.now()
+        if self.status == self.Status.ARCHIVED and self.archived_at is None:
+            self.archived_at = timezone.now()
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class ConfigurationAssetEvent(TimeStampedModel):
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending")
+        PUBLISHED = "published", _("Published")
+        FAILED = "failed", _("Failed")
+
+    asset = models.ForeignKey(
+        ConfigurationAsset,
+        on_delete=models.CASCADE,
+        related_name="events",
+    )
+    event_type = models.CharField(max_length=64, db_index=True)
+    routing_key = models.CharField(max_length=128, db_index=True)
+    payload = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    attempts = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True, default="")
+    published_at = models.DateTimeField(blank=True, null=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Configuration asset event"
+        verbose_name_plural = "Configuration asset events"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["status", "event_type"],
+                name="exchange_ag_status_b0c3a4_idx",
+            ),
+            models.Index(
+                fields=["asset", "status"],
+                name="exchange_ag_asset_i_b487ba_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.event_type} asset={self.asset_id} ({self.status})"
+
+
 class NetexValidationProfile(TimeStampedModel):
     label = models.CharField(max_length=128, blank=True, default="")
     file = models.FileField(
@@ -168,6 +375,13 @@ class NetexValidationProfile(TimeStampedModel):
         help_text="Validation profile file (.xsd).",
     )
     is_active = models.BooleanField(default=False, db_index=True)
+    configuration_asset = models.ForeignKey(
+        ConfigurationAsset,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="netex_profiles",
+    )
 
     class Meta:
         verbose_name = "Netex validation profile"
@@ -190,6 +404,12 @@ class NetexValidationProfile(TimeStampedModel):
 class SiriValidationProfile(TimeStampedModel):
     class ProfileType(models.TextChoices):
         PT = "siri-pt", _("SIRI PT")
+        ET = "siri-et", _("SIRI ET")
+        ST = "siri-st", _("SIRI ST")
+        CT = "siri-ct", _("SIRI CT")
+        CM = "siri-cm", _("SIRI CM")
+        GM = "siri-gm", _("SIRI GM")
+        FM = "siri-fm", _("SIRI FM")
         SX = "siri-sx", _("SIRI SX")
         VM = "siri-vm", _("SIRI VM")
         SM = "siri-sm", _("SIRI SM")
@@ -207,6 +427,13 @@ class SiriValidationProfile(TimeStampedModel):
         help_text="SIRI validation profile file (.xsd/.xml).",
     )
     is_active = models.BooleanField(default=False, db_index=True)
+    configuration_asset = models.ForeignKey(
+        ConfigurationAsset,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="siri_profiles",
+    )
 
     class Meta:
         verbose_name = "SIRI validation profile"
@@ -235,6 +462,13 @@ class IndicatorProfile(TimeStampedModel):
         help_text="Indicator definition file (.yml/.yaml).",
     )
     is_active = models.BooleanField(default=False, db_index=True)
+    configuration_asset = models.ForeignKey(
+        ConfigurationAsset,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="indicator_profiles",
+    )
 
     class Meta:
         verbose_name = "Indicator profile"
@@ -493,6 +727,122 @@ class IndicatorDef(TimeStampedModel):
         return f"[{self.code}] {self.name}"
 
 
+class OperationalFlow(TimeStampedModel):
+    """Catalog entry for executable data-processing flows."""
+
+    FLOW_CODE_REGEX = r"^[a-z0-9][a-z0-9-]*_[0-9]{3}(?:[a-z0-9-]*)?$"
+    WHAT_CODE_REGEX = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+
+    class Engine(models.TextChoices):
+        PREFECT = "prefect", _("Prefect")
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", _("Active")
+        DEPRECATED = "deprecated", _("Deprecated")
+        DISABLED = "disabled", _("Disabled")
+
+    code = models.CharField(
+        max_length=96,
+        unique=True,
+        validators=[
+            RegexValidator(
+                regex=FLOW_CODE_REGEX,
+                message=_(
+                    "Flow code must match ^[a-z0-9][a-z0-9-]*_[0-9]{3}"
+                    "(?:[a-z0-9-]*)?$."
+                ),
+            )
+        ],
+    )
+    engine = models.CharField(
+        max_length=32,
+        choices=Engine.choices,
+        default=Engine.PREFECT,
+    )
+    deployment_name = models.CharField(max_length=255)
+    supported_what = models.CharField(
+        max_length=64,
+        validators=[
+            RegexValidator(
+                regex=WHAT_CODE_REGEX,
+                message=_(
+                    "Supported what must use canonical filename stem syntax "
+                    "(example: netex or siri-pt)."
+                ),
+            )
+        ],
+    )
+    status = models.CharField(
+        max_length=32,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+    )
+    description = models.TextField(blank=True)
+    version = models.CharField(max_length=32, default="001")
+
+    class Meta:
+        verbose_name = "Operational flow"
+        verbose_name_plural = "Operational flows"
+        ordering = ["supported_what", "code"]
+        indexes = [
+            models.Index(fields=["status"], name="exchange_ag_status_8c0478_idx"),
+            models.Index(
+                fields=["supported_what"],
+                name="exchange_ag_support_1da89f_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} ({self.engine})"
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == self.Status.ACTIVE
+
+    def is_referenced_by_flow_profiles(self) -> bool:
+        for profile in FlowProfile.objects.all().only("options"):
+            data_ingestion = profile.options.get("data_ingestion")
+            if not isinstance(data_ingestion, dict):
+                continue
+            for item in data_ingestion.values():
+                if isinstance(item, dict) and item.get("flow") == self.code:
+                    return True
+        return False
+
+    def clean(self):
+        super().clean()
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).first()
+            if original is not None and original.is_referenced_by_flow_profiles():
+                locked_fields = {
+                    "code": original.code,
+                    "engine": original.engine,
+                    "deployment_name": original.deployment_name,
+                    "supported_what": original.supported_what,
+                }
+                errors = {}
+                for field_name, original_value in locked_fields.items():
+                    if getattr(self, field_name) != original_value:
+                        errors[field_name] = _(
+                            "This field cannot be changed while the operational "
+                            "flow is referenced by flow profiles. Create a new "
+                            "flow version instead."
+                        )
+                if errors:
+                    raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.is_referenced_by_flow_profiles():
+            raise ValidationError(
+                _("Operational flows referenced by flow profiles cannot be deleted.")
+            )
+        return super().delete(*args, **kwargs)
+
+
 class FlowProfile(TimeStampedModel):
     """
     Reusable operational flow configuration assigned to contracts.
@@ -520,6 +870,24 @@ class FlowProfile(TimeStampedModel):
 
     def clean(self):
         super().clean()
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).first()
+            if original is not None and original.contracts.exists():
+                locked_fields = {
+                    "code": original.code,
+                    "schema_version": original.schema_version,
+                    "options": original.options,
+                }
+                errors = {}
+                for field_name, original_value in locked_fields.items():
+                    if getattr(self, field_name) != original_value:
+                        errors[field_name] = _(
+                            "This field cannot be changed while the flow profile "
+                            "is associated with contracts. Create a new version instead."
+                        )
+                if errors:
+                    raise ValidationError(errors)
+
         if not isinstance(self.options, dict):
             raise ValidationError({"options": _("options must be a JSON object.")})
 
@@ -568,6 +936,24 @@ class FlowProfile(TimeStampedModel):
                     option_errors.append(
                         f"{block_key}.{item_key}.description must be a string."
                     )
+                if block_key == "data_ingestion":
+                    flow_code = item.get("flow")
+                    flow = OperationalFlow.objects.filter(code=flow_code).first()
+                    if flow is None:
+                        option_errors.append(
+                            f"{block_key}.{item_key}.flow references unknown "
+                            f"operational flow: {flow_code}"
+                        )
+                    elif flow.supported_what != item_key:
+                        option_errors.append(
+                            f"{block_key}.{item_key}.flow supports "
+                            f"{flow.supported_what}, not {item_key}."
+                        )
+                    elif flow.status == OperationalFlow.Status.DISABLED:
+                        option_errors.append(
+                            f"{block_key}.{item_key}.flow references disabled "
+                            f"operational flow: {flow_code}"
+                        )
 
         retention = self.options.get("data_retention")
         if not isinstance(retention, dict):
@@ -1315,6 +1701,18 @@ class AgencyMembership(TimeStampedModel):
         AGENCY_EDITOR = "agency_editor", _("Agency editor")
         AGENCY_READER = "agency_reader", _("Agency reader")
 
+    class Status(models.TextChoices):
+        ACTIVE = "active", _("Active")
+        REVOKED = "revoked", _("Revoked")
+        SYNC_ERROR = "sync_error", _("Sync error")
+
+    class Source(models.TextChoices):
+        INVITATION = "invitation", _("Invitation")
+        BOOTSTRAP = "bootstrap", _("Bootstrap")
+        KEYCLOAK_SYNC = "keycloak_sync", _("Keycloak sync")
+        ADMIN_ACTION = "admin_action", _("Admin action")
+        MANUAL_MIGRATION = "manual_migration", _("Manual migration")
+
     agency = models.ForeignKey(
         Agency, on_delete=models.CASCADE, related_name="memberships"
     )
@@ -1324,6 +1722,18 @@ class AgencyMembership(TimeStampedModel):
         related_name="agency_memberships",
     )
     role = models.CharField(max_length=32, choices=Role.choices)
+    status = models.CharField(
+        max_length=32, choices=Status.choices, default=Status.ACTIVE
+    )
+    source = models.CharField(
+        max_length=32,
+        choices=Source.choices,
+        default=Source.MANUAL_MIGRATION,
+    )
+    keycloak_group_path = models.CharField(max_length=255, blank=True)
+    keycloak_user_id = models.CharField(max_length=255, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    last_sync_error = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1331,6 +1741,21 @@ class AgencyMembership(TimeStampedModel):
         blank=True,
         related_name="agency_memberships_created",
     )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agency_memberships_updated",
+    )
+    revoked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agency_memberships_revoked",
+    )
+    revoked_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Agency membership"
@@ -1342,7 +1767,9 @@ class AgencyMembership(TimeStampedModel):
         ]
         indexes = [
             models.Index(fields=["agency", "role"]),
+            models.Index(fields=["agency", "status"]),
             models.Index(fields=["user"]),
+            models.Index(fields=["user", "status"]),
         ]
 
     def __str__(self) -> str:
@@ -1359,7 +1786,11 @@ class AgencyMembership(TimeStampedModel):
 
     @property
     def can_manage_agency(self) -> bool:
-        return self.role == self.Role.AGENCY_ADMIN
+        return self.status == self.Status.ACTIVE and self.role == self.Role.AGENCY_ADMIN
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == self.Status.ACTIVE
 
 
 class AgencyInvitation(TimeStampedModel):

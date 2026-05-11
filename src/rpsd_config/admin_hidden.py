@@ -8,6 +8,8 @@ from rpsd_config.exchange_agreement.models import (
     AgencyMembership,
     Authority,
     Company,
+    ConfigurationAsset,
+    ConfigurationAssetEvent,
     Contract,
     ContractDocument,
     ContractIndicator,
@@ -22,6 +24,7 @@ from rpsd_config.exchange_agreement.models import (
     IntegrationPrincipal,
     Lot,
     NetexValidationProfile,
+    OperationalFlow,
     SiriValidationProfile,
     Structure,
 )
@@ -71,6 +74,11 @@ class FlowProfileHidden(_HiddenAdmin):
     search_fields = ("code", "name")
 
 
+@admin.register(OperationalFlow)
+class OperationalFlowHidden(_HiddenAdmin):
+    search_fields = ("code", "deployment_name", "supported_what")
+
+
 @admin.register(NetexValidationProfile)
 class NetexValidationProfileHidden(_HiddenAdmin):
     search_fields = ("label", "file")
@@ -84,6 +92,16 @@ class SiriValidationProfileHidden(_HiddenAdmin):
 @admin.register(IndicatorProfile)
 class IndicatorProfileHidden(_HiddenAdmin):
     search_fields = ("label", "file")
+
+
+@admin.register(ConfigurationAsset)
+class ConfigurationAssetHidden(_HiddenAdmin):
+    search_fields = ("label", "original_filename", "storage_url")
+
+
+@admin.register(ConfigurationAssetEvent)
+class ConfigurationAssetEventHidden(_HiddenAdmin):
+    search_fields = ("event_type", "routing_key", "last_error")
 
 
 @admin.register(Structure)
@@ -123,12 +141,36 @@ class ContractInvitationHidden(_HiddenAdmin):
 
 @admin.register(AgencyMembership)
 class AgencyMembershipHidden(_HiddenAdmin):
+    list_display = (
+        "agency",
+        "user",
+        "role",
+        "status",
+        "source",
+        "last_synced_at",
+        "revoked_at",
+    )
+    list_filter = ("status", "source", "role", "agency")
+    readonly_fields = (
+        "created_at",
+        "updated_at",
+        "last_synced_at",
+        "last_sync_error",
+        "keycloak_group_path",
+        "keycloak_user_id",
+        "revoked_at",
+    )
     search_fields = (
         "agency__name",
         "agency__agency_key",
         "user__username",
         "user__email",
+        "keycloak_group_path",
+        "keycloak_user_id",
     )
+
+    def get_model_perms(self, request):
+        return admin.ModelAdmin.get_model_perms(self, request)
 
 
 @admin.register(AgencyInvitation)

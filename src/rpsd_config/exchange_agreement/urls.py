@@ -14,6 +14,7 @@ from .views import (
     company_create_page,
     company_detail_page,
     company_list_page,
+    configuration_asset_download_page,
     create_agency_contract_page,
     create_agency_invitation_page,
     create_contract_invitation_page,
@@ -90,6 +91,11 @@ urlpatterns = [
         "me/platform-configuration/",
         platform_configuration_page,
         name="platform-configuration",
+    ),
+    path(
+        "me/platform-configuration/assets/<int:asset_id>/download/",
+        configuration_asset_download_page,
+        name="configuration-asset-download",
     ),
     path("me/invitations/", received_invitations, name="received-invitations"),
     path(

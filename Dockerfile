@@ -20,6 +20,10 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list && \
 # Set working directory
 WORKDIR /app
 
+# Pull only the packages/ subdirectory from rpsd-commons (named build context).
+COPY --from=rpsd-commons pyproject.toml uv.lock README.md /rpsd-commons/
+COPY --from=rpsd-commons packages/ /rpsd-commons/packages/
+
 # Copy dependency files first (for better layer caching)
 COPY pyproject.toml uv.lock README.md ./
 

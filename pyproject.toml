@@ -26,6 +26,8 @@ classifiers = [
 keywords = ["django", "web", "framework"]
 
 dependencies = [
+    "rpsd-storage",
+    "rpsd-transport[rabbitmq]",
     "django[gis]>=5.2.0",  # ---> rimuovo "django>=5.2.0",
     "psycopg[binary]>=3.1.0",    # Environment variables
     "pillow>=10.0.0",          # Image processing
@@ -54,6 +56,8 @@ dependencies = [
 [tool.uv.sources]
 # Example: pin to specific git commit or branch if needed
 # django = { git = "https://github.com/django/django.git", branch = "main" }
+rpsd-storage = { path = "../rpsd-commons/packages/rpsd-storage", editable = true }
+rpsd-transport = { path = "../rpsd-commons/packages/rpsd-transport", editable = true }
 
 [project.scripts]
 manage = "rpsd_config.manage:main"

@@ -9,6 +9,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from rpsd_config.exchange_agreement.models import (
+    ConfigurationAsset,
     IndicatorProfile,
     NetexValidationProfile,
     SiriValidationProfile,
@@ -43,7 +44,12 @@ class PlatformConfigurationPhase9Tests(TestCase):
 
         self._tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmpdir.cleanup)
-        self._media_override = override_settings(MEDIA_ROOT=self._tmpdir.name)
+        self._media_override = override_settings(
+            CONFIG_ASSETS_RABBITMQ_ENABLED=False,
+            CONFIG_ASSETS_STORAGE_FS_BASE_PATH=self._tmpdir.name,
+            CONFIG_ASSETS_STORAGE_PROVIDER="fs",
+            MEDIA_ROOT=self._tmpdir.name,
+        )
         self._media_override.enable()
         self.addCleanup(self._media_override.disable)
 
@@ -73,7 +79,7 @@ class PlatformConfigurationPhase9Tests(TestCase):
         self.client.force_login(self.platform_admin)
 
         first_netex = SimpleUploadedFile(
-            "netex-v1.xsd",
+            "netex.xsd",
             b"<xsd:schema xmlns:xsd='http://www.w3.org/2001/XMLSchema'></xsd:schema>",
             content_type="application/xml",
         )
@@ -90,11 +96,18 @@ class PlatformConfigurationPhase9Tests(TestCase):
         self.assertEqual(first_upload.status_code, 200)
         self.assertEqual(NetexValidationProfile.objects.count(), 1)
         self.assertEqual(
+            ConfigurationAsset.objects.filter(
+                asset_type=ConfigurationAsset.AssetType.NETEX_XSD,
+                what="netex",
+            ).count(),
+            1,
+        )
+        self.assertEqual(
             NetexValidationProfile.objects.filter(is_active=True).count(), 1
         )
 
         second_netex = SimpleUploadedFile(
-            "netex-v2.xsd",
+            "netex.xsd",
             b"<xsd:schema xmlns:xsd='http://www.w3.org/2001/XMLSchema'></xsd:schema>",
             content_type="application/xml",
         )
@@ -111,6 +124,13 @@ class PlatformConfigurationPhase9Tests(TestCase):
         self.assertEqual(second_upload.status_code, 200)
         self.assertEqual(NetexValidationProfile.objects.count(), 2)
         self.assertEqual(
+            ConfigurationAsset.objects.filter(
+                asset_type=ConfigurationAsset.AssetType.NETEX_XSD,
+                what="netex",
+            ).count(),
+            2,
+        )
+        self.assertEqual(
             NetexValidationProfile.objects.filter(is_active=True).count(), 1
         )
         self.assertEqual(
@@ -119,7 +139,7 @@ class PlatformConfigurationPhase9Tests(TestCase):
         )
 
         first_siri = SimpleUploadedFile(
-            "siri-pt-v1.xsd",
+            "siri-pt.xsd",
             b"<xsd:schema xmlns:xsd='http://www.w3.org/2001/XMLSchema'></xsd:schema>",
             content_type="application/xml",
         )
@@ -136,7 +156,7 @@ class PlatformConfigurationPhase9Tests(TestCase):
         )
 
         second_siri = SimpleUploadedFile(
-            "siri-pt-v2.xsd",
+            "siri-pt.xsd",
             b"<xsd:schema xmlns:xsd='http://www.w3.org/2001/XMLSchema'></xsd:schema>",
             content_type="application/xml",
         )

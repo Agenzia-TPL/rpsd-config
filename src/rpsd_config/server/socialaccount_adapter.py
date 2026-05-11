@@ -60,6 +60,7 @@ class RpsdSocialAccountAdapter(DefaultSocialAccountAdapter):
 
     def pre_social_login(self, request, sociallogin):
         self._sync_staff_from_oidc_groups(sociallogin)
+        self._sync_agency_memberships_from_oidc_groups(sociallogin)
         return super().pre_social_login(request, sociallogin)
 
     def on_authentication_error(
@@ -146,3 +147,34 @@ class RpsdSocialAccountAdapter(DefaultSocialAccountAdapter):
             return False
 
         return RPSD_ADMIN_GROUP_PATH in _extract_groups_from_extra_data(extra_data)
+
+    def _sync_agency_memberships_from_oidc_groups(self, sociallogin) -> None:
+        user = getattr(sociallogin, "user", None)
+        account = getattr(sociallogin, "account", None)
+        extra_data = getattr(account, "extra_data", None)
+        if (
+            user is None
+            or getattr(user, "pk", None) is None
+            or not isinstance(extra_data, dict)
+        ):
+            return
+
+        groups = _extract_groups_from_extra_data(extra_data)
+        if not groups:
+            return
+
+        from rpsd_config.exchange_agreement.services.agency_memberships import (
+            sync_agency_memberships_from_groups,
+        )
+
+        result = sync_agency_memberships_from_groups(
+            user=user,
+            groups=groups,
+            authoritative=False,
+        )
+        if result.touched:
+            LOGGER.info(
+                "OIDC agency membership sync applied: user_id=%s touched=%s",
+                user.pk,
+                result.touched,
+            )
