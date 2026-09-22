@@ -11,6 +11,7 @@ from django.utils.formats import date_format
 from rpsd_config import admin_hidden  # noqa: F401
 from rpsd_config.exchange_agreement.models import (
     Contract,
+    ContractConfigurationRevisionStatusEvent,
     ContractIndicatorConfiguration,
     ContractInputSelection,
     ProcessingProfileIndicatorVersion,
@@ -338,6 +339,24 @@ class ContractIndicatorConfigurationInline(admin.TabularInline):
         return bool(obj is None or obj.status == obj.Status.DRAFT)
 
 
+class ContractConfigurationRevisionStatusEventInline(admin.TabularInline):
+    model = ContractConfigurationRevisionStatusEvent
+    extra = 0
+    can_delete = False
+    fields = (
+        "from_status",
+        "to_status",
+        "changed_by",
+        "reason",
+        "snapshot_checksum",
+        "changed_at",
+    )
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(ContractConfigurationRevisionAdminProxy)
 class ContractConfigurationRevisionAdmin(
     _HumanReadableTimestampsMixin,
@@ -369,10 +388,15 @@ class ContractConfigurationRevisionAdmin(
         "approved_at",
         "withdrawn_by",
         "withdrawn_at",
+        "withdrawal_reason",
         "created_at_human",
         "updated_at_human",
     )
-    inlines = (ContractInputSelectionInline, ContractIndicatorConfigurationInline)
+    inlines = (
+        ContractInputSelectionInline,
+        ContractIndicatorConfigurationInline,
+        ContractConfigurationRevisionStatusEventInline,
+    )
     actions = ("approve_selected", "withdraw_selected")
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
@@ -424,7 +448,15 @@ class ContractConfigurationRevisionAdmin(
 
     @admin.action(description="Withdraw selected contract revisions")
     def withdraw_selected(self, request, queryset):
-        self._transition_selected(request, queryset, withdraw_contract_revision)
+        self._transition_selected(
+            request,
+            queryset,
+            lambda revision, *, actor: withdraw_contract_revision(
+                revision,
+                actor=actor,
+                reason="Withdrawn through Django admin action.",
+            ),
+        )
 
 
 @admin.register(ContractMembershipAdminProxy)

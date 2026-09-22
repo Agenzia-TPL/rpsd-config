@@ -2938,6 +2938,7 @@ class ContractConfigurationRevision(TimeStampedModel):
         related_name="contract_configuration_revisions_withdrawn",
     )
     withdrawn_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    withdrawal_reason = models.TextField(blank=True)
 
     class Meta:
         verbose_name = "Contract configuration revision"
@@ -3025,6 +3026,10 @@ class ContractConfigurationRevision(TimeStampedModel):
                 errors["approved_at"] = _(
                     "Approved revisions require an approval timestamp."
                 )
+        if self.status == self.Status.WITHDRAWN and not self.withdrawal_reason.strip():
+            errors["withdrawal_reason"] = _(
+                "Withdrawn revisions require a withdrawal reason."
+            )
         if self.pk:
             original = type(self).objects.filter(pk=self.pk).first()
             if original is not None:
@@ -3044,6 +3049,7 @@ class ContractConfigurationRevision(TimeStampedModel):
                         "snapshot_schema_version",
                         "configuration_snapshot",
                         "snapshot_checksum",
+                        "withdrawal_reason",
                     )
                     if any(
                         getattr(self, field) != getattr(original, field)
@@ -3066,6 +3072,42 @@ class ContractConfigurationRevision(TimeStampedModel):
         if status != self.Status.DRAFT:
             raise ValidationError(_("Only draft revisions can be deleted."))
         return super().delete(*args, **kwargs)
+
+
+class ContractConfigurationRevisionStatusEvent(models.Model):
+    """Append-only audit event for revision lifecycle decisions."""
+
+    revision = models.ForeignKey(
+        ContractConfigurationRevision,
+        on_delete=models.CASCADE,
+        related_name="status_events",
+    )
+    from_status = models.CharField(
+        max_length=16,
+        choices=ContractConfigurationRevision.Status.choices,
+    )
+    to_status = models.CharField(
+        max_length=16,
+        choices=ContractConfigurationRevision.Status.choices,
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contract_configuration_revision_status_changes",
+    )
+    reason = models.TextField()
+    snapshot_checksum = models.CharField(max_length=71, blank=True)
+    changed_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "Contract configuration revision status event"
+        verbose_name_plural = "Contract configuration revision status events"
+        ordering = ["changed_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.revision.code}:{self.from_status}->{self.to_status}"
 
 
 class ContractInputSelection(models.Model):

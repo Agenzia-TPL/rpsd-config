@@ -71,6 +71,8 @@ class _ContractRevisionFixtureMixin:
         self.user = get_user_model().objects.create_user(
             username="revision-admin",
             password="test-password",
+            is_staff=True,
+            is_superuser=True,
         )
         self.agency = Agency.objects.create(
             name="Agency Milano",
@@ -130,6 +132,31 @@ class _ContractRevisionFixtureMixin:
             ),
             actor=self.user,
         )
+        siri_dataset = Dataset.objects.create(code="siri-vm", name="SIRI VM")
+        siri_specification = publish_dataset_specification(
+            DatasetSpecification.objects.create(
+                dataset=siri_dataset,
+                code="siri-vm_v003",
+                version="003",
+                description="SIRI VM v3",
+            ),
+            actor=self.user,
+        )
+        siri_fragment = publish_requirement_fragment(
+            RequirementFragment.objects.create(
+                dataset_specification=siri_specification,
+                code="observed-journey-movement",
+                name="Observed journey movement",
+                description="Required observed journey movement.",
+                locator_type=RequirementFragment.LocatorType.XPATH,
+                result_kind=RequirementFragment.ResultKind.PRESENCE,
+                locator_definition={
+                    "path": "//siri:VehicleActivity",
+                    "namespaces": {"siri": "urn:siri"},
+                },
+            ),
+            actor=self.user,
+        )
         self.logical_indicator = Indicator.objects.create(
             code="commercial-speed-target",
             name="Commercial speed",
@@ -142,21 +169,35 @@ class _ContractRevisionFixtureMixin:
             description="Commercial speed definition.",
             formula_description="Distance divided by elapsed time.",
         )
-        indicator_version.required_fragments.add(fragment)
+        indicator_version.required_fragments.add(fragment, siri_fragment)
         indicator_version = publish_indicator_version(
             indicator_version, actor=self.user
         )
         input_flow = publish_input_flow_version(
             InputFlowVersion.objects.create(
                 dataset_specification=specification,
-                code="netex-import_001",
-                version="001",
+                code="netex-import_002",
+                version="002",
                 name="NeTEx import",
                 description="Validate and import NeTEx.",
                 deployment_name="validators/netex-default",
-                artifact_identifier="git:rpsd-flows@netex-import-001",
+                artifact_identifier="git:rpsd-flows@netex-import-002",
                 invocation_contract=transport_message_invocation_contract(),
                 compatibility={"schema_version": 1, "what": "netex"},
+            ),
+            actor=self.user,
+        )
+        siri_input_flow = publish_input_flow_version(
+            InputFlowVersion.objects.create(
+                dataset_specification=siri_specification,
+                code="siri-vm-import_003",
+                version="003",
+                name="SIRI VM import",
+                description="Validate and import SIRI VM.",
+                deployment_name="validators/siri-vm-default",
+                artifact_identifier="git:rpsd-flows@siri-vm-import-003",
+                invocation_contract=transport_message_invocation_contract(),
+                compatibility={"schema_version": 1, "what": "siri-vm"},
             ),
             actor=self.user,
         )
@@ -184,6 +225,11 @@ class _ContractRevisionFixtureMixin:
             dataset=dataset,
             input_flow_version=input_flow,
         )
+        self.siri_profile_input = ProcessingProfileInputFlow.objects.create(
+            processing_profile_version=profile,
+            dataset=siri_dataset,
+            input_flow_version=siri_input_flow,
+        )
         self.profile_indicator = ProcessingProfileIndicatorVersion.objects.create(
             processing_profile_version=profile,
             indicator_version=indicator_version,
@@ -205,6 +251,10 @@ class _ContractRevisionFixtureMixin:
         ContractInputSelection.objects.create(
             revision=revision,
             processing_profile_input_flow=self.profile_input,
+        )
+        ContractInputSelection.objects.create(
+            revision=revision,
+            processing_profile_input_flow=self.siri_profile_input,
         )
         ContractIndicatorConfiguration.objects.create(
             revision=revision,
@@ -355,7 +405,11 @@ class ContractConfigurationRevisionTests(_ContractRevisionFixtureMixin, TestCase
             self._revision(number=1, valid_from=self.contract.start_date)
         )
         with self.assertRaisesMessage(ContractRevisionError, "cannot be withdrawn"):
-            withdraw_contract_revision(first, actor=self.user)
+            withdraw_contract_revision(
+                first,
+                reason="Attempt to withdraw current configuration.",
+                actor=self.user,
+            )
 
         future = approve_contract_revision(
             self._revision(
@@ -365,7 +419,11 @@ class ContractConfigurationRevisionTests(_ContractRevisionFixtureMixin, TestCase
             ),
             actor=self.user,
         )
-        future = withdraw_contract_revision(future, actor=self.user)
+        future = withdraw_contract_revision(
+            future,
+            reason="The planned configuration is no longer needed.",
+            actor=self.user,
+        )
         self.assertEqual(future.status, ContractConfigurationRevision.Status.WITHDRAWN)
         self.assertEqual(revision_effective_period(first)[1], self.contract.end_date)
 
@@ -441,9 +499,10 @@ class ContractRevisionConcurrencyTests(
         def approve(revision_id):
             close_old_connections()
             revision = ContractConfigurationRevision.objects.get(pk=revision_id)
+            actor = get_user_model().objects.get(pk=self.user.pk)
             barrier.wait()
             try:
-                approve_contract_revision(revision)
+                approve_contract_revision(revision, actor=actor)
                 outcomes.append("approved")
             except ContractRevisionError:
                 outcomes.append("rejected")
