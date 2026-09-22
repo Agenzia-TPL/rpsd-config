@@ -35,7 +35,9 @@ from .models import (
     Dataset,
     DatasetSpecification,
     FlowProfile,
+    Indicator,
     IndicatorDef,
+    IndicatorVersion,
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
@@ -56,6 +58,7 @@ from .services.agency_invitations import (
 )
 from .services.configuration_assets import load_configuration_asset_content
 from .services.flow_profiles import get_default_flow_profile
+from .services.indicator_catalog import serialize_indicator_catalog_entry
 from .services.m2m_audit import audit_m2m_event
 from .services.m2m_grants import (
     accessible_contracts_for_principal,
@@ -175,6 +178,29 @@ class DatasetCatalogSchema(Schema):
     description: str
     status: str
     specifications: list[DatasetSpecificationSchema]
+
+
+class IndicatorVersionCatalogSchema(Schema):
+    code: str
+    version: str
+    description: str
+    formula_description: str
+    input_contract: dict
+    output_contract: dict
+    execution_engine: str
+    execution_reference: str
+    artifact_identifier: str
+    status: str
+    published_at: str | None
+    required_fragments: list[RequirementFragmentSchema]
+
+
+class IndicatorCatalogSchema(Schema):
+    code: str
+    name: str
+    description: str
+    status: str
+    versions: list[IndicatorVersionCatalogSchema]
 
 
 class StructureSchema(Schema):
@@ -1439,6 +1465,48 @@ def get_contract_indicator(request, contract_code: str, indicator_code: str):
 def get_contract_required_inputs(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
     return _contract_required_inputs_schema(contract)
+
+
+@api.get("/v1/indicator-catalog", response=list[IndicatorCatalogSchema])
+def list_published_indicator_catalog(request):
+    _require_auth(request)
+    indicators = (
+        Indicator.objects.filter(
+            status=Indicator.Status.ACTIVE,
+            versions__status=IndicatorVersion.Status.PUBLISHED,
+        )
+        .prefetch_related(
+            "versions__required_fragments__dataset_specification",
+            "versions__required_fragments__validation_rules",
+        )
+        .order_by("code")
+        .distinct()
+    )
+    return [serialize_indicator_catalog_entry(indicator) for indicator in indicators]
+
+
+@api.get(
+    "/v1/indicator-catalog/{indicator_code}",
+    response=IndicatorCatalogSchema,
+)
+def get_published_indicator_catalog_entry(request, indicator_code: str):
+    _require_auth(request)
+    indicator = (
+        Indicator.objects.filter(
+            code=indicator_code,
+            status=Indicator.Status.ACTIVE,
+            versions__status=IndicatorVersion.Status.PUBLISHED,
+        )
+        .prefetch_related(
+            "versions__required_fragments__dataset_specification",
+            "versions__required_fragments__validation_rules",
+        )
+        .distinct()
+        .first()
+    )
+    if indicator is None:
+        raise HttpError(404, "Published indicator not found.")
+    return serialize_indicator_catalog_entry(indicator)
 
 
 @api.get("/v1/indicators", response=list[IndicatorSchema])

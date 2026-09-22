@@ -20,6 +20,12 @@ from rpsd_config.exchange_agreement.services.dataset_catalog import (
     publish_dataset_specification,
     withdraw_dataset_specification,
 )
+from rpsd_config.exchange_agreement.services.indicator_catalog import (
+    IndicatorVersionTransitionError,
+    deprecate_indicator_version,
+    publish_indicator_version,
+    withdraw_indicator_version,
+)
 from rpsd_config.exchange_agreement.services.requirement_fragments import (
     RequirementFragmentTransitionError,
     deprecate_requirement_fragment,
@@ -37,8 +43,11 @@ from .proxies import (
     DatasetAdminProxy,
     DatasetSpecificationAdminProxy,
     DatasetSpecificationStatusEventAdminProxy,
+    IndicatorAdminProxy,
     IndicatorDefAdminProxy,
     IndicatorProfileAdminProxy,
+    IndicatorVersionAdminProxy,
+    IndicatorVersionStatusEventAdminProxy,
     NetexValidationProfileAdminProxy,
     RequirementFragmentAdminProxy,
     RequirementFragmentStatusEventAdminProxy,
@@ -318,6 +327,126 @@ class RequirementFragmentStatusEventAdmin(
     search_fields = ("requirement_fragment__code", "changed_by__username")
     readonly_fields = (
         "requirement_fragment",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "changed_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(IndicatorAdminProxy)
+class IndicatorAdmin(
+    _PlatformCatalogAdminMixin,
+    _HumanReadableTimestampsMixin,
+    admin.ModelAdmin,
+):
+    list_display = ("code", "name", "status", "created_at", "updated_at")
+    list_filter = ("status",)
+    search_fields = ("code", "name", "description")
+    readonly_fields = ("created_at_human", "updated_at_human")
+
+
+@admin.register(IndicatorVersionAdminProxy)
+class IndicatorVersionAdmin(
+    _PlatformCatalogAdminMixin,
+    _HumanReadableTimestampsMixin,
+    admin.ModelAdmin,
+):
+    list_display = (
+        "code",
+        "indicator",
+        "version",
+        "execution_engine",
+        "status",
+        "published_at",
+        "updated_at",
+    )
+    list_filter = ("status", "execution_engine", "indicator")
+    search_fields = ("code", "version", "description", "indicator__code")
+    filter_horizontal = ("required_fragments",)
+    readonly_fields = (
+        "status",
+        "published_by",
+        "published_at",
+        "created_at_human",
+        "updated_at_human",
+    )
+    actions = ("publish_selected", "deprecate_selected", "withdraw_selected")
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None and obj.status != obj.Status.DRAFT:
+            fields.extend(
+                [
+                    "indicator",
+                    "code",
+                    "version",
+                    "description",
+                    "formula_description",
+                    "input_contract",
+                    "output_contract",
+                    "execution_engine",
+                    "execution_reference",
+                    "artifact_identifier",
+                    "required_fragments",
+                ]
+            )
+        return fields
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.status != obj.Status.DRAFT:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def _transition_selected(self, request, queryset, transition):
+        completed = 0
+        for version in queryset:
+            try:
+                transition(version, actor=request.user)
+                completed += 1
+            except (IndicatorVersionTransitionError, ValidationError) as exc:
+                self.message_user(request, str(exc), level="ERROR")
+        if completed:
+            self.message_user(request, f"Updated indicator versions: {completed}")
+
+    @admin.action(description="Publish selected indicator versions")
+    def publish_selected(self, request, queryset):
+        self._transition_selected(request, queryset, publish_indicator_version)
+
+    @admin.action(description="Deprecate selected indicator versions")
+    def deprecate_selected(self, request, queryset):
+        self._transition_selected(request, queryset, deprecate_indicator_version)
+
+    @admin.action(description="Withdraw selected indicator versions")
+    def withdraw_selected(self, request, queryset):
+        self._transition_selected(request, queryset, withdraw_indicator_version)
+
+
+@admin.register(IndicatorVersionStatusEventAdminProxy)
+class IndicatorVersionStatusEventAdmin(
+    _PlatformCatalogAdminMixin,
+    admin.ModelAdmin,
+):
+    list_display = (
+        "indicator_version",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "changed_at",
+    )
+    list_filter = ("to_status", "changed_at")
+    search_fields = ("indicator_version__code", "changed_by__username")
+    readonly_fields = (
+        "indicator_version",
         "from_status",
         "to_status",
         "changed_by",

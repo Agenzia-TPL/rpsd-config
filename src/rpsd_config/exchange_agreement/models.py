@@ -13,7 +13,10 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 from django.db.models import F, Func
+from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Lower, Now  # for db_default in Django 5.x
+from django.db.models.signals import m2m_changed, pre_delete
+from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
@@ -30,6 +33,13 @@ from rpsd_config.exchange_agreement.services.fragment_registry import (
     RULE_SET_EQUALS,
     validate_locator_definition,
     validate_rule_parameters,
+)
+from rpsd_config.exchange_agreement.services.indicator_registry import (
+    EXECUTION_DBT,
+    EXECUTION_EXTERNAL,
+    EXECUTION_PREFECT,
+    validate_execution_reference_fields,
+    validate_technical_contract,
 )
 
 # ==========================
@@ -1105,6 +1115,293 @@ class RequirementFragmentStatusEvent(models.Model):
         return (
             f"{self.requirement_fragment}:"
             f"{self.from_status or '-'}->{self.to_status}"
+        )
+
+
+class Indicator(TimeStampedModel):
+    """Stable business identity of a monitored indicator."""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", _("Active")
+        DEPRECATED = "deprecated", _("Deprecated")
+
+    CODE_REGEX = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    code = models.SlugField(
+        max_length=96,
+        unique=True,
+        validators=[
+            RegexValidator(
+                regex=CODE_REGEX,
+                message=_(
+                    "Indicator code must contain lowercase letters, digits and "
+                    "hyphens."
+                ),
+            )
+        ],
+    )
+    name = models.CharField(max_length=128)
+    description = models.TextField()
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
+
+    class Meta:
+        verbose_name = "Indicator"
+        verbose_name_plural = "Indicators"
+        ordering = ["code"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.code})"
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.name = (self.name or "").strip()
+        self.description = (self.description or "").strip()
+        errors = {}
+        if not self.name:
+            errors["name"] = _("Indicator name is required.")
+        if not self.description:
+            errors["description"] = _("Indicator description is required.")
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class IndicatorVersion(TimeStampedModel):
+    """Immutable published technical definition of an indicator."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", _("Draft")
+        PUBLISHED = "published", _("Published")
+        DEPRECATED = "deprecated", _("Deprecated")
+        WITHDRAWN = "withdrawn", _("Withdrawn")
+
+    class ExecutionEngine(models.TextChoices):
+        NONE = "", _("No execution reference")
+        PREFECT = EXECUTION_PREFECT, _("Prefect")
+        DBT = EXECUTION_DBT, _("dbt")
+        EXTERNAL = EXECUTION_EXTERNAL, _("External")
+
+    indicator = models.ForeignKey(
+        Indicator,
+        on_delete=models.PROTECT,
+        related_name="versions",
+    )
+    code = models.CharField(max_length=96, unique=True)
+    version = models.CharField(max_length=32)
+    description = models.TextField()
+    formula_description = models.TextField()
+    input_contract = models.JSONField(default=dict, blank=True)
+    output_contract = models.JSONField(default=dict, blank=True)
+    execution_engine = models.CharField(
+        max_length=16,
+        choices=ExecutionEngine.choices,
+        blank=True,
+        default=ExecutionEngine.NONE,
+    )
+    execution_reference = models.CharField(max_length=255, blank=True)
+    artifact_identifier = models.CharField(max_length=512, blank=True)
+    required_fragments = models.ManyToManyField(
+        RequirementFragment,
+        related_name="indicator_versions",
+        blank=True,
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="indicator_versions_published",
+    )
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Indicator version"
+        verbose_name_plural = "Indicator versions"
+        ordering = ["indicator__code", "version", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["indicator", "version"],
+                name="uniq_indicator_version",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["indicator", "status"],
+                name="ix_indicator_version_status",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} ({self.status})"
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.version = (self.version or "").strip()
+        self.description = (self.description or "").strip()
+        self.formula_description = (self.formula_description or "").strip()
+        errors = {}
+        if not self.code:
+            errors["code"] = _("Indicator version code is required.")
+        if not self.version:
+            errors["version"] = _("Indicator version is required.")
+        if not self.description:
+            errors["description"] = _("Indicator version description is required.")
+        if not self.formula_description:
+            errors["formula_description"] = _("Formula description is required.")
+        for field_name in ("input_contract", "output_contract"):
+            try:
+                setattr(
+                    self,
+                    field_name,
+                    validate_technical_contract(
+                        getattr(self, field_name),
+                        field_name=field_name,
+                    ),
+                )
+            except ValidationError as exc:
+                errors[field_name] = exc.messages
+        try:
+            (
+                self.execution_reference,
+                self.artifact_identifier,
+            ) = validate_execution_reference_fields(
+                engine=self.execution_engine,
+                execution_reference=self.execution_reference,
+                artifact_identifier=self.artifact_identifier,
+                require_complete=self.status == self.Status.PUBLISHED,
+            )
+        except ValidationError as exc:
+            errors["execution_engine"] = exc.messages
+
+        if not self.pk and self.status != self.Status.DRAFT:
+            errors["status"] = _(
+                "New indicator versions must start as draft and use the "
+                "lifecycle service."
+            )
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).first()
+            if original is not None:
+                if self.status != original.status:
+                    errors["status"] = _(
+                        "Use the indicator version lifecycle service to change status."
+                    )
+                if original.status != self.Status.DRAFT:
+                    semantic_fields = (
+                        "indicator_id",
+                        "code",
+                        "version",
+                        "description",
+                        "formula_description",
+                        "input_contract",
+                        "output_contract",
+                        "execution_engine",
+                        "execution_reference",
+                        "artifact_identifier",
+                    )
+                    if any(
+                        getattr(self, field) != getattr(original, field)
+                        for field in semantic_fields
+                    ):
+                        errors["__all__"] = _(
+                            "Published, deprecated or withdrawn indicator versions "
+                            "are immutable."
+                        )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        current_status = self.status
+        if self.pk:
+            current_status = type(self).objects.values_list(
+                "status", flat=True
+            ).get(pk=self.pk)
+        if current_status != self.Status.DRAFT:
+            raise ValidationError(_("Only draft indicator versions can be deleted."))
+        return super().delete(*args, **kwargs)
+
+
+class IndicatorVersionStatusEvent(models.Model):
+    indicator_version = models.ForeignKey(
+        IndicatorVersion,
+        on_delete=models.PROTECT,
+        related_name="status_events",
+    )
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(
+        max_length=16,
+        choices=IndicatorVersion.Status.choices,
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="indicator_version_status_changes",
+    )
+    changed_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "Indicator version status event"
+        verbose_name_plural = "Indicator version status events"
+        ordering = ["changed_at", "id"]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.indicator_version}:"
+            f"{self.from_status or '-'}->{self.to_status}"
+        )
+
+
+@receiver(m2m_changed, sender=IndicatorVersion.required_fragments.through)
+def protect_indicator_version_fragments(
+    sender, instance, action, reverse, pk_set, **kwargs
+):
+    if action not in {"pre_add", "pre_remove", "pre_clear"}:
+        return
+    if reverse:
+        versions = (
+            instance.indicator_versions.all()
+            if pk_set is None
+            else IndicatorVersion.objects.filter(pk__in=pk_set)
+        )
+        if versions.exclude(status=IndicatorVersion.Status.DRAFT).exists():
+            raise ValidationError(
+                _("Required fragments of non-draft indicator versions are immutable.")
+            )
+    elif instance.status != IndicatorVersion.Status.DRAFT:
+        raise ValidationError(
+            _("Required fragments can be changed only while the version is draft.")
+        )
+
+
+@receiver(pre_delete, sender=RequirementFragment)
+def protect_published_indicator_fragment_reference(sender, instance, **kwargs):
+    protected_versions = instance.indicator_versions.exclude(
+        status=IndicatorVersion.Status.DRAFT
+    )
+    if protected_versions.exists():
+        raise ProtectedError(
+            "Requirement fragment is referenced by a non-draft indicator version.",
+            protected_versions,
         )
 
 

@@ -6,8 +6,11 @@ from rpsd_config.exchange_agreement.models import (
     Dataset,
     DatasetSpecification,
     DatasetSpecificationStatusEvent,
+    Indicator,
     IndicatorDef,
     IndicatorProfile,
+    IndicatorVersion,
+    IndicatorVersionStatusEvent,
     NetexValidationProfile,
     RequirementFragment,
     RequirementFragmentStatusEvent,
@@ -54,6 +57,30 @@ class RequirementFragmentStatusEventAdminProxy(RequirementFragmentStatusEvent):
         app_label = "admin_dataset_exchange"
         verbose_name = "Requirement fragment status event"
         verbose_name_plural = "Requirement fragment status events"
+
+
+class IndicatorAdminProxy(Indicator):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Indicator"
+        verbose_name_plural = "Indicators"
+
+
+class IndicatorVersionAdminProxy(IndicatorVersion):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Indicator version"
+        verbose_name_plural = "Indicator versions"
+
+
+class IndicatorVersionStatusEventAdminProxy(IndicatorVersionStatusEvent):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Indicator version status event"
+        verbose_name_plural = "Indicator version status events"
 
 
 class StructureAdminProxy(Structure):
