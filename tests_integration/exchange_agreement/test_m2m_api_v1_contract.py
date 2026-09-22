@@ -7,18 +7,36 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
+from django.utils import timezone
 
 from rpsd_config.exchange_agreement.models import (
     Agency,
     Company,
     Contract,
+    InputFlowVersion,
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
+    ProcessingProfileIndicatorVersion,
+    ProcessingProfileInputFlow,
+    ProcessingProfileVersion,
 )
 from rpsd_config.exchange_agreement.services.api_usage import (
     api_usage_count,
     reset_api_usage_counts,
+)
+from rpsd_config.exchange_agreement.services.contract_revisions import (
+    approve_revision,
+    create_replacement_revision,
+)
+from rpsd_config.exchange_agreement.services.flow_catalog import (
+    publish_input_flow_version,
+)
+from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
+    transport_message_invocation_contract,
+)
+from rpsd_config.exchange_agreement.services.processing_profiles import (
+    publish_processing_profile,
 )
 from rpsd_config.server.m2m_auth import M2MAuthContext
 
@@ -217,3 +235,110 @@ class M2MApiV1ContractTests(TestCase):
             self.golden["rejections"]["inactive_data_category"],
             kind="error",
         )
+
+    def test_legacy_flow_is_deployment_name_not_catalog_code(self):
+        response = self._get(self._path("ingest-authorization?data_category=netex"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["flow"], "netex-import/netex-ita-v001")
+        self.assertNotEqual(response.json()["flow"], "netex-golden_001")
+
+    def test_v1_and_v2_resolve_the_same_current_deployment(self):
+        v1_response = self._get(self._path("ingest-authorization?data_category=netex"))
+        v2_response = self._get(
+            "/exchange_agreement/api/m2m/v2/contracts/"
+            f"{self.contract.contract_code}/ingest-resolution?data_category=netex"
+        )
+
+        self.assertEqual(v1_response.status_code, 200)
+        self.assertEqual(v2_response.status_code, 200)
+        self.assertEqual(
+            v1_response.json()["flow"],
+            v2_response.json()["input_flow_version"]["deployment_name"],
+        )
+
+    def test_v1_selects_revision_from_config_clock_without_request_dates(self):
+        current_netex = self.flow_profile.input_flow_links.get(dataset__code="netex")
+        replacement_flow = publish_input_flow_version(
+            InputFlowVersion.objects.create(
+                dataset_specification=(
+                    current_netex.input_flow_version.dataset_specification
+                ),
+                code="netex-golden_002",
+                version="002",
+                name="Golden NeTEx import v2",
+                description="Replacement NeTEx ingest",
+                deployment_name="netex-import/netex-ita-v002",
+                artifact_identifier="git:rpsd-flows@netex-golden-002",
+                invocation_contract=transport_message_invocation_contract(),
+                compatibility={"schema_version": 1, "what": "netex"},
+            ),
+            actor=self.configuration_admin,
+        )
+        replacement_profile = ProcessingProfileVersion.objects.create(
+            code="golden-flow-profile_002",
+            version="002",
+            name="Golden Flow Profile v2",
+            description="Future profile used by the M2M v1 boundary test.",
+            orchestration_flow_version=(self.flow_profile.orchestration_flow_version),
+        )
+        for profile_input in self.flow_profile.input_flow_links.select_related(
+            "dataset", "input_flow_version"
+        ):
+            ProcessingProfileInputFlow.objects.create(
+                processing_profile_version=replacement_profile,
+                dataset=profile_input.dataset,
+                input_flow_version=(
+                    replacement_flow
+                    if profile_input.dataset.code == "netex"
+                    else profile_input.input_flow_version
+                ),
+            )
+        for indicator_link in self.flow_profile.indicator_version_links.all():
+            ProcessingProfileIndicatorVersion.objects.create(
+                processing_profile_version=replacement_profile,
+                indicator_version=indicator_link.indicator_version,
+                proposed_by_default=indicator_link.proposed_by_default,
+            )
+        replacement_profile = publish_processing_profile(
+            replacement_profile,
+            actor=self.configuration_admin,
+        )
+        future = create_replacement_revision(
+            self.revision,
+            replacement_profile,
+            self.configuration_admin,
+            change_reason="Activate the replacement ingest deployment.",
+        )
+        future.valid_from = timezone.localdate() + timedelta(days=10)
+        future.save()
+        future = approve_revision(future, self.configuration_admin)
+
+        current_response = self._get(
+            self._path("ingest-authorization?data_category=netex")
+        )
+        self.assertEqual(
+            current_response.json()["flow"],
+            "netex-import/netex-ita-v001",
+        )
+
+        with patch(
+            "rpsd_config.exchange_agreement.services.ingest_resolution.timezone.localdate",
+            return_value=future.valid_from,
+        ):
+            future_response = self._get(
+                self._path("ingest-authorization?data_category=netex")
+            )
+        self.assertEqual(future_response.status_code, 200)
+        self.assertEqual(
+            future_response.json()["flow"],
+            "netex-import/netex-ita-v002",
+        )
+
+        rejected = self._get(
+            self._path(
+                "ingest-authorization?data_category=netex&reference_date="
+                f"{future.valid_from.isoformat()}"
+            )
+        )
+        self.assertEqual(rejected.status_code, 400)
