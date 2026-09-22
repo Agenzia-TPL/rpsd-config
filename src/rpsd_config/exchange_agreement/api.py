@@ -6,8 +6,8 @@ from urllib.parse import urlencode
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.http import HttpResponse
 from django.db.models import Q
+from django.http import HttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from ninja import NinjaAPI, Schema
@@ -32,6 +32,8 @@ from .models import (
     ContractInvitation,
     ContractMembership,
     ContractPublication,
+    Dataset,
+    DatasetSpecification,
     FlowProfile,
     IndicatorDef,
     IntegrationGrant,
@@ -52,6 +54,8 @@ from .services.agency_invitations import (
     AgencyInvitationValidationError,
     create_agency_invitation,
 )
+from .services.configuration_assets import load_configuration_asset_content
+from .services.flow_profiles import get_default_flow_profile
 from .services.m2m_audit import audit_m2m_event
 from .services.m2m_grants import (
     accessible_contracts_for_principal,
@@ -59,9 +63,7 @@ from .services.m2m_grants import (
     require_m2m_contract_access,
     require_m2m_principal,
 )
-from .services.flow_profiles import get_default_flow_profile
 from .services.publication import PublishContractError, publish_contract
-from .services.configuration_assets import load_configuration_asset_content
 
 
 class InvitationCheckResponse(Schema):
@@ -126,6 +128,33 @@ class DatasetRefSchema(Schema):
     slug: str
     name: str
     description: str
+
+
+class DatasetSpecificationAssetSchema(Schema):
+    role: str
+    required: bool
+    asset_type: str
+    what: str
+    version: int
+    checksum_sha256: str
+
+
+class DatasetSpecificationSchema(Schema):
+    code: str
+    version: str
+    description: str
+    status: str
+    metadata: dict
+    published_at: str | None
+    assets: list[DatasetSpecificationAssetSchema]
+
+
+class DatasetCatalogSchema(Schema):
+    code: str
+    name: str
+    description: str
+    status: str
+    specifications: list[DatasetSpecificationSchema]
 
 
 class StructureSchema(Schema):
@@ -487,9 +516,54 @@ def _require_contract_invitation_creator(request, contract: Contract):
 
 def _dataset_ref(dataset) -> DatasetRefSchema:
     return DatasetRefSchema(
-        slug=dataset.slug,
+        slug=dataset.code,
         name=dataset.name,
         description=dataset.description,
+    )
+
+
+def _dataset_specification_schema(
+    specification: DatasetSpecification,
+) -> DatasetSpecificationSchema:
+    links = specification.asset_links.select_related("configuration_asset").all()
+    assets = [
+        DatasetSpecificationAssetSchema(
+            role=link.role,
+            required=link.required,
+            asset_type=link.configuration_asset.asset_type,
+            what=link.configuration_asset.what,
+            version=link.configuration_asset.version,
+            checksum_sha256=link.configuration_asset.checksum_sha256,
+        )
+        for link in links
+    ]
+    return DatasetSpecificationSchema(
+        code=specification.code,
+        version=specification.version,
+        description=specification.description,
+        status=specification.status,
+        metadata=specification.metadata,
+        published_at=(
+            specification.published_at.isoformat()
+            if specification.published_at
+            else None
+        ),
+        assets=assets,
+    )
+
+
+def _dataset_catalog_schema(dataset: Dataset) -> DatasetCatalogSchema:
+    specifications = [
+        _dataset_specification_schema(specification)
+        for specification in dataset.specifications.all()
+        if specification.status == DatasetSpecification.Status.PUBLISHED
+    ]
+    return DatasetCatalogSchema(
+        code=dataset.code,
+        name=dataset.name,
+        description=dataset.description,
+        status=dataset.status,
+        specifications=specifications,
     )
 
 
@@ -533,7 +607,7 @@ def _structure_schema(structure: Structure) -> StructureSchema:
 
 def _indicator_schema(indicator: IndicatorDef) -> IndicatorSchema:
     structures_raw = list(indicator.structures.all())
-    structures_raw.sort(key=lambda s: (s.dataset.slug, s.name))
+    structures_raw.sort(key=lambda s: (s.dataset.code, s.name))
     structures = [_structure_schema(s) for s in structures_raw]
     return IndicatorSchema(
         code=indicator.code,
@@ -715,7 +789,7 @@ def _contract_required_inputs_schema(contract: Contract) -> RequiredInputsRespon
         indicator_code = link.indicator.code
         for structure in link.indicator.structures.all():
             dataset = structure.dataset
-            key = dataset.slug
+            key = dataset.code
             group = groups.setdefault(
                 key,
                 {
@@ -1384,7 +1458,7 @@ def get_indicator_structures(request, indicator_code: str):
         _structure_schema(s)
         for s in indicator.structures.select_related("dataset")
         .all()
-        .order_by("dataset__slug", "name")
+        .order_by("dataset__code", "name")
     ]
 
 
@@ -1393,11 +1467,44 @@ def list_structures(request, dataset_slug: str | None = None):
     _require_auth(request)
     qs = Structure.objects.select_related("dataset").all()
     if dataset_slug:
-        qs = qs.filter(dataset__slug=dataset_slug)
+        qs = qs.filter(dataset__code=dataset_slug)
     return [
         _structure_schema(structure)
-        for structure in qs.order_by("dataset__slug", "name")
+        for structure in qs.order_by("dataset__code", "name")
     ]
+
+
+@api.get("/v1/datasets", response=list[DatasetCatalogSchema])
+def list_published_datasets(request):
+    _require_auth(request)
+    datasets = (
+        Dataset.objects.filter(
+            status=Dataset.Status.ACTIVE,
+            specifications__status=DatasetSpecification.Status.PUBLISHED,
+        )
+        .prefetch_related("specifications__asset_links__configuration_asset")
+        .order_by("code")
+        .distinct()
+    )
+    return [_dataset_catalog_schema(dataset) for dataset in datasets]
+
+
+@api.get("/v1/datasets/{dataset_code}", response=DatasetCatalogSchema)
+def get_published_dataset(request, dataset_code: str):
+    _require_auth(request)
+    dataset = (
+        Dataset.objects.filter(
+            code=dataset_code,
+            status=Dataset.Status.ACTIVE,
+            specifications__status=DatasetSpecification.Status.PUBLISHED,
+        )
+        .prefetch_related("specifications__asset_links__configuration_asset")
+        .distinct()
+        .first()
+    )
+    if dataset is None:
+        raise HttpError(404, "Published dataset not found.")
+    return _dataset_catalog_schema(dataset)
 
 
 @api.get("/v1/structures/{structure_id}", response=StructureSchema)

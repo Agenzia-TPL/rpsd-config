@@ -186,13 +186,13 @@ class Command(BaseCommand):
     def _ensure_datasets(self):
         specs = [
             ("netex", "NeTEx"),
-            ("siri_pt", "SIRI PT"),
-            ("siri_vm", "SIRI VM"),
+            ("siri-pt", "SIRI PT"),
+            ("siri-vm", "SIRI VM"),
         ]
         items = []
-        for slug, name in specs:
+        for code, name in specs:
             obj, _ = Dataset.objects.get_or_create(
-                slug=slug,
+                code=code,
                 defaults={"name": name, "description": f"Dummy dataset {name}"},
             )
             items.append(obj)
@@ -202,9 +202,9 @@ class Command(BaseCommand):
         items = []
         for dataset in datasets:
             for idx in range(1, 3):
-                name = f"{dataset.slug}_structure_{idx}"
+                name = f"{dataset.code}_structure_{idx}"
                 definition = {
-                    "xpath": f"//{dataset.slug}/node_{idx}",
+                    "xpath": f"//{dataset.code}/node_{idx}",
                     "fields": ["id", "timestamp", f"value_{idx}"],
                 }
                 obj, _ = Structure.objects.get_or_create(

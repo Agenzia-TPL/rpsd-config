@@ -3,16 +3,27 @@
 from datetime import datetime
 
 from django.contrib import admin
+from django.core.exceptions import ValidationError
 from django.db.models.expressions import DatabaseDefault
 from django.utils import timezone
 from django.utils.formats import date_format
 
 from rpsd_config import admin_hidden  # noqa: F401
+from rpsd_config.exchange_agreement.models import DatasetSpecificationAsset
+from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
+from rpsd_config.exchange_agreement.services.dataset_catalog import (
+    DatasetSpecificationTransitionError,
+    deprecate_dataset_specification,
+    publish_dataset_specification,
+    withdraw_dataset_specification,
+)
 
 from .proxies import (
     ConfigurationAssetAdminProxy,
     ConfigurationAssetEventAdminProxy,
     DatasetAdminProxy,
+    DatasetSpecificationAdminProxy,
+    DatasetSpecificationStatusEventAdminProxy,
     IndicatorDefAdminProxy,
     IndicatorProfileAdminProxy,
     NetexValidationProfileAdminProxy,
@@ -45,19 +56,157 @@ class _HumanReadableTimestampsMixin:
         return self._format_timestamp(getattr(obj, "updated_at", None))
 
 
+class _PlatformCatalogAdminMixin:
+    @staticmethod
+    def _can_manage(request):
+        user = request.user
+        return bool(
+            user.is_superuser or resolve_user_agency_scope(user).is_platform_admin
+        )
+
+    def has_module_permission(self, request):
+        return self._can_manage(request)
+
+    def has_view_permission(self, request, obj=None):
+        return self._can_manage(request)
+
+    def has_add_permission(self, request):
+        return self._can_manage(request)
+
+    def has_change_permission(self, request, obj=None):
+        return self._can_manage(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return self._can_manage(request)
+
+
 @admin.register(DatasetAdminProxy)
-class DatasetAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
-    list_display = ("slug", "name", "created_at", "updated_at")
-    search_fields = ("slug", "name")
-    ordering = ("slug",)
+class DatasetAdmin(
+    _PlatformCatalogAdminMixin,
+    _HumanReadableTimestampsMixin,
+    admin.ModelAdmin,
+):
+    list_display = ("code", "name", "status", "created_at", "updated_at")
+    list_filter = ("status",)
+    search_fields = ("code", "name")
+    ordering = ("code",)
     readonly_fields = ("created_at_human", "updated_at_human")
+
+
+class DatasetSpecificationAssetInline(admin.TabularInline):
+    model = DatasetSpecificationAsset
+    extra = 0
+    autocomplete_fields = ("configuration_asset",)
+
+    def has_add_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+    def has_change_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+    def has_delete_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+
+@admin.register(DatasetSpecificationAdminProxy)
+class DatasetSpecificationAdmin(
+    _PlatformCatalogAdminMixin,
+    _HumanReadableTimestampsMixin,
+    admin.ModelAdmin,
+):
+    list_display = (
+        "code",
+        "dataset",
+        "version",
+        "status",
+        "published_at",
+        "updated_at",
+    )
+    list_filter = ("status", "dataset")
+    search_fields = ("code", "version", "description", "dataset__code")
+    autocomplete_fields = ("dataset", "published_by")
+    readonly_fields = (
+        "status",
+        "published_by",
+        "published_at",
+        "created_at_human",
+        "updated_at_human",
+    )
+    inlines = (DatasetSpecificationAssetInline,)
+    actions = ("publish_selected", "deprecate_selected", "withdraw_selected")
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None and obj.status != obj.Status.DRAFT:
+            fields.extend(["dataset", "code", "version", "description", "metadata"])
+        return fields
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.status != obj.Status.DRAFT:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def _transition_selected(self, request, queryset, transition):
+        completed = 0
+        for specification in queryset:
+            try:
+                transition(specification, actor=request.user)
+                completed += 1
+            except (DatasetSpecificationTransitionError, ValidationError) as exc:
+                self.message_user(request, str(exc), level="ERROR")
+        if completed:
+            self.message_user(request, f"Updated specifications: {completed}")
+
+    @admin.action(description="Publish selected specifications")
+    def publish_selected(self, request, queryset):
+        self._transition_selected(request, queryset, publish_dataset_specification)
+
+    @admin.action(description="Deprecate selected specifications")
+    def deprecate_selected(self, request, queryset):
+        self._transition_selected(request, queryset, deprecate_dataset_specification)
+
+    @admin.action(description="Withdraw selected specifications")
+    def withdraw_selected(self, request, queryset):
+        self._transition_selected(request, queryset, withdraw_dataset_specification)
+
+
+@admin.register(DatasetSpecificationStatusEventAdminProxy)
+class DatasetSpecificationStatusEventAdmin(
+    _PlatformCatalogAdminMixin,
+    admin.ModelAdmin,
+):
+    list_display = (
+        "dataset_specification",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "changed_at",
+    )
+    list_filter = ("to_status", "changed_at")
+    search_fields = ("dataset_specification__code", "changed_by__username")
+    readonly_fields = (
+        "dataset_specification",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "changed_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(StructureAdminProxy)
 class StructureAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     list_display = ("dataset", "name", "created_at", "updated_at")
     list_filter = ("dataset",)
-    search_fields = ("name", "dataset__slug", "dataset__name")
+    search_fields = ("name", "dataset__code", "dataset__name")
     autocomplete_fields = ("dataset",)
     readonly_fields = ("created_at_human", "updated_at_human")
 
@@ -81,7 +230,7 @@ class IndicatorDefAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
         "sql_procedure_name",
         "sql_snippet",
         "structures__name",
-        "structures__dataset__slug",
+        "structures__dataset__code",
     )
     autocomplete_fields = ("structures",)
     readonly_fields = ("created_at_human", "updated_at_human")

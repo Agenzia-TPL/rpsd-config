@@ -15,6 +15,7 @@ from rpsd_config.exchange_agreement.models import (
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
+    OperationalFlow,
 )
 from rpsd_config.server.m2m_auth import (
     M2MAuthContext,
@@ -49,6 +50,16 @@ class CompanyM2MApiAuthTests(TestCase):
             short_description="M2M-API-OTHER",
             description="Other Lot M2M API",
         )
+        OperationalFlow.objects.create(
+            code="m2m-netex_001",
+            deployment_name="ingest-flow/netex",
+            supported_what="netex",
+        )
+        OperationalFlow.objects.create(
+            code="m2m-siri_001",
+            deployment_name="ingest-flow/siri",
+            supported_what="siri",
+        )
         self.flow_profile = FlowProfile.objects.create(
             code="m2m-api-flow-profile",
             name="M2M API Flow Profile",
@@ -57,12 +68,12 @@ class CompanyM2MApiAuthTests(TestCase):
                 "planned_master": {},
                 "data_ingestion": {
                     "netex": {
-                        "flow": "ingest-flow/netex",
+                        "flow": "m2m-netex_001",
                         "active": True,
                         "description": "NeTEx ingest",
                     },
                     "siri": {
-                        "flow": "ingest-flow/siri",
+                        "flow": "m2m-siri_001",
                         "active": False,
                         "description": "SIRI ingest",
                     },
@@ -196,7 +207,7 @@ class CompanyM2MApiAuthTests(TestCase):
         self.assertEqual(payload["contract_code"], self.contract.contract_code)
         self.assertEqual(payload["data_category"], "netex")
         self.assertEqual(payload["flow_profile_code"], self.flow_profile.code)
-        self.assertEqual(payload["flow"], "ingest-flow/netex")
+        self.assertEqual(payload["flow"], "m2m-netex_001")
 
     def test_m2m_ingest_authorization_rejects_inactive_data_category(self):
         path = (

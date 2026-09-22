@@ -607,18 +607,264 @@ def structure_validation_path(instance, filename):
 
 
 class Dataset(TimeStampedModel):
-    slug = models.SlugField(unique=True, help_text="e.g. netex, siri_pt, siri_vm, ...")
+    class Status(models.TextChoices):
+        ACTIVE = "active", _("Active")
+        DEPRECATED = "deprecated", _("Deprecated")
+
+    CODE_REGEX = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    code_validator = RegexValidator(
+        regex=CODE_REGEX,
+        message=_(
+            "Dataset code must contain lowercase letters, digits and hyphens "
+            "(examples: netex, siri-vm)."
+        ),
+    )
+
+    code = models.SlugField(
+        unique=True,
+        validators=[code_validator],
+        help_text="Canonical TransportMessage.what value, e.g. netex or siri-vm.",
+    )
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ACTIVE,
+        db_index=True,
+    )
 
-    # Consider storing a dataset-level validation schema reference (e.g. XSD).
     class Meta:
         verbose_name = "Dataset"
         verbose_name_plural = "Datasets"
-        ordering = ["slug"]
+        ordering = ["code"]
 
     def __str__(self) -> str:
-        return f"{self.name} ({self.slug})"
+        return f"{self.name} ({self.code})"
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip().lower()
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class DatasetSpecification(TimeStampedModel):
+    """Versioned technical specification of a logical dataset."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", _("Draft")
+        PUBLISHED = "published", _("Published")
+        DEPRECATED = "deprecated", _("Deprecated")
+        WITHDRAWN = "withdrawn", _("Withdrawn")
+
+    dataset = models.ForeignKey(
+        Dataset,
+        on_delete=models.PROTECT,
+        related_name="specifications",
+    )
+    code = models.CharField(max_length=96, unique=True)
+    version = models.CharField(max_length=32)
+    description = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dataset_specifications_published",
+    )
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    assets = models.ManyToManyField(
+        ConfigurationAsset,
+        through="DatasetSpecificationAsset",
+        related_name="dataset_specifications",
+        blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Dataset specification"
+        verbose_name_plural = "Dataset specifications"
+        ordering = ["dataset__code", "version", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["dataset", "version"],
+                name="uniq_dataset_specification_version",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["dataset", "status"],
+                name="ix_dataset_spec_dataset_status",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} ({self.status})"
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.version = (self.version or "").strip()
+        errors = {}
+        if not self.code:
+            errors["code"] = _("Specification code is required.")
+        if not self.version:
+            errors["version"] = _("Specification version is required.")
+        if not isinstance(self.metadata, dict):
+            errors["metadata"] = _("Metadata must be a JSON object.")
+
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).first()
+            if original is not None:
+                if self.status != original.status:
+                    errors["status"] = _(
+                        "Use the dataset specification lifecycle service to "
+                        "change status."
+                    )
+                if original.status != self.Status.DRAFT:
+                    semantic_fields = (
+                        "dataset_id",
+                        "code",
+                        "version",
+                        "description",
+                        "metadata",
+                    )
+                    changed = [
+                        field
+                        for field in semantic_fields
+                        if getattr(self, field) != getattr(original, field)
+                    ]
+                    if changed:
+                        errors["__all__"] = _(
+                            "Published, deprecated or withdrawn specifications are "
+                            "immutable; create a new version instead."
+                        )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status != self.Status.DRAFT:
+            raise ValidationError(
+                _("Only draft dataset specifications can be deleted.")
+            )
+        return super().delete(*args, **kwargs)
+
+
+class DatasetSpecificationAsset(models.Model):
+    class Role(models.TextChoices):
+        VALIDATION_SCHEMA = "validation_schema", _("Validation schema")
+        CONSTRAINT = "constraint", _("Constraint")
+        DOCUMENTATION = "documentation", _("Documentation")
+        EXAMPLE = "example", _("Example")
+        OTHER = "other", _("Other")
+
+    dataset_specification = models.ForeignKey(
+        DatasetSpecification,
+        on_delete=models.CASCADE,
+        related_name="asset_links",
+    )
+    configuration_asset = models.ForeignKey(
+        ConfigurationAsset,
+        on_delete=models.PROTECT,
+        related_name="dataset_specification_links",
+    )
+    role = models.CharField(max_length=32, choices=Role.choices)
+    required = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Dataset specification asset"
+        verbose_name_plural = "Dataset specification assets"
+        ordering = ["role", "configuration_asset_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["dataset_specification", "configuration_asset", "role"],
+                name="uniq_dataset_spec_asset_role",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.dataset_specification.code}:{self.role}"
+
+    def clean(self):
+        super().clean()
+        specification = self.dataset_specification
+        asset = self.configuration_asset
+        current_status = specification.status
+        if specification.pk:
+            current_status = DatasetSpecification.objects.values_list(
+                "status", flat=True
+            ).get(pk=specification.pk)
+        if current_status != DatasetSpecification.Status.DRAFT:
+            raise ValidationError(
+                _("Assets can be changed only while the specification is draft.")
+            )
+        if asset.what != specification.dataset.code:
+            raise ValidationError(
+                {
+                    "configuration_asset": _(
+                        "Asset what must match the logical dataset code."
+                    )
+                }
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        current_status = DatasetSpecification.objects.values_list(
+            "status", flat=True
+        ).get(pk=self.dataset_specification_id)
+        if current_status != DatasetSpecification.Status.DRAFT:
+            raise ValidationError(
+                _("Assets can be changed only while the specification is draft.")
+            )
+        return super().delete(*args, **kwargs)
+
+
+class DatasetSpecificationStatusEvent(models.Model):
+    dataset_specification = models.ForeignKey(
+        DatasetSpecification,
+        on_delete=models.PROTECT,
+        related_name="status_events",
+    )
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(
+        max_length=16,
+        choices=DatasetSpecification.Status.choices,
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="dataset_specification_status_changes",
+    )
+    changed_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "Dataset specification status event"
+        verbose_name_plural = "Dataset specification status events"
+        ordering = ["changed_at", "id"]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.dataset_specification.code}:"
+            f"{self.from_status or '-'}->{self.to_status}"
+        )
 
 
 class Structure(TimeStampedModel):
@@ -655,10 +901,10 @@ class Structure(TimeStampedModel):
                 fields=["dataset", "name"], name="unique_structure_dataset_name"
             )
         ]
-        ordering = ["dataset__slug", "name"]
+        ordering = ["dataset__code", "name"]
 
     def __str__(self) -> str:
-        return f"{self.dataset.slug}:{self.name}"
+        return f"{self.dataset.code}:{self.name}"
 
     def get_mandatory_fields(self):
         """Return required field names from JSON definition."""
@@ -883,7 +1129,8 @@ class FlowProfile(TimeStampedModel):
                     if getattr(self, field_name) != original_value:
                         errors[field_name] = _(
                             "This field cannot be changed while the flow profile "
-                            "is associated with contracts. Create a new version instead."
+                            "is associated with contracts. Create a new version "
+                            "instead."
                         )
                 if errors:
                     raise ValidationError(errors)

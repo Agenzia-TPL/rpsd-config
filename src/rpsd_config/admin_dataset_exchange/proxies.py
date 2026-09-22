@@ -4,6 +4,8 @@ from rpsd_config.exchange_agreement.models import (
     ConfigurationAsset,
     ConfigurationAssetEvent,
     Dataset,
+    DatasetSpecification,
+    DatasetSpecificationStatusEvent,
     IndicatorDef,
     IndicatorProfile,
     NetexValidationProfile,
@@ -18,6 +20,22 @@ class DatasetAdminProxy(Dataset):
         app_label = "admin_dataset_exchange"
         verbose_name = "Dataset"
         verbose_name_plural = "Datasets"
+
+
+class DatasetSpecificationAdminProxy(DatasetSpecification):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Dataset specification"
+        verbose_name_plural = "Dataset specifications"
+
+
+class DatasetSpecificationStatusEventAdminProxy(DatasetSpecificationStatusEvent):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Dataset specification status event"
+        verbose_name_plural = "Dataset specification status events"
 
 
 class StructureAdminProxy(Structure):

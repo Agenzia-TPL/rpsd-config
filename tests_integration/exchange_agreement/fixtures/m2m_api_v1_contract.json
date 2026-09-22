@@ -1,0 +1,114 @@
+{
+  "schema_version": "m2m-api-v1-golden-1",
+  "happy_path": {
+    "flow_profile": {
+      "status": 200,
+      "payload": {
+        "contract_code": "CTR-GOLDEN-001",
+        "flow_profile": {
+          "code": "golden-flow-profile",
+          "name": "Golden Flow Profile",
+          "schema_version": "1.0",
+          "is_active": true,
+          "description": "Stable profile used by the M2M v1 contract tests.",
+          "options": {
+            "general_profile": "golden-v1",
+            "planned_master": {},
+            "data_ingestion": {
+              "netex": {
+                "flow": "netex-golden_001",
+                "active": true,
+                "description": "NeTEx ingest"
+              },
+              "siri": {
+                "flow": "siri-golden_001",
+                "active": false,
+                "description": "SIRI ingest"
+              }
+            },
+            "data_retention": {}
+          }
+        }
+      }
+    },
+    "required_inputs": {
+      "status": 200,
+      "payload": {
+        "contract_code": "CTR-GOLDEN-001",
+        "required_inputs": [
+          {
+            "dataset": {
+              "slug": "netex",
+              "name": "NeTEx",
+              "description": "Scheduled public transport data."
+            },
+            "structures": [
+              {
+                "id": "<structure-id>",
+                "name": "scheduled-journey-movement",
+                "description": "Scheduled movements required by the indicator.",
+                "dataset": {
+                  "slug": "netex",
+                  "name": "NeTEx",
+                  "description": "Scheduled public transport data."
+                },
+                "definition": {
+                  "xpath": "//netex:ServiceJourney",
+                  "fields": [
+                    "LineRef",
+                    "JourneyPatternRef"
+                  ]
+                },
+                "xpath": "//netex:ServiceJourney",
+                "fields": [
+                  "LineRef",
+                  "JourneyPatternRef"
+                ]
+              }
+            ],
+            "used_by_indicators": [
+              "commercial-speed_001"
+            ]
+          }
+        ]
+      }
+    },
+    "ingest_authorization": {
+      "status": 200,
+      "payload": {
+        "allowed": true,
+        "contract_code": "CTR-GOLDEN-001",
+        "data_category": "netex",
+        "flow_profile_code": "golden-flow-profile",
+        "flow": "netex-golden_001",
+        "grant_id": "<grant-id>"
+      }
+    }
+  },
+  "rejections": {
+    "authentication_required": {
+      "status": 401,
+      "payload": {
+        "detail": "Unauthorized"
+      }
+    },
+    "grant_missing": {
+      "status": 403,
+      "payload": {
+        "detail": "M2M contract access denied: grant-missing."
+      }
+    },
+    "unsupported_data_category": {
+      "status": 400,
+      "payload": {
+        "detail": "Data category is not supported by flow profile."
+      }
+    },
+    "inactive_data_category": {
+      "status": 400,
+      "payload": {
+        "detail": "Data category is inactive for this contract."
+      }
+    }
+  }
+}

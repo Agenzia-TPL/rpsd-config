@@ -84,7 +84,7 @@ def _structure_snapshot(structure: Structure) -> dict[str, Any]:
     definition = structure.definition if isinstance(structure.definition, dict) else {}
     return {
         "dataset": {
-            "slug": structure.dataset.slug,
+            "slug": structure.dataset.code,
             "name": structure.dataset.name,
             "description": structure.dataset.description,
         },
@@ -99,7 +99,7 @@ def _structure_snapshot(structure: Structure) -> dict[str, Any]:
 def _indicator_snapshot(link: ContractIndicator) -> dict[str, Any]:
     indicator: IndicatorDef = link.indicator
     structures = list(indicator.structures.all())
-    structures.sort(key=lambda s: (s.dataset.slug, s.name))
+    structures.sort(key=lambda s: (s.dataset.code, s.name))
     return {
         "code": indicator.code,
         "type": indicator.type,
