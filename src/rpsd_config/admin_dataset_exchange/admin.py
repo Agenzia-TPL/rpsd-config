@@ -304,6 +304,7 @@ class RequirementFragmentAdmin(
                     "description",
                     "locator_type",
                     "result_kind",
+                    "locator_definition",
                 ]
             )
         return fields
