@@ -312,6 +312,38 @@ Behavior:
 
 ## Dummy Data Seed Command
 
+### Target-model development reset
+
+The target configuration model has its own idempotent demo seed:
+
+```bash
+uv run python src/rpsd_config/manage.py seed_target_demo
+```
+
+To rebuild a development database after a model cutover, first inspect the
+exact target without changing anything:
+
+```bash
+uv run python src/rpsd_config/manage.py reset_config_database --show-target
+```
+
+Then repeat the database name printed by that command as an explicit safety
+confirmation (for example, `rpsd`):
+
+```bash
+uv run python src/rpsd_config/manage.py reset_config_database --confirm-database rpsd
+```
+
+This command is deliberately restricted to `DEBUG=True`, PostgreSQL, the
+configured `default` database and its `public` schema. It refuses PostgreSQL
+maintenance databases, applies all Django migrations and runs
+`seed_target_demo`. It does not connect to or reset Keycloak, Prefect, ingest
+storage or any other service. Use `--skip-seed` only when an empty migrated
+config database is required.
+
+The older `seed_dummy_data --reset` option deletes application rows but does
+not recreate the schema and still represents the transitional legacy demo.
+
 Management command:
 
 - `src/rpsd_config/exchange_agreement/management/commands/seed_dummy_data.py`

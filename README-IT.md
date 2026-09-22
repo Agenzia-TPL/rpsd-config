@@ -151,6 +151,40 @@ oppure si lascia preparare da admin un account specifico e lo si assegna ad un u
 
 ## Comandi Django per seed dummy completo.
 
+### Reset di sviluppo del modello target
+
+Il modello di configurazione target dispone di un seed dimostrativo
+idempotente:
+
+```bash
+uv run python src/rpsd_config/manage.py seed_target_demo
+```
+
+Prima di ricreare il database di sviluppo, verificare il target esatto senza
+modificare nulla:
+
+```bash
+uv run python src/rpsd_config/manage.py reset_config_database --show-target
+```
+
+Ripetere quindi come conferma il nome database mostrato dal comando (per
+esempio `rpsd`):
+
+```bash
+uv run python src/rpsd_config/manage.py reset_config_database --confirm-database rpsd
+```
+
+Il comando funziona intenzionalmente soltanto con `DEBUG=True`, PostgreSQL, il
+database `default` configurato e il suo schema `public`. Rifiuta i database di
+manutenzione PostgreSQL, applica tutte le migrazioni Django ed esegue
+`seed_target_demo`. Non si collega e non cancella Keycloak, Prefect, lo storage
+ingest o altri servizi. Usare `--skip-seed` soltanto se serve un database config
+vuoto ma migrato.
+
+La precedente opzione `seed_dummy_data --reset` elimina soltanto le righe
+applicative, non ricrea lo schema e rappresenta ancora il demo legacy
+transitorio.
+
 File creati:
 - `src/rpsd_config/exchange_agreement/management/__init__.py`
 - `src/rpsd_config/exchange_agreement/management/commands/__init__.py`
