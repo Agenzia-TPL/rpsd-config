@@ -64,6 +64,7 @@ from .services.m2m_grants import (
     require_m2m_principal,
 )
 from .services.publication import PublishContractError, publish_contract
+from .services.requirement_fragments import serialize_requirement_fragment_catalog
 
 
 class InvitationCheckResponse(Schema):
@@ -139,6 +140,24 @@ class DatasetSpecificationAssetSchema(Schema):
     checksum_sha256: str
 
 
+class FragmentValidationRuleSchema(Schema):
+    rule_type: str
+    rule_version: int
+    severity: str
+    parameters: dict
+
+
+class RequirementFragmentSchema(Schema):
+    code: str
+    name: str
+    description: str
+    locator_type: str
+    result_kind: str
+    locator_definition: dict
+    status: str
+    rules: list[FragmentValidationRuleSchema]
+
+
 class DatasetSpecificationSchema(Schema):
     code: str
     version: str
@@ -147,6 +166,7 @@ class DatasetSpecificationSchema(Schema):
     metadata: dict
     published_at: str | None
     assets: list[DatasetSpecificationAssetSchema]
+    fragments: list[RequirementFragmentSchema]
 
 
 class DatasetCatalogSchema(Schema):
@@ -549,6 +569,7 @@ def _dataset_specification_schema(
             else None
         ),
         assets=assets,
+        fragments=serialize_requirement_fragment_catalog(specification),
     )
 
 
@@ -1482,7 +1503,10 @@ def list_published_datasets(request):
             status=Dataset.Status.ACTIVE,
             specifications__status=DatasetSpecification.Status.PUBLISHED,
         )
-        .prefetch_related("specifications__asset_links__configuration_asset")
+        .prefetch_related(
+            "specifications__asset_links__configuration_asset",
+            "specifications__requirement_fragments__validation_rules",
+        )
         .order_by("code")
         .distinct()
     )
@@ -1498,7 +1522,10 @@ def get_published_dataset(request, dataset_code: str):
             status=Dataset.Status.ACTIVE,
             specifications__status=DatasetSpecification.Status.PUBLISHED,
         )
-        .prefetch_related("specifications__asset_links__configuration_asset")
+        .prefetch_related(
+            "specifications__asset_links__configuration_asset",
+            "specifications__requirement_fragments__validation_rules",
+        )
         .distinct()
         .first()
     )

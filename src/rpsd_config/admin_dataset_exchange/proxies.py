@@ -9,6 +9,8 @@ from rpsd_config.exchange_agreement.models import (
     IndicatorDef,
     IndicatorProfile,
     NetexValidationProfile,
+    RequirementFragment,
+    RequirementFragmentStatusEvent,
     SiriValidationProfile,
     Structure,
 )
@@ -36,6 +38,22 @@ class DatasetSpecificationStatusEventAdminProxy(DatasetSpecificationStatusEvent)
         app_label = "admin_dataset_exchange"
         verbose_name = "Dataset specification status event"
         verbose_name_plural = "Dataset specification status events"
+
+
+class RequirementFragmentAdminProxy(RequirementFragment):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Requirement fragment"
+        verbose_name_plural = "Requirement fragments"
+
+
+class RequirementFragmentStatusEventAdminProxy(RequirementFragmentStatusEvent):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Requirement fragment status event"
+        verbose_name_plural = "Requirement fragment status events"
 
 
 class StructureAdminProxy(Structure):

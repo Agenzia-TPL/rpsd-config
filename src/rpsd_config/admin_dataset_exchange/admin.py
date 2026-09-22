@@ -9,7 +9,10 @@ from django.utils import timezone
 from django.utils.formats import date_format
 
 from rpsd_config import admin_hidden  # noqa: F401
-from rpsd_config.exchange_agreement.models import DatasetSpecificationAsset
+from rpsd_config.exchange_agreement.models import (
+    DatasetSpecificationAsset,
+    FragmentValidationRule,
+)
 from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
 from rpsd_config.exchange_agreement.services.dataset_catalog import (
     DatasetSpecificationTransitionError,
@@ -17,7 +20,17 @@ from rpsd_config.exchange_agreement.services.dataset_catalog import (
     publish_dataset_specification,
     withdraw_dataset_specification,
 )
+from rpsd_config.exchange_agreement.services.requirement_fragments import (
+    RequirementFragmentTransitionError,
+    deprecate_requirement_fragment,
+    publish_requirement_fragment,
+    withdraw_requirement_fragment,
+)
 
+from .forms import (
+    FragmentValidationRuleAdminForm,
+    RequirementFragmentAdminForm,
+)
 from .proxies import (
     ConfigurationAssetAdminProxy,
     ConfigurationAssetEventAdminProxy,
@@ -27,6 +40,8 @@ from .proxies import (
     IndicatorDefAdminProxy,
     IndicatorProfileAdminProxy,
     NetexValidationProfileAdminProxy,
+    RequirementFragmentAdminProxy,
+    RequirementFragmentStatusEventAdminProxy,
     SiriValidationProfileAdminProxy,
     StructureAdminProxy,
 )
@@ -186,6 +201,123 @@ class DatasetSpecificationStatusEventAdmin(
     search_fields = ("dataset_specification__code", "changed_by__username")
     readonly_fields = (
         "dataset_specification",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "changed_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class FragmentValidationRuleInline(admin.StackedInline):
+    model = FragmentValidationRule
+    form = FragmentValidationRuleAdminForm
+    extra = 0
+
+    def has_add_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+    def has_change_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+    def has_delete_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+
+@admin.register(RequirementFragmentAdminProxy)
+class RequirementFragmentAdmin(
+    _PlatformCatalogAdminMixin,
+    _HumanReadableTimestampsMixin,
+    admin.ModelAdmin,
+):
+    form = RequirementFragmentAdminForm
+    list_display = (
+        "code",
+        "dataset_specification",
+        "locator_type",
+        "result_kind",
+        "status",
+        "updated_at",
+    )
+    list_filter = ("status", "locator_type", "result_kind")
+    search_fields = (
+        "code",
+        "name",
+        "description",
+        "dataset_specification__code",
+    )
+    readonly_fields = ("status", "created_at_human", "updated_at_human")
+    inlines = (FragmentValidationRuleInline,)
+    actions = ("publish_selected", "deprecate_selected", "withdraw_selected")
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None and obj.status != obj.Status.DRAFT:
+            fields.extend(
+                [
+                    "dataset_specification",
+                    "code",
+                    "name",
+                    "description",
+                    "locator_type",
+                    "result_kind",
+                ]
+            )
+        return fields
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.status != obj.Status.DRAFT:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def _transition_selected(self, request, queryset, transition):
+        completed = 0
+        for fragment in queryset:
+            try:
+                transition(fragment, actor=request.user)
+                completed += 1
+            except (RequirementFragmentTransitionError, ValidationError) as exc:
+                self.message_user(request, str(exc), level="ERROR")
+        if completed:
+            self.message_user(request, f"Updated fragments: {completed}")
+
+    @admin.action(description="Publish selected requirement fragments")
+    def publish_selected(self, request, queryset):
+        self._transition_selected(request, queryset, publish_requirement_fragment)
+
+    @admin.action(description="Deprecate selected requirement fragments")
+    def deprecate_selected(self, request, queryset):
+        self._transition_selected(request, queryset, deprecate_requirement_fragment)
+
+    @admin.action(description="Withdraw selected requirement fragments")
+    def withdraw_selected(self, request, queryset):
+        self._transition_selected(request, queryset, withdraw_requirement_fragment)
+
+
+@admin.register(RequirementFragmentStatusEventAdminProxy)
+class RequirementFragmentStatusEventAdmin(
+    _PlatformCatalogAdminMixin,
+    admin.ModelAdmin,
+):
+    list_display = (
+        "requirement_fragment",
+        "from_status",
+        "to_status",
+        "changed_by",
+        "changed_at",
+    )
+    list_filter = ("to_status", "changed_at")
+    search_fields = ("requirement_fragment__code", "changed_by__username")
+    readonly_fields = (
+        "requirement_fragment",
         "from_status",
         "to_status",
         "changed_by",
