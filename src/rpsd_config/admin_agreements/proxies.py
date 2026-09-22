@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 from rpsd_config.exchange_agreement.models import (
     Contract,
+    ContractConfigurationRevision,
     ContractDocument,
     ContractIndicator,
     ContractInvitation,
@@ -18,6 +19,14 @@ class ContractAdminProxy(Contract):
         app_label = "admin_agreements"
         verbose_name = "Contract"
         verbose_name_plural = "Contracts"
+
+
+class ContractConfigurationRevisionAdminProxy(ContractConfigurationRevision):
+    class Meta:
+        proxy = True
+        app_label = "admin_agreements"
+        verbose_name = "Contract configuration revision"
+        verbose_name_plural = "Contract configuration revisions"
 
 
 class ContractDocumentAdminProxy(ContractDocument):

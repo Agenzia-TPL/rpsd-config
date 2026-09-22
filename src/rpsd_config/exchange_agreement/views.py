@@ -30,6 +30,7 @@ from .models import (
     Agency,
     AgencyInvitation,
     AgencyMembership,
+    AuthorityMembership,
     Company,
     ConfigurationAsset,
     Contract,
@@ -64,6 +65,18 @@ from .services.agency_memberships import (
     change_agency_membership_role,
     revoke_agency_membership,
 )
+from .services.configuration_assets import (
+    activate_configuration_asset,
+    archive_configuration_asset,
+    load_configuration_asset_content,
+    store_configuration_asset,
+)
+from .services.flow_profiles import (
+    ensure_standard_flow_profiles,
+    ensure_standard_operational_flows,
+    get_default_flow_profile,
+    summarize_flow_profile_options,
+)
 from .services.invitation_rejections import (
     InvitationRejectValidationError,
     reject_agency_invitation_for_user,
@@ -78,18 +91,6 @@ from .services.m2m_provisioning import (
     rotate_m2m_principal_secret,
 )
 from .services.m2m_secret_store import M2MSecretStoreError, reveal_client_secret
-from .services.flow_profiles import (
-    ensure_standard_flow_profiles,
-    ensure_standard_operational_flows,
-    get_default_flow_profile,
-    summarize_flow_profile_options,
-)
-from .services.configuration_assets import (
-    activate_configuration_asset,
-    archive_configuration_asset,
-    load_configuration_asset_content,
-    store_configuration_asset,
-)
 
 
 def _cache_group_membership_for_current_session(*, user, group_path: str) -> None:
@@ -1296,7 +1297,13 @@ def _contract_membership_for_user(*, user, contract: Contract):
 def _can_view_contract_directly(*, user, contract: Contract) -> bool:
     if user.is_superuser:
         return True
-    return _contract_membership_for_user(user=user, contract=contract) is not None
+    if _contract_membership_for_user(user=user, contract=contract) is not None:
+        return True
+    return AuthorityMembership.objects.filter(
+        authority_id=contract.governing_authority_id,
+        user=user,
+        is_active=True,
+    ).exists()
 
 
 def _can_manage_contract_from_membership(*, user, contract: Contract) -> bool:
@@ -1917,7 +1924,9 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
 
     companies = list(Company.objects.all().order_by("name"))
     lots = list(Lot.objects.filter(agency=agency).order_by("id"))
-    active_flow_profiles = list(FlowProfile.objects.filter(is_active=True).order_by("name"))
+    active_flow_profiles = list(
+        FlowProfile.objects.filter(is_active=True).order_by("name")
+    )
     default_flow_profile = get_default_flow_profile()
     status_choices = [
         (status_value, status_label)
@@ -2211,7 +2220,9 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "schema_version": request.POST.get("flow_schema_version", "").strip()
             or "1.0",
             "options": request.POST.get("flow_options", "").strip(),
-            "is_active": _normalize_boolean_flag(request.POST.get("flow_is_active", "")),
+            "is_active": _normalize_boolean_flag(
+                request.POST.get("flow_is_active", "")
+            ),
         }
         result_context["operational_flow_form_values"] = {
             "code": request.POST.get("operational_flow_code", "").strip(),
@@ -2242,7 +2253,10 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
 
             elif action == "create-operational-flow":
                 status = result_context["operational_flow_form_values"]["status"]
-                if status not in {choice[0] for choice in OperationalFlow.Status.choices}:
+                allowed_statuses = {
+                    choice[0] for choice in OperationalFlow.Status.choices
+                }
+                if status not in allowed_statuses:
                     raise ValidationError("Stato flow operativo non supportato.")
                 flow = OperationalFlow(
                     code=result_context["operational_flow_form_values"]["code"],
@@ -2276,7 +2290,10 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             elif action == "set-operational-flow-status":
                 flow_id = int(request.POST.get("flow_id", "0"))
                 status = request.POST.get("status", "").strip()
-                if status not in {choice[0] for choice in OperationalFlow.Status.choices}:
+                allowed_statuses = {
+                    choice[0] for choice in OperationalFlow.Status.choices
+                }
+                if status not in allowed_statuses:
                     raise ValidationError("Stato flow operativo non supportato.")
                 flow = OperationalFlow.objects.filter(pk=flow_id).first()
                 if flow is None:

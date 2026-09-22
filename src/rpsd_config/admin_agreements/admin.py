@@ -3,12 +3,25 @@
 from datetime import datetime
 
 from django.contrib import admin, messages
+from django.core.exceptions import ValidationError
 from django.db.models.expressions import DatabaseDefault
 from django.utils import timezone
 from django.utils.formats import date_format
 
 from rpsd_config import admin_hidden  # noqa: F401
-from rpsd_config.exchange_agreement.models import Contract
+from rpsd_config.exchange_agreement.models import (
+    Contract,
+    ContractIndicatorConfiguration,
+    ContractInputSelection,
+    ProcessingProfileIndicatorVersion,
+    ProcessingProfileInputFlow,
+    ProcessingProfileVersion,
+)
+from rpsd_config.exchange_agreement.services.contract_revisions import (
+    ContractRevisionError,
+    approve_contract_revision,
+    withdraw_contract_revision,
+)
 from rpsd_config.exchange_agreement.services.publication import (
     PublishContractError,
     publish_contract,
@@ -16,6 +29,7 @@ from rpsd_config.exchange_agreement.services.publication import (
 
 from .proxies import (
     ContractAdminProxy,
+    ContractConfigurationRevisionAdminProxy,
     ContractDocumentAdminProxy,
     ContractIndicatorAdminProxy,
     ContractInvitationAdminProxy,
@@ -56,6 +70,20 @@ class ContractInvitationInline(admin.TabularInline):
     readonly_fields = ("token",)
     autocomplete_fields = ("invited_by",)
     show_change_link = True
+
+
+class ContractConfigurationRevisionInline(admin.TabularInline):
+    model = ContractConfigurationRevisionAdminProxy
+    extra = 0
+    fields = ("code", "revision_number", "valid_from", "status")
+    readonly_fields = fields
+    show_change_link = True
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class _HumanReadableTimestampsMixin:
@@ -117,10 +145,12 @@ class ContractAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
         ContractIndicatorInline,
         ContractMembershipInline,
         ContractInvitationInline,
+        ContractConfigurationRevisionInline,
     )
     autocomplete_fields = (
         "client_agency",
         "contractor_company",
+        "governing_authority",
         "lot",
         "replaced_by",
         "flow_profile",
@@ -128,6 +158,7 @@ class ContractAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     list_select_related = (
         "client_agency",
         "contractor_company",
+        "governing_authority",
         "lot",
         "replaced_by",
         "flow_profile",
@@ -140,7 +171,17 @@ class ContractAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     )
     fieldsets = (
         (None, {"fields": ("contract_code", "contract_type", "version")}),
-        ("Parties", {"fields": ("client_agency", "contractor_company", "lot")}),
+        (
+            "Parties",
+            {
+                "fields": (
+                    "client_agency",
+                    "contractor_company",
+                    "governing_authority",
+                    "lot",
+                )
+            },
+        ),
         ("Validity", {"fields": ("start_date", "end_date")}),
         (
             "Lifecycle",
@@ -160,6 +201,7 @@ class ContractAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
                     "contract_code",
                     "client_agency",
                     "contractor_company",
+                    "governing_authority",
                     "start_date",
                     "end_date",
                     "tender_id",
@@ -248,10 +290,141 @@ class ContractDocumentAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
 
 @admin.register(ContractIndicatorAdminProxy)
 class ContractIndicatorAdmin(admin.ModelAdmin):
-    list_display = ("contract", "indicator")
+    list_display = ("contract", "logical_indicator", "indicator")
     list_filter = ("indicator__type", "indicator__structures__dataset")
     search_fields = ("contract__contract_code", "indicator__code", "indicator__name")
     autocomplete_fields = ("contract", "indicator")
+
+
+class ContractInputSelectionInline(admin.TabularInline):
+    model = ContractInputSelection
+    extra = 0
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "processing_profile_input_flow":
+            kwargs["queryset"] = ProcessingProfileInputFlow.objects.filter(
+                processing_profile_version__status=ProcessingProfileVersion.Status.PUBLISHED
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def has_add_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+    def has_change_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+    def has_delete_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+
+class ContractIndicatorConfigurationInline(admin.TabularInline):
+    model = ContractIndicatorConfiguration
+    extra = 0
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "processing_profile_indicator_version":
+            kwargs["queryset"] = ProcessingProfileIndicatorVersion.objects.filter(
+                processing_profile_version__status=ProcessingProfileVersion.Status.PUBLISHED
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def has_add_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+    def has_change_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+    def has_delete_permission(self, request, obj=None):
+        return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+
+@admin.register(ContractConfigurationRevisionAdminProxy)
+class ContractConfigurationRevisionAdmin(
+    _HumanReadableTimestampsMixin,
+    admin.ModelAdmin,
+):
+    list_display = (
+        "code",
+        "contract",
+        "revision_number",
+        "processing_profile_version",
+        "valid_from",
+        "status",
+        "approved_at",
+    )
+    list_filter = ("status", "valid_from", "processing_profile_version")
+    search_fields = ("code", "contract__contract_code", "change_reason")
+    autocomplete_fields = (
+        "contract",
+        "created_by",
+        "approved_by",
+        "withdrawn_by",
+    )
+    readonly_fields = (
+        "status",
+        "snapshot_schema_version",
+        "configuration_snapshot",
+        "snapshot_checksum",
+        "approved_by",
+        "approved_at",
+        "withdrawn_by",
+        "withdrawn_at",
+        "created_at_human",
+        "updated_at_human",
+    )
+    inlines = (ContractInputSelectionInline, ContractIndicatorConfigurationInline)
+    actions = ("approve_selected", "withdraw_selected")
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "processing_profile_version":
+            kwargs["queryset"] = ProcessingProfileVersion.objects.filter(
+                status=ProcessingProfileVersion.Status.PUBLISHED
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None and obj.status != obj.Status.DRAFT:
+            fields.extend(
+                [
+                    "contract",
+                    "revision_number",
+                    "code",
+                    "processing_profile_version",
+                    "valid_from",
+                    "change_reason",
+                    "replaces_revision",
+                ]
+            )
+        return fields
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.status != obj.Status.DRAFT:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def _transition_selected(self, request, queryset, transition):
+        completed = 0
+        for revision in queryset:
+            try:
+                transition(revision, actor=request.user)
+                completed += 1
+            except (ContractRevisionError, ValidationError) as exc:
+                self.message_user(request, str(exc), level=messages.ERROR)
+        if completed:
+            self.message_user(
+                request,
+                f"Updated contract revisions: {completed}",
+                level=messages.SUCCESS,
+            )
+
+    @admin.action(description="Approve selected contract revisions")
+    def approve_selected(self, request, queryset):
+        self._transition_selected(request, queryset, approve_contract_revision)
+
+    @admin.action(description="Withdraw selected contract revisions")
+    def withdraw_selected(self, request, queryset):
+        self._transition_selected(request, queryset, withdraw_contract_revision)
 
 
 @admin.register(ContractMembershipAdminProxy)

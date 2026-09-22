@@ -11,7 +11,13 @@ from rpsd_config.exchange_agreement.models import (
     IndicatorProfile,
     IndicatorVersion,
     IndicatorVersionStatusEvent,
+    InputFlowVersion,
+    InputFlowVersionStatusEvent,
     NetexValidationProfile,
+    OrchestrationFlowVersion,
+    OrchestrationFlowVersionStatusEvent,
+    ProcessingProfileVersion,
+    ProcessingProfileVersionStatusEvent,
     RequirementFragment,
     RequirementFragmentStatusEvent,
     SiriValidationProfile,
@@ -81,6 +87,58 @@ class IndicatorVersionStatusEventAdminProxy(IndicatorVersionStatusEvent):
         app_label = "admin_dataset_exchange"
         verbose_name = "Indicator version status event"
         verbose_name_plural = "Indicator version status events"
+
+
+class InputFlowVersionAdminProxy(InputFlowVersion):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Input flow version"
+        verbose_name_plural = "Input flow versions"
+
+
+class InputFlowVersionStatusEventAdminProxy(InputFlowVersionStatusEvent):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Input flow version status event"
+        verbose_name_plural = "Input flow version status events"
+
+
+class OrchestrationFlowVersionAdminProxy(OrchestrationFlowVersion):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Orchestration flow version"
+        verbose_name_plural = "Orchestration flow versions"
+
+
+class OrchestrationFlowVersionStatusEventAdminProxy(
+    OrchestrationFlowVersionStatusEvent
+):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Orchestration flow version status event"
+        verbose_name_plural = "Orchestration flow version status events"
+
+
+class ProcessingProfileVersionAdminProxy(ProcessingProfileVersion):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Processing profile version"
+        verbose_name_plural = "Processing profile versions"
+
+
+class ProcessingProfileVersionStatusEventAdminProxy(
+    ProcessingProfileVersionStatusEvent
+):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Processing profile version status event"
+        verbose_name_plural = "Processing profile version status events"
 
 
 class StructureAdminProxy(Structure):

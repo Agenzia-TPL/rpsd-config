@@ -6,6 +6,10 @@ import re
 
 from django.core.exceptions import ValidationError
 
+from rpsd_config.exchange_agreement.services.executable_references import (
+    validate_artifact_identifier,
+)
+
 EXECUTION_PREFECT = "prefect"
 EXECUTION_DBT = "dbt"
 EXECUTION_EXTERNAL = "external"
@@ -15,17 +19,7 @@ SUPPORTED_EXECUTION_ENGINES = (
     EXECUTION_EXTERNAL,
 )
 
-ARTIFACT_IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9+.-]*:\S+$")
 CONTRACT_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$")
-
-
-def validate_artifact_identifier(value: str) -> str:
-    normalized = (value or "").strip()
-    if len(normalized) > 512 or not ARTIFACT_IDENTIFIER_RE.fullmatch(normalized):
-        raise ValidationError(
-            "artifact_identifier must use <scheme>:<opaque-value>, without spaces."
-        )
-    return normalized
 
 
 def validate_technical_contract(value, *, field_name: str) -> dict:

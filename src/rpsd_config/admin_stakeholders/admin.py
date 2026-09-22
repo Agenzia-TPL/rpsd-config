@@ -11,7 +11,12 @@ from django.contrib.gis.db.models import GeometryField
 from leaflet.admin import LeafletGeoAdmin
 from leaflet.forms.widgets import LeafletWidget
 
-from .proxies import AgencyAdminProxy, AuthorityAdminProxy, CompanyAdminProxy
+from .proxies import (
+    AgencyAdminProxy,
+    AuthorityAdminProxy,
+    AuthorityMembershipAdminProxy,
+    CompanyAdminProxy,
+)
 
 # Alternative setup: import `LeafletWidget` and configure it via `formfield_overrides`.
 
@@ -55,3 +60,12 @@ class AuthorityAdmin(GeomAdmin):
     # gis_widget_kwargs = {"lon": 0, "lat": 0, "zoom": 2}
     # If rendering issues persist, try setting the widget explicitly.
     # gis_widget = OSMWidget
+
+
+@admin.register(AuthorityMembershipAdminProxy)
+class AuthorityMembershipAdmin(admin.ModelAdmin):
+    list_display = ("authority", "user", "is_active", "created_at")
+    list_filter = ("is_active", "authority")
+    search_fields = ("authority__name", "user__username", "user__email")
+    autocomplete_fields = ("authority", "user", "created_by")
+    readonly_fields = ("created_at", "updated_at")

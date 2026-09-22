@@ -1,6 +1,11 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
-from rpsd_config.exchange_agreement.models import Agency, Authority, Company
+from rpsd_config.exchange_agreement.models import (
+    Agency,
+    Authority,
+    AuthorityMembership,
+    Company,
+)
 
 
 class AgencyAdminProxy(Agency):
@@ -25,3 +30,11 @@ class AuthorityAdminProxy(Authority):
         app_label = "admin_stakeholders"
         verbose_name = "Authority"
         verbose_name_plural = "Authorities"
+
+
+class AuthorityMembershipAdminProxy(AuthorityMembership):
+    class Meta:
+        proxy = True
+        app_label = "admin_stakeholders"
+        verbose_name = "Authority membership"
+        verbose_name_plural = "Authority memberships"

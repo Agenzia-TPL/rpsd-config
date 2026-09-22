@@ -38,9 +38,12 @@ from .models import (
     Indicator,
     IndicatorDef,
     IndicatorVersion,
+    InputFlowVersion,
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
+    OrchestrationFlowVersion,
+    ProcessingProfileVersion,
     Structure,
 )
 from .rbac import resolve_user_agency_scope
@@ -57,6 +60,10 @@ from .services.agency_invitations import (
     create_agency_invitation,
 )
 from .services.configuration_assets import load_configuration_asset_content
+from .services.flow_catalog import (
+    input_flow_runtime_projection,
+    orchestration_flow_runtime_projection,
+)
 from .services.flow_profiles import get_default_flow_profile
 from .services.indicator_catalog import serialize_indicator_catalog_entry
 from .services.m2m_audit import audit_m2m_event
@@ -65,6 +72,10 @@ from .services.m2m_grants import (
     ensure_default_contract_ingest_grant,
     require_m2m_contract_access,
     require_m2m_principal,
+)
+from .services.processing_profiles import (
+    legacy_flow_profile_options,
+    serialize_processing_profile,
 )
 from .services.publication import PublishContractError, publish_contract
 from .services.requirement_fragments import serialize_requirement_fragment_catalog
@@ -201,6 +212,61 @@ class IndicatorCatalogSchema(Schema):
     description: str
     status: str
     versions: list[IndicatorVersionCatalogSchema]
+
+
+class InputFlowCatalogSchema(Schema):
+    code: str
+    version: str
+    name: str
+    description: str
+    dataset_specification_code: str
+    what: str
+    engine: str
+    deployment_name: str
+    artifact_identifier: str
+    invocation_contract: dict
+    compatibility: dict
+    status: str
+    published_at: str | None
+
+
+class OrchestrationFlowCatalogSchema(Schema):
+    code: str
+    version: str
+    name: str
+    description: str
+    engine: str
+    deployment_name: str
+    artifact_identifier: str
+    invocation_contract: dict
+    status: str
+    published_at: str | None
+
+
+class ProcessingProfileInputSchema(Schema):
+    dataset_code: str
+    dataset_name: str
+    dataset_specification_code: str
+    dataset_specification_version: str
+
+
+class ProcessingProfileIndicatorSchema(Schema):
+    indicator_code: str
+    indicator_name: str
+    indicator_version_code: str
+    indicator_version: str
+    proposed_by_default: bool
+
+
+class ProcessingProfileCatalogSchema(Schema):
+    code: str
+    version: str
+    name: str
+    description: str
+    status: str
+    published_at: str | None
+    inputs: list[ProcessingProfileInputSchema]
+    indicators: list[ProcessingProfileIndicatorSchema]
 
 
 class StructureSchema(Schema):
@@ -470,7 +536,12 @@ def _require_auth(request):
 def _authorized_contracts_qs(request):
     user = _require_auth(request)
     qs = Contract.objects.select_related(
-        "lot", "client_agency", "contractor_company", "replaced_by", "flow_profile"
+        "lot",
+        "client_agency",
+        "contractor_company",
+        "governing_authority",
+        "replaced_by",
+        "flow_profile",
     )
     if user.is_superuser:
         return qs
@@ -484,6 +555,10 @@ def _authorized_contracts_qs(request):
         | set(scope.reader_agency_keys)
     )
     contract_filter = Q(memberships__user=user)
+    contract_filter |= Q(
+        governing_authority__memberships__user=user,
+        governing_authority__memberships__is_active=True,
+    )
     if agency_keys:
         contract_filter |= Q(client_agency__agency_key__in=agency_keys)
     return qs.filter(contract_filter).distinct()
@@ -614,6 +689,30 @@ def _dataset_catalog_schema(dataset: Dataset) -> DatasetCatalogSchema:
     )
 
 
+def _input_flow_catalog_schema(flow: InputFlowVersion) -> InputFlowCatalogSchema:
+    payload = input_flow_runtime_projection(flow)
+    return InputFlowCatalogSchema(
+        **payload,
+        name=flow.name,
+        description=flow.description,
+        status=flow.status,
+        published_at=flow.published_at.isoformat() if flow.published_at else None,
+    )
+
+
+def _orchestration_flow_catalog_schema(
+    flow: OrchestrationFlowVersion,
+) -> OrchestrationFlowCatalogSchema:
+    payload = orchestration_flow_runtime_projection(flow)
+    return OrchestrationFlowCatalogSchema(
+        **payload,
+        name=flow.name,
+        description=flow.description,
+        status=flow.status,
+        published_at=flow.published_at.isoformat() if flow.published_at else None,
+    )
+
+
 def _flow_profile_ref_schema(
     flow_profile: FlowProfile | None,
 ) -> FlowProfileRefSchema | None:
@@ -636,6 +735,19 @@ def _flow_profile_schema(flow_profile: FlowProfile) -> FlowProfileSchema:
         is_active=flow_profile.is_active,
         description=flow_profile.description,
         options=options,
+    )
+
+
+def _processing_profile_legacy_schema(
+    profile: ProcessingProfileVersion,
+) -> FlowProfileSchema:
+    return FlowProfileSchema(
+        code=profile.code,
+        name=profile.name,
+        schema_version=profile.version,
+        is_active=profile.status == ProcessingProfileVersion.Status.PUBLISHED,
+        description=profile.description,
+        options=legacy_flow_profile_options(profile),
     )
 
 
@@ -1016,9 +1128,7 @@ def m2m_contract_flow_profile(request, contract_code: str):
     "/v1/contracts/{contract_code}/ingest-authorization",
     response=M2MIngestAuthorizationResponse,
 )
-def m2m_contract_ingest_authorization(
-    request, contract_code: str, data_category: str
-):
+def m2m_contract_ingest_authorization(request, contract_code: str, data_category: str):
     data_category = data_category.strip().lower()
     if not data_category:
         raise HttpError(400, "data_category is required.")
@@ -1467,6 +1577,95 @@ def get_contract_required_inputs(request, contract_code: str):
     return _contract_required_inputs_schema(contract)
 
 
+@api.get("/v1/flow-catalog/input", response=list[InputFlowCatalogSchema])
+def list_published_input_flows(request):
+    _require_auth(request)
+    flows = (
+        InputFlowVersion.objects.filter(status=InputFlowVersion.Status.PUBLISHED)
+        .select_related("dataset_specification__dataset")
+        .order_by("dataset_specification__code", "version", "code")
+    )
+    return [_input_flow_catalog_schema(flow) for flow in flows]
+
+
+@api.get("/v1/flow-catalog/input/{flow_code}", response=InputFlowCatalogSchema)
+def get_published_input_flow(request, flow_code: str):
+    _require_auth(request)
+    flow = (
+        InputFlowVersion.objects.filter(
+            code=flow_code,
+            status=InputFlowVersion.Status.PUBLISHED,
+        )
+        .select_related("dataset_specification__dataset")
+        .first()
+    )
+    if flow is None:
+        raise HttpError(404, "Published input flow not found.")
+    return _input_flow_catalog_schema(flow)
+
+
+@api.get(
+    "/v1/flow-catalog/orchestration",
+    response=list[OrchestrationFlowCatalogSchema],
+)
+def list_published_orchestration_flows(request):
+    _require_auth(request)
+    flows = OrchestrationFlowVersion.objects.filter(
+        status=OrchestrationFlowVersion.Status.PUBLISHED
+    ).order_by("version", "code")
+    return [_orchestration_flow_catalog_schema(flow) for flow in flows]
+
+
+@api.get(
+    "/v1/flow-catalog/orchestration/{flow_code}",
+    response=OrchestrationFlowCatalogSchema,
+)
+def get_published_orchestration_flow(request, flow_code: str):
+    _require_auth(request)
+    flow = OrchestrationFlowVersion.objects.filter(
+        code=flow_code,
+        status=OrchestrationFlowVersion.Status.PUBLISHED,
+    ).first()
+    if flow is None:
+        raise HttpError(404, "Published orchestration flow not found.")
+    return _orchestration_flow_catalog_schema(flow)
+
+
+@api.get(
+    "/v1/processing-profiles",
+    response=list[ProcessingProfileCatalogSchema],
+)
+def list_published_processing_profiles(request):
+    _require_auth(request)
+    profiles = (
+        ProcessingProfileVersion.objects.filter(
+            status=ProcessingProfileVersion.Status.PUBLISHED
+        )
+        .prefetch_related(
+            "input_flow_links__dataset",
+            "input_flow_links__input_flow_version__dataset_specification",
+            "indicator_version_links__indicator_version__indicator",
+        )
+        .order_by("name", "version", "code")
+    )
+    return [serialize_processing_profile(profile) for profile in profiles]
+
+
+@api.get(
+    "/v1/processing-profiles/{profile_code}",
+    response=ProcessingProfileCatalogSchema,
+)
+def get_published_processing_profile(request, profile_code: str):
+    _require_auth(request)
+    profile = ProcessingProfileVersion.objects.filter(
+        code=profile_code,
+        status=ProcessingProfileVersion.Status.PUBLISHED,
+    ).first()
+    if profile is None:
+        raise HttpError(404, "Published processing profile not found.")
+    return serialize_processing_profile(profile)
+
+
 @api.get("/v1/indicator-catalog", response=list[IndicatorCatalogSchema])
 def list_published_indicator_catalog(request):
     _require_auth(request)
@@ -1619,16 +1818,32 @@ def list_flow_profiles(request, is_active: bool | None = None):
     qs = FlowProfile.objects.all().order_by("code")
     if is_active is not None:
         qs = qs.filter(is_active=is_active)
-    return [_flow_profile_schema(flow_profile) for flow_profile in qs]
+    legacy_profiles = [_flow_profile_schema(flow_profile) for flow_profile in qs]
+    legacy_codes = {profile.code for profile in legacy_profiles}
+    processing_profiles = ProcessingProfileVersion.objects.filter(
+        status=ProcessingProfileVersion.Status.PUBLISHED
+    ).exclude(code__in=legacy_codes)
+    if is_active is False:
+        processing_profiles = processing_profiles.none()
+    return legacy_profiles + [
+        _processing_profile_legacy_schema(profile)
+        for profile in processing_profiles.order_by("code")
+    ]
 
 
 @api.get("/v1/flow-profiles/{flow_code}", response=FlowProfileSchema)
 def get_flow_profile(request, flow_code: str):
     _require_auth(request)
     flow_profile = FlowProfile.objects.filter(code=flow_code).first()
-    if flow_profile is None:
-        raise HttpError(404, "Flow profile not found.")
-    return _flow_profile_schema(flow_profile)
+    if flow_profile is not None:
+        return _flow_profile_schema(flow_profile)
+    processing_profile = ProcessingProfileVersion.objects.filter(
+        code=flow_code,
+        status=ProcessingProfileVersion.Status.PUBLISHED,
+    ).first()
+    if processing_profile is not None:
+        return _processing_profile_legacy_schema(processing_profile)
+    raise HttpError(404, "Flow profile not found.")
 
 
 @api.get("/v1/publications/{publication_id}", response=ContractPublicationDetailSchema)

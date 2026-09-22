@@ -11,7 +11,7 @@ from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import DateRangeField, RangeOperators
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, Func
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Lower, Now  # for db_default in Django 5.x
@@ -21,6 +21,12 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
+from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
+    ENGINE_PREFECT,
+    validate_flow_executable_references,
+    validate_input_compatibility,
+    validate_invocation_contract,
+)
 from rpsd_config.exchange_agreement.services.fragment_registry import (
     LOCATOR_TABLE,
     LOCATOR_XPATH,
@@ -40,6 +46,9 @@ from rpsd_config.exchange_agreement.services.indicator_registry import (
     EXECUTION_PREFECT,
     validate_execution_reference_fields,
     validate_technical_contract,
+)
+from rpsd_config.exchange_agreement.services.revision_registry import (
+    validate_business_configuration,
 )
 
 # ==========================
@@ -543,6 +552,43 @@ class Authority(TimeStampedModel):
         return f"{self.name} ({label})"
 
 
+class AuthorityMembership(TimeStampedModel):
+    """Human user allowed to consult contracts assigned to an authority."""
+
+    authority = models.ForeignKey(
+        Authority,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="authority_memberships",
+    )
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="authority_memberships_created",
+    )
+
+    class Meta:
+        verbose_name = "Authority membership"
+        verbose_name_plural = "Authority memberships"
+        ordering = ["authority__name", "user__username"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["authority", "user"],
+                name="unique_authority_membership_user",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.authority.name} - {self.user}"
+
+
 # ====================================================================================
 # Consider whether to add a model to store per-company API keys.
 # ====================================================================================
@@ -607,9 +653,7 @@ class Lot(TimeStampedModel):
             self.short_description
         )
         if not self.short_description:
-            raise ValidationError(
-                {"short_description": _("Lot code is required.")}
-            )
+            raise ValidationError({"short_description": _("Lot code is required.")})
 
     def save(self, *args, **kwargs):
         self.short_description = self.normalize_short_description(
@@ -1001,9 +1045,9 @@ class RequirementFragment(TimeStampedModel):
     def delete(self, *args, **kwargs):
         current_status = self.status
         if self.pk:
-            current_status = type(self).objects.values_list(
-                "status", flat=True
-            ).get(pk=self.pk)
+            current_status = (
+                type(self).objects.values_list("status", flat=True).get(pk=self.pk)
+            )
         if current_status != self.Status.DRAFT:
             raise ValidationError(_("Only draft requirement fragments can be deleted."))
         return super().delete(*args, **kwargs)
@@ -1113,8 +1157,7 @@ class RequirementFragmentStatusEvent(models.Model):
 
     def __str__(self) -> str:
         return (
-            f"{self.requirement_fragment}:"
-            f"{self.from_status or '-'}->{self.to_status}"
+            f"{self.requirement_fragment}:{self.from_status or '-'}->{self.to_status}"
         )
 
 
@@ -1133,8 +1176,7 @@ class Indicator(TimeStampedModel):
             RegexValidator(
                 regex=CODE_REGEX,
                 message=_(
-                    "Indicator code must contain lowercase letters, digits and "
-                    "hyphens."
+                    "Indicator code must contain lowercase letters, digits and hyphens."
                 ),
             )
         ],
@@ -1331,9 +1373,9 @@ class IndicatorVersion(TimeStampedModel):
     def delete(self, *args, **kwargs):
         current_status = self.status
         if self.pk:
-            current_status = type(self).objects.values_list(
-                "status", flat=True
-            ).get(pk=self.pk)
+            current_status = (
+                type(self).objects.values_list("status", flat=True).get(pk=self.pk)
+            )
         if current_status != self.Status.DRAFT:
             raise ValidationError(_("Only draft indicator versions can be deleted."))
         return super().delete(*args, **kwargs)
@@ -1365,10 +1407,7 @@ class IndicatorVersionStatusEvent(models.Model):
         ordering = ["changed_at", "id"]
 
     def __str__(self) -> str:
-        return (
-            f"{self.indicator_version}:"
-            f"{self.from_status or '-'}->{self.to_status}"
-        )
+        return f"{self.indicator_version}:{self.from_status or '-'}->{self.to_status}"
 
 
 @receiver(m2m_changed, sender=IndicatorVersion.required_fragments.through)
@@ -1402,6 +1441,550 @@ def protect_published_indicator_fragment_reference(sender, instance, **kwargs):
         raise ProtectedError(
             "Requirement fragment is referenced by a non-draft indicator version.",
             protected_versions,
+        )
+
+
+class FlowCatalogVersionBase(TimeStampedModel):
+    """Shared catalog metadata; executable workflow details remain in Prefect."""
+
+    class Engine(models.TextChoices):
+        PREFECT = ENGINE_PREFECT, _("Prefect")
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", _("Draft")
+        PUBLISHED = "published", _("Published")
+        DEPRECATED = "deprecated", _("Deprecated")
+        WITHDRAWN = "withdrawn", _("Withdrawn")
+
+    code = models.CharField(max_length=96, unique=True)
+    version = models.CharField(max_length=32)
+    name = models.CharField(max_length=128)
+    description = models.TextField()
+    engine = models.CharField(
+        max_length=16,
+        choices=Engine.choices,
+        default=Engine.PREFECT,
+    )
+    deployment_name = models.CharField(max_length=255, blank=True)
+    artifact_identifier = models.CharField(max_length=512, blank=True)
+    invocation_contract = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="%(class)s_versions_published",
+    )
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        abstract = True
+
+    def __str__(self) -> str:
+        return f"{self.code} ({self.status})"
+
+    def semantic_field_names(self) -> tuple[str, ...]:
+        return (
+            "code",
+            "version",
+            "name",
+            "description",
+            "engine",
+            "deployment_name",
+            "artifact_identifier",
+            "invocation_contract",
+        )
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.version = (self.version or "").strip()
+        self.name = (self.name or "").strip()
+        self.description = (self.description or "").strip()
+        errors = {}
+        for field_name, message in (
+            ("code", _("Flow catalog code is required.")),
+            ("version", _("Flow catalog version is required.")),
+            ("name", _("Flow name is required.")),
+            ("description", _("Flow description is required.")),
+        ):
+            if not getattr(self, field_name):
+                errors[field_name] = message
+        try:
+            self.invocation_contract = validate_invocation_contract(
+                self.invocation_contract,
+                allow_empty=self.status == self.Status.DRAFT,
+            )
+        except ValidationError as exc:
+            errors["invocation_contract"] = exc.messages
+        try:
+            (
+                self.deployment_name,
+                self.artifact_identifier,
+            ) = validate_flow_executable_references(
+                engine=self.engine,
+                deployment_name=self.deployment_name,
+                artifact_identifier=self.artifact_identifier,
+                require_complete=self.status == self.Status.PUBLISHED,
+            )
+        except ValidationError as exc:
+            errors["deployment_name"] = exc.messages
+
+        if not self.pk and self.status != self.Status.DRAFT:
+            errors["status"] = _(
+                "New flow versions must start as draft and use the lifecycle service."
+            )
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).first()
+            if original is not None:
+                if self.status != original.status:
+                    errors["status"] = _(
+                        "Use the flow catalog lifecycle service to change status."
+                    )
+                if original.status != self.Status.DRAFT and any(
+                    getattr(self, field) != getattr(original, field)
+                    for field in self.semantic_field_names()
+                ):
+                    errors["__all__"] = _(
+                        "Published, deprecated or withdrawn flow versions are "
+                        "immutable."
+                    )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        current_status = self.status
+        if self.pk:
+            current_status = (
+                type(self).objects.values_list("status", flat=True).get(pk=self.pk)
+            )
+        if current_status != self.Status.DRAFT:
+            raise ValidationError(_("Only draft flow versions can be deleted."))
+        return super().delete(*args, **kwargs)
+
+
+class InputFlowVersion(FlowCatalogVersionBase):
+    dataset_specification = models.ForeignKey(
+        DatasetSpecification,
+        on_delete=models.PROTECT,
+        related_name="input_flow_versions",
+    )
+    compatibility = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "Input flow version"
+        verbose_name_plural = "Input flow versions"
+        ordering = ["dataset_specification__code", "version", "code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["dataset_specification", "version"],
+                name="uniq_input_flow_specification_version",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["dataset_specification", "status"],
+                name="ix_input_flow_spec_status",
+            )
+        ]
+
+    def semantic_field_names(self) -> tuple[str, ...]:
+        return super().semantic_field_names() + (
+            "dataset_specification_id",
+            "compatibility",
+        )
+
+    def clean(self):
+        super().clean()
+        if not self.dataset_specification_id:
+            return
+        try:
+            self.compatibility = validate_input_compatibility(
+                self.compatibility,
+                expected_what=self.dataset_specification.dataset.code,
+                allow_empty=self.status == self.Status.DRAFT,
+            )
+        except ValidationError as exc:
+            raise ValidationError({"compatibility": exc.messages}) from exc
+
+
+class OrchestrationFlowVersion(FlowCatalogVersionBase):
+    class Meta:
+        verbose_name = "Orchestration flow version"
+        verbose_name_plural = "Orchestration flow versions"
+        ordering = ["version", "code"]
+
+
+class InputFlowVersionStatusEvent(models.Model):
+    input_flow_version = models.ForeignKey(
+        InputFlowVersion,
+        on_delete=models.PROTECT,
+        related_name="status_events",
+    )
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(max_length=16, choices=InputFlowVersion.Status.choices)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="input_flow_version_status_changes",
+    )
+    changed_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "Input flow version status event"
+        verbose_name_plural = "Input flow version status events"
+        ordering = ["changed_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.input_flow_version}:{self.from_status or '-'}->{self.to_status}"
+
+
+class OrchestrationFlowVersionStatusEvent(models.Model):
+    orchestration_flow_version = models.ForeignKey(
+        OrchestrationFlowVersion,
+        on_delete=models.PROTECT,
+        related_name="status_events",
+    )
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(
+        max_length=16,
+        choices=OrchestrationFlowVersion.Status.choices,
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orchestration_flow_version_status_changes",
+    )
+    changed_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "Orchestration flow version status event"
+        verbose_name_plural = "Orchestration flow version status events"
+        ordering = ["changed_at", "id"]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.orchestration_flow_version}:"
+            f"{self.from_status or '-'}->{self.to_status}"
+        )
+
+
+class ProcessingProfileVersion(TimeStampedModel):
+    """Immutable, platform-approved composition of processing capabilities."""
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", _("Draft")
+        PUBLISHED = "published", _("Published")
+        DEPRECATED = "deprecated", _("Deprecated")
+        WITHDRAWN = "withdrawn", _("Withdrawn")
+
+    code = models.CharField(max_length=96, unique=True)
+    version = models.CharField(max_length=32)
+    name = models.CharField(max_length=128)
+    description = models.TextField()
+    orchestration_flow_version = models.ForeignKey(
+        OrchestrationFlowVersion,
+        on_delete=models.PROTECT,
+        related_name="processing_profile_versions",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="processing_profile_versions_published",
+    )
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Processing profile version"
+        verbose_name_plural = "Processing profile versions"
+        ordering = ["name", "version", "code"]
+        indexes = [
+            models.Index(fields=["status", "code"], name="ix_process_profile_status")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} {self.version} ({self.status})"
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.version = (self.version or "").strip()
+        self.name = (self.name or "").strip()
+        self.description = (self.description or "").strip()
+        errors = {}
+        for field_name, message in (
+            ("code", _("Processing profile code is required.")),
+            ("version", _("Processing profile version is required.")),
+            ("name", _("Processing profile name is required.")),
+            ("description", _("Processing profile description is required.")),
+        ):
+            if not getattr(self, field_name):
+                errors[field_name] = message
+        if not self.pk and self.status != self.Status.DRAFT:
+            errors["status"] = _(
+                "New processing profile versions must start as draft and use "
+                "the lifecycle service."
+            )
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).first()
+            if original is not None:
+                if self.status != original.status:
+                    errors["status"] = _(
+                        "Use the processing profile lifecycle service to change status."
+                    )
+                if original.status != self.Status.DRAFT:
+                    semantic_fields = (
+                        "code",
+                        "version",
+                        "name",
+                        "description",
+                        "orchestration_flow_version_id",
+                    )
+                    if any(
+                        getattr(self, field) != getattr(original, field)
+                        for field in semantic_fields
+                    ):
+                        errors["__all__"] = _(
+                            "Published, deprecated or withdrawn processing profiles "
+                            "are immutable; duplicate the profile instead."
+                        )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        current_status = self.status
+        if self.pk:
+            current_status = (
+                type(self).objects.values_list("status", flat=True).get(pk=self.pk)
+            )
+        if current_status != self.Status.DRAFT:
+            raise ValidationError(_("Only draft processing profiles can be deleted."))
+        return super().delete(*args, **kwargs)
+
+
+class ProcessingProfileInputFlow(models.Model):
+    processing_profile_version = models.ForeignKey(
+        ProcessingProfileVersion,
+        on_delete=models.CASCADE,
+        related_name="input_flow_links",
+    )
+    dataset = models.ForeignKey(
+        Dataset,
+        on_delete=models.PROTECT,
+        related_name="processing_profile_input_links",
+    )
+    input_flow_version = models.ForeignKey(
+        InputFlowVersion,
+        on_delete=models.PROTECT,
+        related_name="processing_profile_input_links",
+    )
+
+    class Meta:
+        verbose_name = "Processing profile input flow"
+        verbose_name_plural = "Processing profile input flows"
+        ordering = ["dataset__code", "input_flow_version__code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["processing_profile_version", "dataset"],
+                name="uniq_process_profile_dataset",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.processing_profile_version.code}:{self.dataset.code}"
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.pk:
+            original_profile_id = (
+                type(self)
+                .objects.values_list("processing_profile_version_id", flat=True)
+                .get(pk=self.pk)
+            )
+            original_status = ProcessingProfileVersion.objects.values_list(
+                "status", flat=True
+            ).get(pk=original_profile_id)
+            if original_status != ProcessingProfileVersion.Status.DRAFT:
+                errors["processing_profile_version"] = _(
+                    "Input flows of a non-draft profile are immutable."
+                )
+        if self.processing_profile_version_id:
+            status = ProcessingProfileVersion.objects.values_list(
+                "status", flat=True
+            ).get(pk=self.processing_profile_version_id)
+            if status != ProcessingProfileVersion.Status.DRAFT:
+                errors["processing_profile_version"] = _(
+                    "Input flows can be changed only while the profile is draft."
+                )
+        if self.dataset_id and self.input_flow_version_id:
+            flow_dataset_id = self.input_flow_version.dataset_specification.dataset_id
+            if self.dataset_id != flow_dataset_id:
+                errors["input_flow_version"] = _(
+                    "The input flow specification must belong to the selected dataset."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            ProcessingProfileVersion.objects.select_for_update().get(
+                pk=self.processing_profile_version_id
+            )
+            self.full_clean()
+            return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        with transaction.atomic():
+            status = (
+                ProcessingProfileVersion.objects.select_for_update()
+                .values_list("status", flat=True)
+                .get(pk=self.processing_profile_version_id)
+            )
+            if status != ProcessingProfileVersion.Status.DRAFT:
+                raise ValidationError(
+                    _("Input flows can be changed only while the profile is draft.")
+                )
+            return super().delete(*args, **kwargs)
+
+
+class ProcessingProfileIndicatorVersion(models.Model):
+    processing_profile_version = models.ForeignKey(
+        ProcessingProfileVersion,
+        on_delete=models.CASCADE,
+        related_name="indicator_version_links",
+    )
+    indicator_version = models.ForeignKey(
+        IndicatorVersion,
+        on_delete=models.PROTECT,
+        related_name="processing_profile_links",
+    )
+    proposed_by_default = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Processing profile indicator version"
+        verbose_name_plural = "Processing profile indicator versions"
+        ordering = ["indicator_version__indicator__code", "indicator_version__version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["processing_profile_version", "indicator_version"],
+                name="uniq_process_profile_indicator",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.processing_profile_version.code}:{self.indicator_version.code}"
+
+    def clean(self):
+        super().clean()
+        if not self.processing_profile_version_id:
+            return
+        if self.pk:
+            original_profile_id = (
+                type(self)
+                .objects.values_list("processing_profile_version_id", flat=True)
+                .get(pk=self.pk)
+            )
+            original_status = ProcessingProfileVersion.objects.values_list(
+                "status", flat=True
+            ).get(pk=original_profile_id)
+            if original_status != ProcessingProfileVersion.Status.DRAFT:
+                raise ValidationError(
+                    {
+                        "processing_profile_version": _(
+                            "Indicators of a non-draft profile are immutable."
+                        )
+                    }
+                )
+        status = ProcessingProfileVersion.objects.values_list("status", flat=True).get(
+            pk=self.processing_profile_version_id
+        )
+        if status != ProcessingProfileVersion.Status.DRAFT:
+            raise ValidationError(
+                {
+                    "processing_profile_version": _(
+                        "Indicators can be changed only while the profile is draft."
+                    )
+                }
+            )
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            ProcessingProfileVersion.objects.select_for_update().get(
+                pk=self.processing_profile_version_id
+            )
+            self.full_clean()
+            return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        with transaction.atomic():
+            status = (
+                ProcessingProfileVersion.objects.select_for_update()
+                .values_list("status", flat=True)
+                .get(pk=self.processing_profile_version_id)
+            )
+            if status != ProcessingProfileVersion.Status.DRAFT:
+                raise ValidationError(
+                    _("Indicators can be changed only while the profile is draft.")
+                )
+            return super().delete(*args, **kwargs)
+
+
+class ProcessingProfileVersionStatusEvent(models.Model):
+    processing_profile_version = models.ForeignKey(
+        ProcessingProfileVersion,
+        on_delete=models.PROTECT,
+        related_name="status_events",
+    )
+    from_status = models.CharField(max_length=16, blank=True)
+    to_status = models.CharField(
+        max_length=16,
+        choices=ProcessingProfileVersion.Status.choices,
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="processing_profile_version_status_changes",
+    )
+    changed_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "Processing profile version status event"
+        verbose_name_plural = "Processing profile version status events"
+        ordering = ["changed_at", "id"]
+
+    def __str__(self) -> str:
+        return (
+            f"{self.processing_profile_version}:"
+            f"{self.from_status or '-'}->{self.to_status}"
         )
 
 
@@ -1532,8 +2115,7 @@ class OperationalFlow(TimeStampedModel):
             RegexValidator(
                 regex=FLOW_CODE_REGEX,
                 message=_(
-                    "Flow code must match ^[a-z0-9][a-z0-9-]*_[0-9]{3}"
-                    "(?:[a-z0-9-]*)?$."
+                    "Flow code must match ^[a-z0-9][a-z0-9-]*_[0-9]{3}(?:[a-z0-9-]*)?$."
                 ),
             )
         ],
@@ -1838,6 +2420,14 @@ class Contract(TimeStampedModel):
         related_name="contracts_as_contractor",
         help_text="Contractor company",
     )
+    governing_authority = models.ForeignKey(
+        Authority,
+        on_delete=models.PROTECT,
+        related_name="contracts",
+        blank=True,
+        null=True,
+        help_text="Governing authority with read-only visibility of the contract.",
+    )
     start_date = models.DateField()
     end_date = models.DateField(blank=True, null=True)
 
@@ -2021,6 +2611,7 @@ class Contract(TimeStampedModel):
             "contract_code",
             "client_agency_id",
             "contractor_company_id",
+            "governing_authority_id",
             "start_date",
             "end_date",
             "tender_id",
@@ -2209,6 +2800,17 @@ class ContractIndicator(models.Model):
     indicator = models.ForeignKey(
         IndicatorDef, on_delete=models.PROTECT, related_name="contracts"
     )
+    logical_indicator = models.ForeignKey(
+        Indicator,
+        on_delete=models.PROTECT,
+        related_name="contract_links",
+        blank=True,
+        null=True,
+        help_text=(
+            "Stable target-model indicator. The legacy indicator definition is "
+            "retained temporarily for API v1 compatibility."
+        ),
+    )
     params = models.JSONField(
         blank=True,
         null=True,
@@ -2221,11 +2823,460 @@ class ContractIndicator(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["contract", "indicator"], name="unique_contract_indicator"
+            ),
+            models.UniqueConstraint(
+                fields=["contract", "logical_indicator"],
+                condition=models.Q(logical_indicator__isnull=False),
+                name="unique_contract_logical_indicator",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        indicator_code = (
+            self.logical_indicator.code
+            if self.logical_indicator_id
+            else self.indicator.code
+        )
+        return f"{self.contract.contract_code}:{indicator_code}"
+
+    def clean(self):
+        super().clean()
+        if not self.pk:
+            return
+        original = type(self).objects.filter(pk=self.pk).first()
+        if original is None:
+            return
+        protected = original.revision_configurations.exclude(
+            revision__status=ContractConfigurationRevision.Status.DRAFT
+        )
+        if protected.exists() and (
+            self.contract_id != original.contract_id
+            or self.logical_indicator_id != original.logical_indicator_id
+            or self.indicator_id != original.indicator_id
+        ):
+            raise ValidationError(
+                _("Indicators referenced by approved revisions are immutable.")
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.revision_configurations.exclude(
+            revision__status=ContractConfigurationRevision.Status.DRAFT
+        ).exists():
+            raise ValidationError(
+                _("Indicators referenced by approved revisions cannot be deleted.")
+            )
+        return super().delete(*args, **kwargs)
+
+
+class ContractConfigurationRevision(TimeStampedModel):
+    """Complete temporal snapshot of a contract's technical configuration."""
+
+    SNAPSHOT_SCHEMA_VERSION = "canonical-json-v1"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", _("Draft")
+        APPROVED = "approved", _("Approved")
+        WITHDRAWN = "withdrawn", _("Withdrawn")
+
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name="configuration_revisions",
+    )
+    revision_number = models.PositiveIntegerField()
+    code = models.CharField(max_length=128, unique=True)
+    processing_profile_version = models.ForeignKey(
+        ProcessingProfileVersion,
+        on_delete=models.PROTECT,
+        related_name="contract_revisions",
+    )
+    valid_from = models.DateField(null=True, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
+    change_reason = models.TextField()
+    replaces_revision = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="replacement_revisions",
+        null=True,
+        blank=True,
+    )
+    snapshot_schema_version = models.CharField(
+        max_length=32,
+        default=SNAPSHOT_SCHEMA_VERSION,
+    )
+    configuration_snapshot = models.JSONField(default=dict, blank=True)
+    snapshot_checksum = models.CharField(max_length=71, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contract_configuration_revisions_created",
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contract_configuration_revisions_approved",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    withdrawn_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contract_configuration_revisions_withdrawn",
+    )
+    withdrawn_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Contract configuration revision"
+        verbose_name_plural = "Contract configuration revisions"
+        ordering = ["contract__contract_code", "valid_from", "revision_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contract", "revision_number"],
+                name="unique_contract_revision_number",
+            ),
+            models.UniqueConstraint(
+                fields=["contract", "valid_from"],
+                condition=models.Q(status="approved"),
+                name="unique_approved_contract_revision_date",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["contract", "status", "valid_from"],
+                name="ix_contract_rev_resolution",
             )
         ]
 
     def __str__(self) -> str:
-        return f"{self.contract.contract_code}:{self.indicator.code}"
+        return f"{self.contract.contract_code}:{self.code} ({self.status})"
+
+    def clean(self):
+        super().clean()
+        self.code = (self.code or "").strip()
+        self.change_reason = (self.change_reason or "").strip()
+        errors = {}
+        if not self.code:
+            errors["code"] = _("Revision code is required.")
+        if not self.change_reason:
+            errors["change_reason"] = _("Change reason is required.")
+        if self.replaces_revision_id:
+            if self.replaces_revision_id == self.pk:
+                errors["replaces_revision"] = _("A revision cannot replace itself.")
+            elif self.replaces_revision.contract_id != self.contract_id:
+                errors["replaces_revision"] = _(
+                    "The replaced revision must belong to the same contract."
+                )
+        if not self.pk and self.status != self.Status.DRAFT:
+            errors["status"] = _(
+                "New revisions must start as draft and use the lifecycle service."
+            )
+        if self.status == self.Status.DRAFT:
+            if self.configuration_snapshot:
+                errors["configuration_snapshot"] = _(
+                    "Draft revisions cannot store an approved snapshot."
+                )
+            if self.snapshot_checksum:
+                errors["snapshot_checksum"] = _(
+                    "Draft revisions cannot store an approved checksum."
+                )
+        if self.snapshot_checksum:
+            checksum_value = self.snapshot_checksum.removeprefix("sha256:")
+            if (
+                not self.snapshot_checksum.startswith("sha256:")
+                or len(checksum_value) != 64
+                or any(
+                    character not in "0123456789abcdef" for character in checksum_value
+                )
+            ):
+                errors["snapshot_checksum"] = _(
+                    "Snapshot checksum must use sha256:<64 lowercase hex characters>."
+                )
+        if self.status == self.Status.APPROVED:
+            if (
+                not isinstance(self.configuration_snapshot, dict)
+                or not self.configuration_snapshot
+            ):
+                errors["configuration_snapshot"] = _(
+                    "Approved revisions require a configuration snapshot."
+                )
+            if not self.snapshot_checksum:
+                errors["snapshot_checksum"] = _(
+                    "Approved revisions require a snapshot checksum."
+                )
+            if self.snapshot_schema_version != self.SNAPSHOT_SCHEMA_VERSION:
+                errors["snapshot_schema_version"] = _(
+                    "Unsupported revision snapshot schema version."
+                )
+            if self.approved_at is None:
+                errors["approved_at"] = _(
+                    "Approved revisions require an approval timestamp."
+                )
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).first()
+            if original is not None:
+                if self.status != original.status:
+                    errors["status"] = _(
+                        "Use the contract revision lifecycle service to change status."
+                    )
+                if original.status != self.Status.DRAFT:
+                    immutable_fields = (
+                        "contract_id",
+                        "revision_number",
+                        "code",
+                        "processing_profile_version_id",
+                        "valid_from",
+                        "change_reason",
+                        "replaces_revision_id",
+                        "snapshot_schema_version",
+                        "configuration_snapshot",
+                        "snapshot_checksum",
+                    )
+                    if any(
+                        getattr(self, field) != getattr(original, field)
+                        for field in immutable_fields
+                    ):
+                        errors["__all__"] = _(
+                            "Approved or withdrawn revisions are immutable."
+                        )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        status = self.status
+        if self.pk:
+            status = type(self).objects.values_list("status", flat=True).get(pk=self.pk)
+        if status != self.Status.DRAFT:
+            raise ValidationError(_("Only draft revisions can be deleted."))
+        return super().delete(*args, **kwargs)
+
+
+class ContractInputSelection(models.Model):
+    revision = models.ForeignKey(
+        ContractConfigurationRevision,
+        on_delete=models.CASCADE,
+        related_name="input_selections",
+    )
+    processing_profile_input_flow = models.ForeignKey(
+        ProcessingProfileInputFlow,
+        on_delete=models.PROTECT,
+        related_name="contract_input_selections",
+    )
+
+    class Meta:
+        verbose_name = "Contract input selection"
+        verbose_name_plural = "Contract input selections"
+        ordering = ["processing_profile_input_flow__dataset__code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["revision", "processing_profile_input_flow"],
+                name="unique_contract_revision_input",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.pk:
+            original_revision_id = (
+                type(self).objects.values_list("revision_id", flat=True).get(pk=self.pk)
+            )
+            original_status = ContractConfigurationRevision.objects.values_list(
+                "status", flat=True
+            ).get(pk=original_revision_id)
+            if original_status != ContractConfigurationRevision.Status.DRAFT:
+                errors["revision"] = _(
+                    "Inputs of an approved or withdrawn revision are immutable."
+                )
+        if self.revision_id:
+            revision_status = ContractConfigurationRevision.objects.values_list(
+                "status", flat=True
+            ).get(pk=self.revision_id)
+            if revision_status != ContractConfigurationRevision.Status.DRAFT:
+                errors["revision"] = _(
+                    "Inputs can be changed only while the revision is draft."
+                )
+        if self.revision_id and self.processing_profile_input_flow_id:
+            if (
+                self.processing_profile_input_flow.processing_profile_version_id
+                != self.revision.processing_profile_version_id
+            ):
+                errors["processing_profile_input_flow"] = _(
+                    "The input must belong to the revision processing profile."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            ContractConfigurationRevision.objects.select_for_update().get(
+                pk=self.revision_id
+            )
+            self.full_clean()
+            return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        with transaction.atomic():
+            status = (
+                ContractConfigurationRevision.objects.select_for_update()
+                .values_list("status", flat=True)
+                .get(pk=self.revision_id)
+            )
+            if status != ContractConfigurationRevision.Status.DRAFT:
+                raise ValidationError(
+                    _("Inputs can be changed only while the revision is draft.")
+                )
+            return super().delete(*args, **kwargs)
+
+
+class ContractIndicatorConfiguration(models.Model):
+    revision = models.ForeignKey(
+        ContractConfigurationRevision,
+        on_delete=models.CASCADE,
+        related_name="indicator_configurations",
+    )
+    contract_indicator = models.ForeignKey(
+        ContractIndicator,
+        on_delete=models.PROTECT,
+        related_name="revision_configurations",
+    )
+    processing_profile_indicator_version = models.ForeignKey(
+        ProcessingProfileIndicatorVersion,
+        on_delete=models.PROTECT,
+        related_name="contract_indicator_configurations",
+    )
+    thresholds = models.JSONField(default=dict, blank=True)
+    aggregation = models.JSONField(default=dict, blank=True)
+    penalties = models.JSONField(default=dict, blank=True)
+    parameters = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        verbose_name = "Contract indicator configuration"
+        verbose_name_plural = "Contract indicator configurations"
+        ordering = ["contract_indicator__logical_indicator__code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["revision", "contract_indicator"],
+                name="unique_revision_contract_indicator",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.pk:
+            original_revision_id = (
+                type(self).objects.values_list("revision_id", flat=True).get(pk=self.pk)
+            )
+            original_status = ContractConfigurationRevision.objects.values_list(
+                "status", flat=True
+            ).get(pk=original_revision_id)
+            if original_status != ContractConfigurationRevision.Status.DRAFT:
+                errors["revision"] = _(
+                    "Indicators of an approved or withdrawn revision are immutable."
+                )
+        for field_name in ("thresholds", "aggregation", "penalties", "parameters"):
+            try:
+                setattr(
+                    self,
+                    field_name,
+                    validate_business_configuration(
+                        getattr(self, field_name), field_name=field_name
+                    ),
+                )
+            except ValidationError as exc:
+                errors[field_name] = exc.messages
+        if self.revision_id:
+            revision_status = ContractConfigurationRevision.objects.values_list(
+                "status", flat=True
+            ).get(pk=self.revision_id)
+            if revision_status != ContractConfigurationRevision.Status.DRAFT:
+                errors["revision"] = _(
+                    "Indicators can be changed only while the revision is draft."
+                )
+        if self.revision_id and self.contract_indicator_id:
+            if self.contract_indicator.contract_id != self.revision.contract_id:
+                errors["contract_indicator"] = _(
+                    "The indicator link must belong to the revision contract."
+                )
+        if self.revision_id and self.processing_profile_indicator_version_id:
+            profile_link = self.processing_profile_indicator_version
+            if (
+                profile_link.processing_profile_version_id
+                != self.revision.processing_profile_version_id
+            ):
+                errors["processing_profile_indicator_version"] = _(
+                    "The indicator version must belong to the revision profile."
+                )
+            logical_indicator_id = self.contract_indicator.logical_indicator_id
+            if (
+                logical_indicator_id
+                and profile_link.indicator_version.indicator_id != logical_indicator_id
+            ):
+                errors["processing_profile_indicator_version"] = _(
+                    "The technical version must match the contract indicator."
+                )
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            ContractConfigurationRevision.objects.select_for_update().get(
+                pk=self.revision_id
+            )
+            self.full_clean()
+            return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        with transaction.atomic():
+            status = (
+                ContractConfigurationRevision.objects.select_for_update()
+                .values_list("status", flat=True)
+                .get(pk=self.revision_id)
+            )
+            if status != ContractConfigurationRevision.Status.DRAFT:
+                raise ValidationError(
+                    _("Indicators can be changed only while the revision is draft.")
+                )
+            return super().delete(*args, **kwargs)
+
+
+@receiver(pre_delete, sender=ContractConfigurationRevision)
+def protect_non_draft_contract_revision_delete(sender, instance, **kwargs):
+    status = ContractConfigurationRevision.objects.values_list("status", flat=True).get(
+        pk=instance.pk
+    )
+    if status != ContractConfigurationRevision.Status.DRAFT:
+        raise ValidationError(_("Only draft revisions can be deleted."))
+
+
+@receiver(pre_delete, sender=ContractInputSelection)
+@receiver(pre_delete, sender=ContractIndicatorConfiguration)
+def protect_frozen_contract_revision_children(sender, instance, **kwargs):
+    status = ContractConfigurationRevision.objects.values_list("status", flat=True).get(
+        pk=instance.revision_id
+    )
+    if status != ContractConfigurationRevision.Status.DRAFT:
+        raise ValidationError(
+            _("Approved or withdrawn revision content cannot be deleted.")
+        )
 
 
 class IntegrationPrincipal(TimeStampedModel):
