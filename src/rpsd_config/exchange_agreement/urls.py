@@ -22,10 +22,11 @@ from .views import (
     invitation_landing,
     onboarding_callback,
     platform_configuration_page,
+    platform_revision_queue_page,
     received_invitations,
+    user_area,
     user_contract_detail_page,
     user_contracts_page,
-    user_area,
 )
 
 app_name = "exchange_agreement"
@@ -97,6 +98,11 @@ urlpatterns = [
         "me/platform-configuration/",
         platform_configuration_page,
         name="platform-configuration",
+    ),
+    path(
+        "me/platform-configuration/revisions/",
+        platform_revision_queue_page,
+        name="platform-revision-queue",
     ),
     path(
         "me/platform-configuration/assets/<int:asset_id>/download/",

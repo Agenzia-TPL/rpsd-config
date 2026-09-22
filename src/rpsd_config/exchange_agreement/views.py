@@ -30,10 +30,12 @@ from .models import (
     Agency,
     AgencyInvitation,
     AgencyMembership,
+    Authority,
     AuthorityMembership,
     Company,
     ConfigurationAsset,
     Contract,
+    ContractConfigurationRevision,
     ContractInvitation,
     ContractMembership,
     FlowProfile,
@@ -71,10 +73,25 @@ from .services.configuration_assets import (
     load_configuration_asset_content,
     store_configuration_asset,
 )
+from .services.contract_revision_permissions import (
+    ContractRevisionPermissionError,
+    can_approve_contract_revision,
+    can_prepare_contract_revision,
+)
+from .services.contract_revisions import (
+    ContractRevisionError,
+    ContractRevisionValidationError,
+    approve_revision,
+    available_processing_profiles,
+    create_revision_draft,
+    revision_effective_period,
+    revision_temporal_state,
+    validate_revision_for_approval,
+    withdraw_revision,
+)
 from .services.flow_profiles import (
     ensure_standard_flow_profiles,
     ensure_standard_operational_flows,
-    get_default_flow_profile,
     summarize_flow_profile_options,
 )
 from .services.invitation_rejections import (
@@ -219,14 +236,13 @@ def _m2m_token_endpoint_url() -> str:
     if issuer_url:
         return f"{issuer_url}/protocol/openid-connect/token"
 
-    keycloak_base_url = (
-        getattr(settings, "KEYCLOAK_ADMIN_BASE_URL", "") or ""
-    ).rstrip("/")
+    keycloak_base_url = (getattr(settings, "KEYCLOAK_ADMIN_BASE_URL", "") or "").rstrip(
+        "/"
+    )
     keycloak_realm = getattr(settings, "KEYCLOAK_ADMIN_REALM", "") or ""
     if keycloak_base_url and keycloak_realm:
         return (
-            f"{keycloak_base_url}/realms/{keycloak_realm}"
-            "/protocol/openid-connect/token"
+            f"{keycloak_base_url}/realms/{keycloak_realm}/protocol/openid-connect/token"
         )
 
     return ""
@@ -278,7 +294,9 @@ def _can_view_contract_via_membership_or_agency(*, user, contract: Contract) -> 
 
 
 def _can_reveal_contract_m2m_secret(*, user, contract: Contract) -> bool:
-    if _can_view_contract_directly(user=user, contract=contract):
+    if user.is_superuser:
+        return True
+    if _contract_membership_for_user(user=user, contract=contract) is not None:
         return True
     if not _can_delete_companies(user):
         return False
@@ -878,9 +896,8 @@ def _build_initialization_state() -> dict:
 
 
 def _build_flow_profile_rows() -> list[dict]:
-    profiles = (
-        FlowProfile.objects.annotate(contract_count=Count("contracts"))
-        .order_by("name", "code")
+    profiles = FlowProfile.objects.annotate(contract_count=Count("contracts")).order_by(
+        "name", "code"
     )
     return [
         {
@@ -1042,8 +1059,7 @@ def company_create_page(request: HttpRequest) -> HttpResponse:
                 result_context["form_values"] = {"name": "", "description": ""}
             except M2MProvisioningError as exc:
                 result_context["error_message"] = (
-                    "Azienda non creata: provisioning credenziali M2M fallito. "
-                    f"{exc}"
+                    f"Azienda non creata: provisioning credenziali M2M fallito. {exc}"
                 )
             except IntegrityError:
                 # Handles concurrent create race between pre-check and insert.
@@ -1183,8 +1199,7 @@ def company_detail_page(request: HttpRequest, company_id: int) -> HttpResponse:
                     return redirect("exchange_agreement:company-list")
                 except (KeycloakAdminAPIError, KeycloakAdminConfigError) as exc:
                     result_context["error_message"] = (
-                        "Eliminazione bloccata: cleanup credenziali M2M fallito. "
-                        f"{exc}"
+                        f"Eliminazione bloccata: cleanup credenziali M2M fallito. {exc}"
                     )
         elif action in {
             "reveal-client-secret",
@@ -1220,16 +1235,14 @@ def company_detail_page(request: HttpRequest, company_id: int) -> HttpResponse:
                     )
                     result_context["success_message"] = "Secret client ruotato."
                 except (KeycloakAdminAPIError, KeycloakAdminConfigError) as exc:
-                    result_context["error_message"] = (
-                        "Rotazione secret fallita. " f"{exc}"
-                    )
+                    result_context["error_message"] = f"Rotazione secret fallita. {exc}"
             elif action == "revoke-client":
                 try:
                     revoke_m2m_principal(principal=principal, actor=request.user)
                     result_context["success_message"] = "Client M2M revocato."
                 except (KeycloakAdminAPIError, KeycloakAdminConfigError) as exc:
                     result_context["error_message"] = (
-                        "Revoca client M2M fallita. " f"{exc}"
+                        f"Revoca client M2M fallita. {exc}"
                     )
         else:
             result_context["error_message"] = "Azione non supportata."
@@ -1313,6 +1326,79 @@ def _can_manage_contract_from_membership(*, user, contract: Contract) -> bool:
     return bool(membership and membership.can_manage_contract)
 
 
+def _contract_revision_rows(contract: Contract) -> list[dict]:
+    rows = []
+    revisions = contract.configuration_revisions.select_related(
+        "processing_profile_version",
+        "approved_by",
+        "withdrawn_by",
+    ).order_by("valid_from", "revision_number")
+    for revision in revisions:
+        effective_to = None
+        if revision.status == ContractConfigurationRevision.Status.APPROVED:
+            _effective_from, effective_to = revision_effective_period(revision)
+        rows.append(
+            {
+                "revision": revision,
+                "effective_to": effective_to,
+                "temporal_state": revision_temporal_state(revision),
+            }
+        )
+    return rows
+
+
+def _revision_error_message(exc: Exception, *, technical: bool) -> str:
+    if isinstance(exc, ContractRevisionValidationError):
+        messages = [issue.message for issue in exc.issues]
+        if technical:
+            messages = [f"{issue.message} [{issue.code}]" for issue in exc.issues]
+        return " ".join(messages)
+    return str(exc)
+
+
+def _handle_revision_draft_action(
+    request: HttpRequest,
+    *,
+    contract: Contract,
+    result_context: dict,
+) -> bool:
+    action = (request.POST.get("action") or "").strip()
+    if action != "create-contract-revision":
+        return False
+    if not can_prepare_contract_revision(user=request.user, contract=contract):
+        raise PermissionDenied("Non puoi configurare revisioni per questo contratto.")
+
+    try:
+        profile_id = int(request.POST.get("processing_profile_id", "0"))
+        valid_from = date.fromisoformat(request.POST.get("valid_from", ""))
+        profiles = available_processing_profiles(contract, request.user)
+        profile = next((item for item in profiles if item.pk == profile_id), None)
+        if profile is None:
+            raise ValidationError("Seleziona un profilo pubblicato compatibile.")
+        revision = create_revision_draft(
+            contract,
+            profile,
+            valid_from,
+            request.user,
+            change_reason=request.POST.get("change_reason", "").strip() or None,
+        )
+    except (ValueError, ValidationError) as exc:
+        result_context["error_message"] = (
+            "Verifica profilo e data di decorrenza. "
+            + " ".join(getattr(exc, "messages", [str(exc)]))
+        )
+    except (ContractRevisionError, ContractRevisionPermissionError) as exc:
+        result_context["error_message"] = _revision_error_message(
+            exc,
+            technical=False,
+        )
+    else:
+        result_context["success_message"] = (
+            f"Bozza {revision.code} creata e pronta per la verifica tecnica."
+        )
+    return True
+
+
 def _render_contract_detail(
     request: HttpRequest,
     *,
@@ -1328,6 +1414,15 @@ def _render_contract_detail(
         contract,
         revealed_secret=revealed_secret,
     )
+    can_prepare_revision = can_prepare_contract_revision(
+        user=request.user,
+        contract=contract,
+    )
+    profiles = (
+        available_processing_profiles(contract, request.user)
+        if can_prepare_revision
+        else ()
+    )
 
     return render(
         request,
@@ -1335,9 +1430,9 @@ def _render_contract_detail(
         {
             "agency": contract.client_agency,
             "contract": contract,
-            "flow_profile_summary": summarize_flow_profile_options(
-                contract.flow_profile.options if contract.flow_profile else None
-            ),
+            "revision_rows": _contract_revision_rows(contract),
+            "can_prepare_revision": can_prepare_revision,
+            "available_processing_profiles": profiles,
             "contract_m2m_exchange_info": contract_m2m_exchange_info,
             "can_manage_contract_m2m": can_manage_contract_m2m,
             "can_reveal_contract_m2m": can_reveal_contract_m2m,
@@ -1757,12 +1852,21 @@ def user_contract_detail_page(
 
     if request.method == "POST":
         action = (request.POST.get("action") or "").strip()
-        if action != "reveal-contract-client-secret":
+        if _handle_revision_draft_action(
+            request,
+            contract=contract,
+            result_context=result_context,
+        ):
+            pass
+        elif action != "reveal-contract-client-secret":
             result_context["error_message"] = "Azione non supportata."
+        elif not _can_reveal_contract_m2m_secret(
+            user=request.user,
+            contract=contract,
+        ):
+            raise PermissionDenied("Non puoi visualizzare il secret M2M.")
         else:
-            principal = _default_m2m_principal_for_company(
-                contract.contractor_company
-            )
+            principal = _default_m2m_principal_for_company(contract.contractor_company)
             if principal is None:
                 result_context["error_message"] = "Nessun client M2M configurato."
             else:
@@ -1785,7 +1889,10 @@ def user_contract_detail_page(
         request,
         contract=contract,
         can_manage_contract_m2m=False,
-        can_reveal_contract_m2m=True,
+        can_reveal_contract_m2m=_can_reveal_contract_m2m_secret(
+            user=request.user,
+            contract=contract,
+        ),
         can_create_contract_invites=can_manage_contract,
         result_context=result_context,
     )
@@ -1866,16 +1973,20 @@ def agency_contract_detail_page(
 
     if request.method == "POST":
         action = (request.POST.get("action") or "").strip()
-        if action != "reveal-contract-client-secret":
+        if _handle_revision_draft_action(
+            request,
+            contract=contract,
+            result_context=result_context,
+        ):
+            pass
+        elif action != "reveal-contract-client-secret":
             result_context["error_message"] = "Azione non supportata."
         elif not can_manage_contract_m2m:
             raise PermissionDenied(
                 "Solo platform admin, agency admin o superuser possono gestire M2M."
             )
         else:
-            principal = _default_m2m_principal_for_company(
-                contract.contractor_company
-            )
+            principal = _default_m2m_principal_for_company(contract.contractor_company)
             if principal is None:
                 result_context["error_message"] = "Nessun client M2M configurato."
             else:
@@ -1924,10 +2035,7 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
 
     companies = list(Company.objects.all().order_by("name"))
     lots = list(Lot.objects.filter(agency=agency).order_by("id"))
-    active_flow_profiles = list(
-        FlowProfile.objects.filter(is_active=True).order_by("name")
-    )
-    default_flow_profile = get_default_flow_profile()
+    governing_authorities = list(Authority.objects.all().order_by("name"))
     status_choices = [
         (status_value, status_label)
         for status_value, status_label in Contract.ContractStatus.choices
@@ -1943,14 +2051,12 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
         "form_values": {
             "contract_code": "",
             "contractor_company_id": "",
+            "governing_authority_id": "",
             "lot_id": "",
             "start_date": "",
             "end_date": "",
             "tender_id": "",
             "status": Contract.ContractStatus.DRAFT,
-            "flow_profile_id": str(default_flow_profile.id)
-            if default_flow_profile is not None
-            else "",
         },
         "company_form_values": {
             "name": "",
@@ -1965,13 +2071,15 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
             "contractor_company_id": request.POST.get(
                 "contractor_company_id", ""
             ).strip(),
+            "governing_authority_id": request.POST.get(
+                "governing_authority_id", ""
+            ).strip(),
             "lot_id": request.POST.get("lot_id", "").strip(),
             "start_date": request.POST.get("start_date", "").strip(),
             "end_date": request.POST.get("end_date", "").strip(),
             "tender_id": request.POST.get("tender_id", "").strip(),
             "status": request.POST.get("status", "").strip()
             or Contract.ContractStatus.DRAFT,
-            "flow_profile_id": request.POST.get("flow_profile_id", "").strip(),
         }
         result_context["form_values"] = form_values
 
@@ -2050,38 +2158,28 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
                     id=form_values["lot_id"],
                     agency=agency,
                 ).first()
+                governing_authority = None
+                if form_values["governing_authority_id"]:
+                    governing_authority = Authority.objects.filter(
+                        id=form_values["governing_authority_id"]
+                    ).first()
 
                 if company is None:
                     result_context["error_message"] = "Seleziona una azienda valida."
                 elif lot is None:
                     result_context["error_message"] = "Seleziona un lotto valido."
+                elif (
+                    form_values["governing_authority_id"]
+                    and governing_authority is None
+                ):
+                    result_context["error_message"] = (
+                        "Seleziona una autorita' di governo valida."
+                    )
                 elif form_values["status"] not in {
                     choice[0] for choice in status_choices
                 }:
                     result_context["error_message"] = "Stato contratto non supportato."
                 else:
-                    flow_profile = FlowProfile.objects.filter(
-                        id=form_values["flow_profile_id"],
-                        is_active=True,
-                    ).first()
-                    if flow_profile is None:
-                        result_context["error_message"] = (
-                            "Seleziona un profilo flussi attivo. Se non sono "
-                            "presenti profili attivi, configura prima i profili "
-                            "nella sezione Configurazione."
-                        )
-                        return render(
-                            request,
-                            "exchange_agreement/agency_contract_create.html",
-                            {
-                                "agency": agency,
-                                "companies": companies,
-                                "lots": lots,
-                                "active_flow_profiles": active_flow_profiles,
-                                "status_choices": status_choices,
-                                **result_context,
-                            },
-                        )
                     try:
                         start_date_value = date.fromisoformat(form_values["start_date"])
                     except ValueError:
@@ -2107,12 +2205,12 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
                                         contract_code=form_values["contract_code"],
                                         client_agency=agency,
                                         contractor_company=company,
+                                        governing_authority=governing_authority,
                                         lot=lot,
                                         start_date=start_date_value,
                                         end_date=end_date_value,
                                         tender_id=form_values["tender_id"],
                                         status=form_values["status"],
-                                        flow_profile=flow_profile,
                                     )
                                     ensure_default_contract_ingest_grant(
                                         contract=contract,
@@ -2139,10 +2237,89 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
             "agency": agency,
             "companies": companies,
             "lots": lots,
-            "active_flow_profiles": active_flow_profiles,
+            "governing_authorities": governing_authorities,
             "status_choices": status_choices,
             **result_context,
         },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def platform_revision_queue_page(request: HttpRequest) -> HttpResponse:
+    if not can_approve_contract_revision(user=request.user):
+        raise PermissionDenied(
+            "Solo platform admin o superuser possono approvare revisioni."
+        )
+
+    result_context = {"error_message": "", "success_message": ""}
+    if request.method == "POST":
+        revision = get_object_or_404(
+            ContractConfigurationRevision.objects.select_related("contract"),
+            pk=request.POST.get("revision_id"),
+        )
+        action = (request.POST.get("action") or "").strip()
+        try:
+            if action == "approve-contract-revision":
+                approve_revision(revision, request.user)
+                result_context["success_message"] = (
+                    f"Revisione {revision.code} approvata."
+                )
+            elif action == "withdraw-contract-revision":
+                withdraw_revision(
+                    revision,
+                    request.POST.get("withdrawal_reason", "").strip(),
+                    request.user,
+                )
+                result_context["success_message"] = (
+                    f"Revisione {revision.code} ritirata."
+                )
+            else:
+                raise ValidationError("Azione revisione non supportata.")
+        except (
+            ContractRevisionError,
+            ContractRevisionPermissionError,
+            ValidationError,
+        ) as exc:
+            result_context["error_message"] = _revision_error_message(
+                exc,
+                technical=True,
+            )
+
+    revisions = list(
+        ContractConfigurationRevision.objects.select_related(
+            "contract",
+            "contract__client_agency",
+            "processing_profile_version",
+            "created_by",
+        )
+        .exclude(status=ContractConfigurationRevision.Status.WITHDRAWN)
+        .order_by("status", "valid_from", "contract__contract_code")
+    )
+    rows = []
+    for revision in revisions:
+        issues = (
+            validate_revision_for_approval(revision)
+            if revision.status == ContractConfigurationRevision.Status.DRAFT
+            else ()
+        )
+        rows.append(
+            {
+                "revision": revision,
+                "issues": issues,
+                "temporal_state": revision_temporal_state(revision),
+                "can_withdraw": (
+                    revision.status == ContractConfigurationRevision.Status.APPROVED
+                    and revision.valid_from is not None
+                    and revision.valid_from > timezone.localdate()
+                ),
+            }
+        )
+
+    return render(
+        request,
+        "exchange_agreement/platform_revision_queue.html",
+        {"revision_rows": rows, **result_context},
     )
 
 
@@ -2232,9 +2409,7 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "supported_what": request.POST.get(
                 "operational_flow_supported_what", ""
             ).strip(),
-            "description": request.POST.get(
-                "operational_flow_description", ""
-            ).strip(),
+            "description": request.POST.get("operational_flow_description", "").strip(),
             "version": request.POST.get("operational_flow_version", "").strip()
             or "001",
             "status": request.POST.get(
@@ -2261,9 +2436,9 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                 flow = OperationalFlow(
                     code=result_context["operational_flow_form_values"]["code"],
                     engine=OperationalFlow.Engine.PREFECT,
-                    deployment_name=result_context[
-                        "operational_flow_form_values"
-                    ]["deployment_name"],
+                    deployment_name=result_context["operational_flow_form_values"][
+                        "deployment_name"
+                    ],
                     supported_what=result_context["operational_flow_form_values"][
                         "supported_what"
                     ],
@@ -2271,9 +2446,7 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                     description=result_context["operational_flow_form_values"][
                         "description"
                     ],
-                    version=result_context["operational_flow_form_values"][
-                        "version"
-                    ],
+                    version=result_context["operational_flow_form_values"]["version"],
                 )
                 flow.full_clean()
                 flow.save()
@@ -2989,10 +3162,9 @@ def invitation_landing(request: HttpRequest, token: str) -> HttpResponse:
         state = "expired"
         can_continue = False
 
-    credentials_prepared = (
-        request.session.get("prepared_invitation_credentials_token")
-        == str(invitation.token)
-    )
+    credentials_prepared = request.session.get(
+        "prepared_invitation_credentials_token"
+    ) == str(invitation.token)
 
     context.update(
         {

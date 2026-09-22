@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Approvazione revisioni - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <div>
+    <h1 class="h3 mb-0">Revisioni contrattuali</h1>
+    <p class="text-body-secondary mb-0">Verifica tecnica, approvazione e ritiro delle configurazioni future.</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:platform-configuration' %}">Configurazione piattaforma</a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if error_message %}
+  {% include "includes/ui_alert.html" with alert_variant="danger" alert_message=error_message %}
+{% endif %}
+{% if success_message %}
+  {% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}
+{% endif %}
+
+<div class="row g-3">
+  {% for row in revision_rows %}
+    <div class="col-12">
+      <section class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between flex-wrap gap-2">
+            <div>
+              <h2 class="h5 mb-1">{{ row.revision.contract.contract_code }} · {{ row.revision.code }}</h2>
+              <p class="text-body-secondary small mb-2">
+                {{ row.revision.contract.client_agency.name }} · {{ row.revision.processing_profile_version.name }} {{ row.revision.processing_profile_version.version }}
+              </p>
+            </div>
+            <div>
+              <span class="badge text-bg-secondary">{{ row.revision.get_status_display }}</span>
+              <span class="badge text-bg-light">{{ row.temporal_state }}</span>
+            </div>
+          </div>
+
+          <dl class="row mb-2">
+            <dt class="col-sm-3">Valida dal</dt><dd class="col-sm-9">{{ row.revision.valid_from|date:"d/m/Y" }}</dd>
+            <dt class="col-sm-3">Motivazione</dt><dd class="col-sm-9">{{ row.revision.change_reason|default:"-" }}</dd>
+            <dt class="col-sm-3">Snapshot</dt><dd class="col-sm-9"><code>{{ row.revision.snapshot_checksum|default:"Non ancora generato" }}</code></dd>
+          </dl>
+
+          {% if row.issues %}
+            <div class="alert alert-warning">
+              <strong>Controlli da risolvere</strong>
+              <ul class="mb-0 mt-1">
+                {% for issue in row.issues %}<li>{{ issue.message }} <code>{{ issue.code }}</code></li>{% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+
+          {% if row.revision.status == "draft" %}
+            <form method="post" class="d-inline">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="approve-contract-revision">
+              <input type="hidden" name="revision_id" value="{{ row.revision.id }}">
+              <button class="btn btn-primary btn-sm" {% if row.issues %}disabled{% endif %}>Approva revisione</button>
+            </form>
+          {% elif row.can_withdraw %}
+            <form method="post" class="row g-2 align-items-end">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="withdraw-contract-revision">
+              <input type="hidden" name="revision_id" value="{{ row.revision.id }}">
+              <div class="col-md-8">
+                <label class="form-label" for="withdrawal_reason_{{ row.revision.id }}">Motivazione ritiro</label>
+                <input class="form-control form-control-sm" id="withdrawal_reason_{{ row.revision.id }}" name="withdrawal_reason" required>
+              </div>
+              <div class="col-md-4"><button class="btn btn-outline-danger btn-sm">Ritira revisione futura</button></div>
+            </form>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+  {% empty %}
+    <div class="col-12"><div class="alert alert-info">Nessuna revisione da mostrare.</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

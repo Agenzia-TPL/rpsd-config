@@ -48,6 +48,9 @@
           <dt class="col-sm-4 text-body-secondary">Lotto</dt>
           <dd class="col-sm-8">{{ contract.lot }}</dd>
 
+          <dt class="col-sm-4 text-body-secondary">Autorita' di governo</dt>
+          <dd class="col-sm-8">{{ contract.governing_authority|default:"Non associata" }}</dd>
+
           <dt class="col-sm-4 text-body-secondary">Periodo</dt>
           <dd class="col-sm-8">
             {{ contract.start_date|date:"d/m/Y" }}
@@ -68,23 +71,78 @@
             <dd class="col-sm-8">{{ contract.tender_id }}</dd>
           {% endif %}
 
-          {% if contract.flow_profile %}
-            <dt class="col-sm-4 text-body-secondary">Profilo flussi</dt>
-            <dd class="col-sm-8">
-              <div class="fw-semibold">{{ contract.flow_profile.name }}</div>
-              <div class="small text-body-secondary"><code>{{ contract.flow_profile.code }}</code></div>
-              {% if flow_profile_summary.data_ingestion %}
-                <div class="d-flex flex-wrap gap-1 mt-2">
-                  {% for item in flow_profile_summary.data_ingestion %}
-                    <span class="badge {% if item.active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
-                      {{ item.data_category }}
-                    </span>
-                  {% endfor %}
-                </div>
-              {% endif %}
-            </dd>
-          {% endif %}
         </dl>
+      </div>
+    </section>
+
+    <section class="card border-0 shadow-sm mb-3" aria-label="Revisioni configurazione">
+      <div class="card-body">
+        <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+          <div>
+            <h2 class="h5 mb-1">Configurazioni del contratto</h2>
+            <p class="text-body-secondary small mb-0">
+              Ogni revisione e' una fotografia completa. La data finale deriva dalla revisione successiva.
+            </p>
+          </div>
+        </div>
+
+        <div class="table-responsive mb-3">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Revisione</th>
+                <th>Profilo</th>
+                <th>Decorrenza</th>
+                <th>Termine derivato</th>
+                <th>Stato</th>
+                <th>Condizione</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in revision_rows %}
+                <tr>
+                  <td><code>{{ row.revision.code }}</code></td>
+                  <td>{{ row.revision.processing_profile_version.name }} <span class="text-body-secondary">{{ row.revision.processing_profile_version.version }}</span></td>
+                  <td>{{ row.revision.valid_from|date:"d/m/Y" }}</td>
+                  <td>{% if row.effective_to %}{{ row.effective_to|date:"d/m/Y" }}{% else %}<span class="text-body-secondary">-</span>{% endif %}</td>
+                  <td>{{ row.revision.get_status_display }}</td>
+                  <td><span class="badge text-bg-secondary">{{ row.temporal_state }}</span></td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="6" class="text-body-secondary">Nessuna configurazione ancora definita.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% if can_prepare_revision %}
+          <form method="post" class="border rounded p-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create-contract-revision">
+            <h3 class="h6">Crea una nuova bozza</h3>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label" for="processing_profile_id">Profilo approvato</label>
+                <select class="form-select" id="processing_profile_id" name="processing_profile_id" required>
+                  <option value="">Seleziona profilo</option>
+                  {% for profile in available_processing_profiles %}
+                    <option value="{{ profile.id }}">{{ profile.name }} - {{ profile.version }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="valid_from">Valida dal</label>
+                <input class="form-control" id="valid_from" name="valid_from" type="date" required>
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="change_reason">Motivazione</label>
+                <input class="form-control" id="change_reason" name="change_reason" type="text" maxlength="255">
+                <div class="form-text">Input e indicatori compatibili vengono proposti automaticamente dal profilo.</div>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm mt-3" {% if not available_processing_profiles %}disabled{% endif %}>Crea bozza</button>
+          </form>
+        {% endif %}
       </div>
     </section>
 

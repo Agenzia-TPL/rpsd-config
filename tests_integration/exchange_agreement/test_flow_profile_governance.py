@@ -55,7 +55,7 @@ class FlowProfileGovernanceTests(TestCase):
         )
         self.assertTrue(OperationalFlow.objects.filter(code="siri-pt_001").exists())
 
-    def test_contract_create_page_uses_extended_default_profile(self):
+    def test_contract_create_page_ignores_legacy_direct_profile(self):
         ensure_standard_flow_profiles()
         self.client.force_login(self.user)
 
@@ -81,9 +81,9 @@ class FlowProfileGovernanceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         contract = Contract.objects.get(contract_code="CTR-FLOW-001")
-        self.assertEqual(contract.flow_profile.code, STANDARD_TPL_PROFILE_CODE)
+        self.assertIsNone(contract.flow_profile)
 
-    def test_contract_create_page_blocks_without_active_profiles(self):
+    def test_contract_create_page_does_not_require_active_legacy_profiles(self):
         FlowProfile.objects.all().delete()
         self.client.force_login(self.user)
 
@@ -106,8 +106,8 @@ class FlowProfileGovernanceTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Seleziona un profilo flussi attivo")
-        self.assertFalse(Contract.objects.filter(contract_code="CTR-FLOW-002").exists())
+        self.assertContains(response, "Contratto creato correttamente.")
+        self.assertTrue(Contract.objects.filter(contract_code="CTR-FLOW-002").exists())
 
     def test_used_flow_profile_blocks_technical_modification(self):
         profile = ensure_standard_flow_profiles()[0]
@@ -130,7 +130,9 @@ class FlowProfileGovernanceTests(TestCase):
             profile.full_clean()
 
     def test_standard_profiles_drive_ingest_categories(self):
-        profiles = {profile.code: profile for profile in ensure_standard_flow_profiles()}
+        profiles = {
+            profile.code: profile for profile in ensure_standard_flow_profiles()
+        }
 
         standard_ingestion = profiles[STANDARD_TPL_PROFILE_CODE].options[
             "data_ingestion"
