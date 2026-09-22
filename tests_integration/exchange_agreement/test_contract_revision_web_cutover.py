@@ -33,6 +33,21 @@ class ContractRevisionWebCutoverTests(_ContractRevisionFixtureMixin, TestCase):
             status=AgencyMembership.Status.ACTIVE,
             created_by=self.user,
         )
+        self.agency_reader = user_model.objects.create_user(
+            username="revision-web-agency-reader",
+            password="test-password",
+        )
+        AgencyMembership.objects.create(
+            agency=self.agency,
+            user=self.agency_reader,
+            role=AgencyMembership.Role.AGENCY_READER,
+            status=AgencyMembership.Status.ACTIVE,
+            created_by=self.user,
+        )
+        self.unrelated_user = user_model.objects.create_user(
+            username="revision-web-unrelated",
+            password="test-password",
+        )
         self.authority_viewer = user_model.objects.create_user(
             username="revision-web-authority-viewer",
             password="test-password",
@@ -166,3 +181,63 @@ class ContractRevisionWebCutoverTests(_ContractRevisionFixtureMixin, TestCase):
             reverse("exchange_agreement:platform-revision-queue")
         )
         self.assertEqual(queue_denied.status_code, 403)
+
+    def test_agency_reader_and_unrelated_user_cannot_prepare_revisions(self):
+        self.client.force_login(self.agency_reader)
+        detail = self.client.get(self._agency_detail_url())
+        self.assertEqual(detail.status_code, 200)
+        self.assertNotContains(detail, "Crea una nuova bozza")
+        denied_create = self.client.post(
+            self._agency_detail_url(),
+            {
+                "action": "create-contract-revision",
+                "processing_profile_id": self.profile.pk,
+                "valid_from": self.contract.start_date.isoformat(),
+            },
+        )
+        self.assertEqual(denied_create.status_code, 403)
+        self.assertEqual(
+            self.client.get(
+                reverse("exchange_agreement:platform-revision-queue")
+            ).status_code,
+            403,
+        )
+
+        self.client.force_login(self.unrelated_user)
+        self.assertEqual(self.client.get(self._agency_detail_url()).status_code, 403)
+        self.assertEqual(self.client.get(self._direct_detail_url()).status_code, 403)
+
+    def test_platform_queue_explains_invalid_coverage_and_keeps_draft(self):
+        self.client.force_login(self.agency_editor)
+        created = self.client.post(
+            self._agency_detail_url(),
+            {
+                "action": "create-contract-revision",
+                "processing_profile_id": self.profile.pk,
+                "valid_from": self.contract.start_date.isoformat(),
+                "change_reason": "Configurazione incompleta da verificare.",
+            },
+        )
+        self.assertEqual(created.status_code, 200)
+        revision = ContractConfigurationRevision.objects.get(contract=self.contract)
+        revision.input_selections.all().delete()
+
+        self.client.force_login(self.user)
+        queue_url = reverse("exchange_agreement:platform-revision-queue")
+        queue = self.client.get(queue_url)
+        self.assertEqual(queue.status_code, 200)
+        self.assertContains(queue, "missing_inputs")
+
+        rejected = self.client.post(
+            queue_url,
+            {
+                "action": "approve-contract-revision",
+                "revision_id": revision.pk,
+            },
+        )
+        self.assertEqual(rejected.status_code, 200)
+        self.assertContains(rejected, "missing_inputs")
+        revision.refresh_from_db()
+        self.assertEqual(revision.status, ContractConfigurationRevision.Status.DRAFT)
+        self.assertEqual(revision.configuration_snapshot, {})
+        self.assertEqual(revision.snapshot_checksum, "")
