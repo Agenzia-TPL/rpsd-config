@@ -11,17 +11,20 @@ from rpsd_config.exchange_agreement.models import (
     Company,
     Contract,
     ContractMembership,
-    FlowProfile,
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
-    OperationalFlow,
 )
 from rpsd_config.server.m2m_auth import (
     M2MAuthContext,
     M2MTokenValidationError,
     authenticate_m2m_token,
     extract_m2m_client_id,
+)
+
+from .runtime_configuration_fixtures import (
+    RuntimeInputFixture,
+    install_approved_runtime_configuration,
 )
 
 
@@ -39,48 +42,22 @@ class CompanyM2MApiAuthTests(TestCase):
             first_name="Contract",
             last_name="User",
         )
+        self.configuration_admin = user_model.objects.create_superuser(
+            username="m2m-configuration-admin",
+            password="test-password",
+        )
         self.agency = Agency.objects.create(name="Agency M2M API")
         self.company = Company.objects.create(name="Company M2M API")
         self.other_company = Company.objects.create(name="Other Company M2M API")
         self.lot = Lot.objects.create(
+            agency=self.agency,
             short_description="M2M-API",
             description="Lot M2M API",
         )
         self.other_lot = Lot.objects.create(
+            agency=self.agency,
             short_description="M2M-API-OTHER",
             description="Other Lot M2M API",
-        )
-        OperationalFlow.objects.create(
-            code="m2m-netex_001",
-            deployment_name="ingest-flow/netex",
-            supported_what="netex",
-        )
-        OperationalFlow.objects.create(
-            code="m2m-siri_001",
-            deployment_name="ingest-flow/siri",
-            supported_what="siri",
-        )
-        self.flow_profile = FlowProfile.objects.create(
-            code="m2m-api-flow-profile",
-            name="M2M API Flow Profile",
-            options={
-                "general_profile": "m2m-api",
-                "planned_master": {},
-                "data_ingestion": {
-                    "netex": {
-                        "flow": "m2m-netex_001",
-                        "active": True,
-                        "description": "NeTEx ingest",
-                    },
-                    "siri": {
-                        "flow": "m2m-siri_001",
-                        "active": False,
-                        "description": "SIRI ingest",
-                    },
-                },
-                "data_retention": {},
-            },
-            is_active=True,
         )
         self.contract = Contract.objects.create(
             contract_code="CTR-M2M-API-001",
@@ -90,7 +67,41 @@ class CompanyM2MApiAuthTests(TestCase):
             start_date=date(2026, 1, 1),
             end_date=date(2026, 12, 31),
             status=Contract.ContractStatus.ACTIVE,
-            flow_profile=self.flow_profile,
+        )
+        self.flow_profile, self.revision = install_approved_runtime_configuration(
+            contract=self.contract,
+            actor=self.configuration_admin,
+            profile_code="m2m-api-flow-profile_001",
+            profile_version="001",
+            profile_name="M2M API Flow Profile",
+            profile_description="M2M API compatibility profile.",
+            orchestration_deployment_name="m2m-contract-processing/default",
+            inputs=(
+                RuntimeInputFixture(
+                    category="netex",
+                    dataset_name="NeTEx",
+                    dataset_description="Scheduled public transport data.",
+                    specification_code="m2m-netex_v001",
+                    specification_version="001",
+                    flow_code="m2m-netex_001",
+                    flow_version="001",
+                    deployment_name="ingest-flow/netex",
+                    flow_description="NeTEx ingest",
+                    selected=True,
+                    required=True,
+                ),
+                RuntimeInputFixture(
+                    category="siri",
+                    dataset_name="SIRI",
+                    dataset_description="Real-time public transport data.",
+                    specification_code="m2m-siri_v001",
+                    specification_version="001",
+                    flow_code="m2m-siri_001",
+                    flow_version="001",
+                    deployment_name="ingest-flow/siri",
+                    flow_description="SIRI ingest",
+                ),
+            ),
         )
         self.other_contract = Contract.objects.create(
             contract_code="CTR-M2M-API-OTHER",
@@ -207,7 +218,7 @@ class CompanyM2MApiAuthTests(TestCase):
         self.assertEqual(payload["contract_code"], self.contract.contract_code)
         self.assertEqual(payload["data_category"], "netex")
         self.assertEqual(payload["flow_profile_code"], self.flow_profile.code)
-        self.assertEqual(payload["flow"], "m2m-netex_001")
+        self.assertEqual(payload["flow"], "ingest-flow/netex")
 
     def test_m2m_ingest_authorization_rejects_inactive_data_category(self):
         path = (

@@ -6,22 +6,22 @@
       "payload": {
         "contract_code": "CTR-GOLDEN-001",
         "flow_profile": {
-          "code": "golden-flow-profile",
+          "code": "golden-flow-profile_001",
           "name": "Golden Flow Profile",
-          "schema_version": "1.0",
+          "schema_version": "001",
           "is_active": true,
           "description": "Stable profile used by the M2M v1 contract tests.",
           "options": {
-            "general_profile": "golden-v1",
+            "general_profile": "golden-flow-profile_001",
             "planned_master": {},
             "data_ingestion": {
               "netex": {
-                "flow": "netex-golden_001",
+                "flow": "netex-import/netex-ita-v001",
                 "active": true,
                 "description": "NeTEx ingest"
               },
               "siri": {
-                "flow": "siri-golden_001",
+                "flow": "siri-import/siri-vm-v001",
                 "active": false,
                 "description": "SIRI ingest"
               }
@@ -45,29 +45,27 @@
             "structures": [
               {
                 "id": "<structure-id>",
-                "name": "scheduled-journey-movement",
-                "description": "Scheduled movements required by the indicator.",
+                "name": "NeTEx required fragment",
+                "description": "Required NeTEx content.",
                 "dataset": {
                   "slug": "netex",
                   "name": "NeTEx",
                   "description": "Scheduled public transport data."
                 },
                 "definition": {
+                  "path": "//netex:ServiceJourney",
+                  "namespaces": {
+                    "netex": "urn:netex"
+                  },
                   "xpath": "//netex:ServiceJourney",
-                  "fields": [
-                    "LineRef",
-                    "JourneyPatternRef"
-                  ]
+                  "fields": []
                 },
                 "xpath": "//netex:ServiceJourney",
-                "fields": [
-                  "LineRef",
-                  "JourneyPatternRef"
-                ]
+                "fields": []
               }
             ],
             "used_by_indicators": [
-              "commercial-speed_001"
+              "golden-flow-profile-001-indicator"
             ]
           }
         ]
@@ -79,8 +77,8 @@
         "allowed": true,
         "contract_code": "CTR-GOLDEN-001",
         "data_category": "netex",
-        "flow_profile_code": "golden-flow-profile",
-        "flow": "netex-golden_001",
+        "flow_profile_code": "golden-flow-profile_001",
+        "flow": "netex-import/netex-ita-v001",
         "grant_id": "<grant-id>"
       }
     }

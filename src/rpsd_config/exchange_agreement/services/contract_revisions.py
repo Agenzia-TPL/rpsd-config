@@ -137,6 +137,8 @@ def _fragment_snapshot(fragment: RequirementFragment) -> dict:
     return {
         "dataset_specification_code": fragment.dataset_specification.code,
         "code": fragment.code,
+        "name": fragment.name,
+        "description": fragment.description,
         "locator_type": fragment.locator_type,
         "result_kind": fragment.result_kind,
         "locator_definition": fragment.locator_definition,
@@ -193,6 +195,8 @@ def build_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
         inputs.append(
             {
                 "dataset_code": profile_input.dataset.code,
+                "dataset_name": profile_input.dataset.name,
+                "dataset_description": profile_input.dataset.description,
                 "dataset_specification": {
                     "code": specification.code,
                     "version": specification.version,
@@ -200,6 +204,7 @@ def build_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
                 "input_flow": {
                     "code": flow.code,
                     "version": flow.version,
+                    "engine": flow.engine,
                     "deployment_name": flow.deployment_name,
                     "artifact_identifier": flow.artifact_identifier,
                 },
@@ -243,10 +248,13 @@ def build_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
         "processing_profile": {
             "code": profile.code,
             "version": profile.version,
+            "name": profile.name,
+            "description": profile.description,
         },
         "orchestration_flow": {
             "code": orchestration.code,
             "version": orchestration.version,
+            "engine": orchestration.engine,
             "deployment_name": orchestration.deployment_name,
             "artifact_identifier": orchestration.artifact_identifier,
         },

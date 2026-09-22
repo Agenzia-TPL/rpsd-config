@@ -5,23 +5,27 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
 
 from rpsd_config.exchange_agreement.models import (
     Agency,
     Company,
     Contract,
-    ContractIndicator,
-    Dataset,
-    FlowProfile,
-    IndicatorDef,
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
-    OperationalFlow,
-    Structure,
+)
+from rpsd_config.exchange_agreement.services.api_usage import (
+    api_usage_count,
+    reset_api_usage_counts,
 )
 from rpsd_config.server.m2m_auth import M2MAuthContext
+
+from .runtime_configuration_fixtures import (
+    RuntimeInputFixture,
+    install_approved_runtime_configuration,
+)
 
 
 @override_settings(
@@ -42,46 +46,17 @@ class M2MApiV1ContractTests(TestCase):
 
     def setUp(self):
         today = date.today()
+        reset_api_usage_counts()
+        self.configuration_admin = get_user_model().objects.create_superuser(
+            username="golden-configuration-admin",
+            password="test-password",
+        )
         self.agency = Agency.objects.create(name="Golden Agency")
         self.company = Company.objects.create(name="Golden Company")
         self.lot = Lot.objects.create(
+            agency=self.agency,
             short_description="GOLDEN-LOT",
             description="Golden contract lot",
-        )
-        OperationalFlow.objects.create(
-            code="netex-golden_001",
-            deployment_name="netex-import/netex-ita-v001",
-            supported_what="netex",
-            description="Golden NeTEx flow",
-        )
-        OperationalFlow.objects.create(
-            code="siri-golden_001",
-            deployment_name="siri-import/siri-vm-v001",
-            supported_what="siri",
-            description="Golden SIRI flow",
-        )
-        self.flow_profile = FlowProfile.objects.create(
-            code="golden-flow-profile",
-            name="Golden Flow Profile",
-            description="Stable profile used by the M2M v1 contract tests.",
-            options={
-                "general_profile": "golden-v1",
-                "planned_master": {},
-                "data_ingestion": {
-                    "netex": {
-                        "flow": "netex-golden_001",
-                        "active": True,
-                        "description": "NeTEx ingest",
-                    },
-                    "siri": {
-                        "flow": "siri-golden_001",
-                        "active": False,
-                        "description": "SIRI ingest",
-                    },
-                },
-                "data_retention": {},
-            },
-            is_active=True,
         )
         self.contract = Contract.objects.create(
             contract_code="CTR-GOLDEN-001",
@@ -91,7 +66,41 @@ class M2MApiV1ContractTests(TestCase):
             start_date=today - timedelta(days=30),
             end_date=today + timedelta(days=30),
             status=Contract.ContractStatus.ACTIVE,
-            flow_profile=self.flow_profile,
+        )
+        self.flow_profile, self.revision = install_approved_runtime_configuration(
+            contract=self.contract,
+            actor=self.configuration_admin,
+            profile_code="golden-flow-profile_001",
+            profile_version="001",
+            profile_name="Golden Flow Profile",
+            profile_description="Stable profile used by the M2M v1 contract tests.",
+            orchestration_deployment_name="golden-contract-processing/default",
+            inputs=(
+                RuntimeInputFixture(
+                    category="netex",
+                    dataset_name="NeTEx",
+                    dataset_description="Scheduled public transport data.",
+                    specification_code="netex-ita_v001",
+                    specification_version="001",
+                    flow_code="netex-golden_001",
+                    flow_version="001",
+                    deployment_name="netex-import/netex-ita-v001",
+                    flow_description="NeTEx ingest",
+                    selected=True,
+                    required=True,
+                ),
+                RuntimeInputFixture(
+                    category="siri",
+                    dataset_name="SIRI",
+                    dataset_description="Real-time public transport data.",
+                    specification_code="siri-vm_v001",
+                    specification_version="001",
+                    flow_code="siri-golden_001",
+                    flow_version="001",
+                    deployment_name="siri-import/siri-vm-v001",
+                    flow_description="SIRI ingest",
+                ),
+            ),
         )
         self.principal = IntegrationPrincipal.objects.create(
             company=self.company,
@@ -104,30 +113,6 @@ class M2MApiV1ContractTests(TestCase):
             principal=self.principal,
             contract=self.contract,
             action=IntegrationGrant.Action.INGEST_WRITE,
-        )
-        dataset = Dataset.objects.create(
-            code="netex",
-            name="NeTEx",
-            description="Scheduled public transport data.",
-        )
-        self.structure = Structure.objects.create(
-            dataset=dataset,
-            name="scheduled-journey-movement",
-            description="Scheduled movements required by the indicator.",
-            definition={
-                "xpath": "//netex:ServiceJourney",
-                "fields": ["LineRef", "JourneyPatternRef"],
-            },
-        )
-        indicator = IndicatorDef.objects.create(
-            code="commercial-speed_001",
-            type="QUALITY",
-            name="Commercial speed",
-        )
-        indicator.structures.add(self.structure)
-        ContractIndicator.objects.create(
-            contract=self.contract,
-            indicator=indicator,
         )
         self.client = Client()
 
@@ -181,6 +166,17 @@ class M2MApiV1ContractTests(TestCase):
                     response,
                     self.golden["happy_path"][kind],
                     kind=kind,
+                )
+                self.assertEqual(response.headers["Deprecation"], "true")
+                self.assertIn('rel="successor-version"', response.headers["Link"])
+                self.assertTrue(response.headers["X-Correlation-ID"])
+                self.assertEqual(
+                    api_usage_count(
+                        version="v1",
+                        endpoint=kind.replace("_", "-"),
+                        outcome="success",
+                    ),
+                    1,
                 )
 
     def test_unauthenticated_request_matches_golden_rejection(self):

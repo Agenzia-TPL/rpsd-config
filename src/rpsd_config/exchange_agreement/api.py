@@ -1,17 +1,19 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
+import re
+import uuid
 from datetime import date
 from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from ninja import NinjaAPI, Schema
-from ninja.errors import HttpError
+from ninja.errors import AuthenticationError, HttpError
 from ninja.security import HttpBearer, SessionAuth
 
 from rpsd_config.server.bearer_auth import BearerTokenAuth
@@ -59,6 +61,7 @@ from .services.agency_invitations import (
     AgencyInvitationValidationError,
     create_agency_invitation,
 )
+from .services.api_usage import record_api_usage
 from .services.configuration_assets import load_configuration_asset_content
 from .services.flow_catalog import (
     input_flow_runtime_projection,
@@ -66,7 +69,12 @@ from .services.flow_catalog import (
 )
 from .services.flow_profiles import get_default_flow_profile
 from .services.indicator_catalog import serialize_indicator_catalog_entry
-from .services.m2m_audit import audit_m2m_event
+from .services.ingest_resolution import (
+    IngestResolutionError,
+    resolve_current_contract_configuration,
+    resolve_current_ingest_configuration,
+)
+from .services.m2m_audit import audit_m2m_event, resolve_request_id
 from .services.m2m_grants import (
     accessible_contracts_for_principal,
     ensure_default_contract_ingest_grant,
@@ -444,6 +452,41 @@ class M2MIngestAuthorizationResponse(Schema):
     grant_id: int | None
 
 
+class DatasetSpecificationResolutionSchema(Schema):
+    code: str
+    version: str
+
+
+class FlowVersionResolutionSchema(Schema):
+    code: str
+    version: str
+    engine: str
+    deployment_name: str
+    artifact_identifier: str
+
+
+class IngestResolutionV2(Schema):
+    schema_version: str
+    contract_code: str
+    configuration_revision_code: str
+    data_category: str
+    dataset_specification: DatasetSpecificationResolutionSchema
+    input_flow_version: FlowVersionResolutionSchema
+    orchestration_flow_version: FlowVersionResolutionSchema
+    snapshot_schema_version: str
+    snapshot_checksum: str
+
+
+class M2MErrorDetailSchema(Schema):
+    code: str
+    message: str
+    correlation_id: str
+
+
+class M2MErrorEnvelopeSchema(Schema):
+    error: M2MErrorDetailSchema
+
+
 class M2MUserSchema(Schema):
     username: str
     email: str
@@ -510,6 +553,64 @@ m2m_api = NinjaAPI(
 )
 
 config_asset_m2m_auth = ConfigAssetM2MTokenAuth()
+DATA_CATEGORY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def _m2m_correlation_id(request) -> str:
+    existing = getattr(request, "m2m_correlation_id", "") or resolve_request_id(request)
+    correlation_id = existing.strip() if isinstance(existing, str) else ""
+    if not correlation_id:
+        correlation_id = str(uuid.uuid4())
+    request.m2m_correlation_id = correlation_id
+    return correlation_id
+
+
+def _m2m_v2_error(request, *, status: int, code: str, message: str):
+    correlation_id = _m2m_correlation_id(request)
+    record_api_usage(
+        version="v2",
+        endpoint="ingest-resolution",
+        outcome=code,
+        correlation_id=correlation_id,
+    )
+    return status, M2MErrorEnvelopeSchema(
+        error=M2MErrorDetailSchema(
+            code=code,
+            message=message,
+            correlation_id=correlation_id,
+        )
+    )
+
+
+@m2m_api.exception_handler(AuthenticationError)
+def m2m_authentication_error(request, exc):
+    if "/v2/" not in request.path:
+        return m2m_api.create_response(
+            request,
+            {"detail": str(exc)},
+            status=exc.status_code,
+        )
+
+    reason = getattr(request, "m2m_auth_reason", "")
+    inactive_reasons = {
+        "principal-suspended",
+        "principal-revoked",
+        "principal-not-active",
+    }
+    status = 403 if reason in inactive_reasons else 401
+    code = "ingest_not_authorized" if status == 403 else "authentication_failed"
+    message = (
+        "M2M principal is not authorized"
+        if status == 403
+        else "M2M authentication failed"
+    )
+    _status, envelope = _m2m_v2_error(
+        request,
+        status=status,
+        code=code,
+        message=message,
+    )
+    return m2m_api.create_response(request, envelope.dict(), status=status)
 
 
 def _oidc_provider_id() -> str:
@@ -974,6 +1075,174 @@ def _contract_required_inputs_schema(contract: Contract) -> RequiredInputsRespon
     )
 
 
+def _legacy_revision_flow_profile_schema(contract: Contract) -> FlowProfileSchema:
+    current = resolve_current_contract_configuration(contract)
+    snapshot = current.snapshot
+    profile = current.revision.processing_profile_version
+    selected_inputs = {
+        item["dataset_code"]: item
+        for item in snapshot.get("inputs", [])
+        if isinstance(item, dict) and isinstance(item.get("dataset_code"), str)
+    }
+
+    data_ingestion = {}
+    for link in profile.input_flow_links.select_related(
+        "dataset", "input_flow_version"
+    ).order_by("dataset__code"):
+        selected = selected_inputs.get(link.dataset.code)
+        flow_snapshot = selected.get("input_flow", {}) if selected else {}
+        deployment_name = (
+            flow_snapshot.get("deployment_name")
+            if selected
+            else link.input_flow_version.deployment_name
+        )
+        data_ingestion[link.dataset.code] = {
+            "flow": deployment_name,
+            "active": selected is not None,
+            "description": link.input_flow_version.description,
+        }
+
+    profile_snapshot = snapshot.get("processing_profile", {})
+    return FlowProfileSchema(
+        code=profile_snapshot.get("code", profile.code),
+        name=profile_snapshot.get("name", profile.name),
+        schema_version=profile_snapshot.get("version", profile.version),
+        is_active=True,
+        description=profile_snapshot.get("description", profile.description),
+        options={
+            "general_profile": profile_snapshot.get("code", profile.code),
+            "planned_master": {},
+            "data_ingestion": data_ingestion,
+            "data_retention": {},
+        },
+    )
+
+
+def _legacy_revision_required_inputs_schema(
+    contract: Contract,
+) -> RequiredInputsResponse:
+    current = resolve_current_contract_configuration(contract)
+    snapshot = current.snapshot
+    inputs_by_specification = {
+        item.get("dataset_specification", {}).get("code"): item
+        for item in snapshot.get("inputs", [])
+        if isinstance(item, dict)
+        and isinstance(item.get("dataset_specification"), dict)
+    }
+    groups: dict[str, dict] = {}
+    structure_id = 0
+    for indicator in snapshot.get("indicators", []):
+        if not isinstance(indicator, dict):
+            continue
+        indicator_code = indicator.get("indicator_code", "")
+        for fragment in indicator.get("fragments", []):
+            if not isinstance(fragment, dict):
+                continue
+            specification_code = fragment.get("dataset_specification_code")
+            selected_input = inputs_by_specification.get(specification_code)
+            if not isinstance(selected_input, dict):
+                raise IngestResolutionError(
+                    "configuration_invariant_violation",
+                    "A required fragment has no selected input",
+                )
+            dataset_code = selected_input.get("dataset_code", "")
+            dataset = DatasetRefSchema(
+                slug=dataset_code,
+                name=selected_input.get("dataset_name", dataset_code),
+                description=selected_input.get("dataset_description", ""),
+            )
+            group = groups.setdefault(
+                dataset_code,
+                {
+                    "dataset": dataset,
+                    "structures": [],
+                    "used_by_indicators": set(),
+                },
+            )
+            locator = fragment.get("locator_definition", {})
+            if not isinstance(locator, dict):
+                locator = {}
+            xpath = (
+                locator.get("path", "")
+                if fragment.get("locator_type") == "xpath"
+                else ""
+            )
+            definition = dict(locator)
+            if xpath:
+                definition["xpath"] = xpath
+            definition.setdefault("fields", [])
+            structure_id += 1
+            group["structures"].append(
+                StructureSchema(
+                    id=structure_id,
+                    name=fragment.get("name") or fragment.get("code", ""),
+                    description=fragment.get("description", ""),
+                    dataset=dataset,
+                    definition=definition,
+                    xpath=xpath,
+                    fields=[],
+                )
+            )
+            group["used_by_indicators"].add(indicator_code)
+
+    return RequiredInputsResponse(
+        contract_code=contract.contract_code,
+        required_inputs=[
+            RequiredInputGroupSchema(
+                dataset=group["dataset"],
+                structures=group["structures"],
+                used_by_indicators=sorted(group["used_by_indicators"]),
+            )
+            for _, group in sorted(groups.items())
+        ],
+    )
+
+
+def _legacy_revision_error(exc: IngestResolutionError) -> HttpError:
+    messages = {
+        "contract_not_effective": "Contract is not effective today.",
+        "configuration_not_ready": "No current flow profile assigned to contract.",
+        "data_category_not_configured": (
+            "Data category is not supported by flow profile."
+        ),
+        "configuration_invariant_violation": (
+            "Current contract configuration is invalid."
+        ),
+    }
+    return HttpError(400, messages.get(exc.code, "Contract configuration unavailable."))
+
+
+def _reject_legacy_temporal_parameters(request) -> None:
+    temporal_parameters = {"reference_date", "service_day", "valid_from"}
+    if temporal_parameters.intersection(request.GET):
+        raise HttpError(400, "Client-supplied resolution dates are not supported.")
+
+
+def _mark_legacy_m2m_response(
+    request,
+    response: HttpResponse,
+    *,
+    endpoint: str,
+    contract_code: str,
+    data_category: str | None = None,
+) -> None:
+    correlation_id = _m2m_correlation_id(request)
+    response["Deprecation"] = "true"
+    response["Link"] = (
+        f"</exchange_agreement/api/m2m/v2/contracts/{contract_code}/"
+        'ingest-resolution{?data_category}>; rel="successor-version"'
+    )
+    response["X-Correlation-ID"] = correlation_id
+    record_api_usage(
+        version="v1",
+        endpoint=endpoint,
+        outcome="success",
+        correlation_id=correlation_id,
+        contract_code=contract_code,
+        data_category=data_category,
+    )
+
+
 def _contract_indicators_schema(contract: Contract) -> list[ContractIndicatorSchema]:
     links = (
         ContractIndicator.objects.select_related("indicator")
@@ -1052,6 +1321,147 @@ def _configuration_assets_qs():
     )
 
 
+@m2m_api.get(
+    "/v2/contracts/{contract_code}/ingest-resolution",
+    response={
+        200: IngestResolutionV2,
+        401: M2MErrorEnvelopeSchema,
+        403: M2MErrorEnvelopeSchema,
+        404: M2MErrorEnvelopeSchema,
+        409: M2MErrorEnvelopeSchema,
+        422: M2MErrorEnvelopeSchema,
+        503: M2MErrorEnvelopeSchema,
+    },
+)
+def m2m_contract_ingest_resolution_v2(
+    request,
+    contract_code: str,
+    data_category: str | None = None,
+):
+    unexpected = set(request.GET) - {"data_category"}
+    category_values = request.GET.getlist("data_category")
+    category = (data_category or "").strip().lower()
+    if (
+        unexpected
+        or len(category_values) != 1
+        or not DATA_CATEGORY_PATTERN.fullmatch(category)
+    ):
+        return _m2m_v2_error(
+            request,
+            status=422,
+            code="invalid_request",
+            message="The request must contain only one valid data_category",
+        )
+
+    try:
+        principal = require_m2m_principal(request)
+        contract = (
+            Contract.objects.select_related("contractor_company")
+            .filter(
+                contract_code=contract_code,
+                contractor_company=principal.company,
+            )
+            .first()
+        )
+        if contract is None:
+            return _m2m_v2_error(
+                request,
+                status=404,
+                code="contract_not_found",
+                message="Contract not found",
+            )
+
+        today = timezone.localdate()
+        if (
+            contract.status != Contract.ContractStatus.ACTIVE
+            or contract.start_date > today
+            or (contract.end_date is not None and contract.end_date < today)
+        ):
+            return _m2m_v2_error(
+                request,
+                status=409,
+                code="contract_not_effective",
+                message="Contract is not effective today",
+            )
+
+        checked_at = timezone.now()
+        grant = (
+            IntegrationGrant.objects.filter(
+                principal=principal,
+                contract=contract,
+                action=IntegrationGrant.Action.INGEST_WRITE,
+                status=IntegrationGrant.Status.ACTIVE,
+            )
+            .filter(Q(data_category__isnull=True) | Q(data_category=category))
+            .filter(
+                Q(valid_from__isnull=True) | Q(valid_from__lte=checked_at),
+                Q(valid_to__isnull=True) | Q(valid_to__gte=checked_at),
+            )
+            .order_by("-data_category", "id")
+            .first()
+        )
+        if grant is None:
+            return _m2m_v2_error(
+                request,
+                status=403,
+                code="ingest_not_authorized",
+                message="Ingest is not authorized for this contract and category",
+            )
+
+        resolution = resolve_current_ingest_configuration(contract, category)
+    except IngestResolutionError as exc:
+        return _m2m_v2_error(
+            request,
+            status=409,
+            code=exc.code,
+            message=exc.public_message,
+        )
+    except DatabaseError:
+        return _m2m_v2_error(
+            request,
+            status=503,
+            code="configuration_service_unavailable",
+            message="Configuration service is temporarily unavailable",
+        )
+
+    correlation_id = _m2m_correlation_id(request)
+    audit_m2m_event(
+        "api.ingest_resolution",
+        endpoint_version="v2",
+        outcome="allowed",
+        correlation_id=correlation_id,
+        principal_id=principal.pk,
+        company_id=principal.company_id,
+        contract_code=contract.contract_code,
+        data_category=category,
+        revision_code=resolution.revision.code,
+    )
+    record_api_usage(
+        version="v2",
+        endpoint="ingest-resolution",
+        outcome="success",
+        correlation_id=correlation_id,
+        contract_code=contract.contract_code,
+        data_category=category,
+        revision_code=resolution.revision.code,
+    )
+    return IngestResolutionV2(
+        schema_version="ingest-resolution/v2",
+        contract_code=contract.contract_code,
+        configuration_revision_code=resolution.revision.code,
+        data_category=category,
+        dataset_specification=DatasetSpecificationResolutionSchema(
+            **resolution.dataset_specification
+        ),
+        input_flow_version=FlowVersionResolutionSchema(**resolution.input_flow_version),
+        orchestration_flow_version=FlowVersionResolutionSchema(
+            **resolution.orchestration_flow_version
+        ),
+        snapshot_schema_version=resolution.snapshot_schema_version,
+        snapshot_checksum=resolution.snapshot_checksum,
+    )
+
+
 @m2m_api.get("/v1/me", response=M2MMeSchema)
 def m2m_me(request):
     principal = require_m2m_principal(request)
@@ -1111,16 +1521,29 @@ def m2m_contract_detail(request, contract_code: str):
     "/v1/contracts/{contract_code}/flow-profile",
     response=ContractFlowProfileResponse,
 )
-def m2m_contract_flow_profile(request, contract_code: str):
+def m2m_contract_flow_profile(
+    request,
+    contract_code: str,
+    response: HttpResponse,
+):
+    _reject_legacy_temporal_parameters(request)
     _principal, contract, _grant = require_m2m_contract_access(
         request,
         contract_code=contract_code,
     )
+    try:
+        flow_profile = _legacy_revision_flow_profile_schema(contract)
+    except IngestResolutionError as exc:
+        raise _legacy_revision_error(exc) from exc
+    _mark_legacy_m2m_response(
+        request,
+        response,
+        endpoint="flow-profile",
+        contract_code=contract.contract_code,
+    )
     return ContractFlowProfileResponse(
         contract_code=contract.contract_code,
-        flow_profile=_flow_profile_schema(contract.flow_profile)
-        if contract.flow_profile
-        else None,
+        flow_profile=flow_profile,
     )
 
 
@@ -1128,7 +1551,13 @@ def m2m_contract_flow_profile(request, contract_code: str):
     "/v1/contracts/{contract_code}/ingest-authorization",
     response=M2MIngestAuthorizationResponse,
 )
-def m2m_contract_ingest_authorization(request, contract_code: str, data_category: str):
+def m2m_contract_ingest_authorization(
+    request,
+    contract_code: str,
+    data_category: str,
+    response: HttpResponse,
+):
+    _reject_legacy_temporal_parameters(request)
     data_category = data_category.strip().lower()
     if not data_category:
         raise HttpError(400, "data_category is required.")
@@ -1139,32 +1568,38 @@ def m2m_contract_ingest_authorization(request, contract_code: str, data_category
         data_category=data_category,
     )
 
-    flow_profile = contract.flow_profile
-    if flow_profile is None:
-        raise HttpError(400, "No flow profile assigned to contract.")
-    if not flow_profile.is_active:
-        raise HttpError(400, "Flow profile is not active.")
+    try:
+        resolution = resolve_current_ingest_configuration(contract, data_category)
+    except IngestResolutionError as exc:
+        if exc.code == "data_category_not_configured":
+            current = resolve_current_contract_configuration(contract)
+            if current.revision.processing_profile_version.input_flow_links.filter(
+                dataset__code=data_category
+            ).exists():
+                raise HttpError(
+                    400,
+                    "Data category is inactive for this contract.",
+                ) from exc
+        raise _legacy_revision_error(exc) from exc
 
-    data_ingestion = flow_profile.options.get("data_ingestion")
-    if not isinstance(data_ingestion, dict):
-        raise HttpError(400, "Flow profile has no data_ingestion block.")
-
-    entry = data_ingestion.get(data_category)
-    if not isinstance(entry, dict):
-        raise HttpError(400, "Data category is not supported by flow profile.")
-    if not entry.get("active"):
-        raise HttpError(400, "Data category is inactive for this contract.")
-
-    flow = entry.get("flow")
-    if not isinstance(flow, str) or not flow.strip():
-        raise HttpError(400, "Data category has no valid ingest flow.")
+    profile_snapshot = resolution.snapshot.get("processing_profile", {})
+    flow_profile_code = profile_snapshot.get("code", "")
+    if not flow_profile_code:
+        raise HttpError(400, "Current contract configuration is invalid.")
+    _mark_legacy_m2m_response(
+        request,
+        response,
+        endpoint="ingest-authorization",
+        contract_code=contract.contract_code,
+        data_category=data_category,
+    )
 
     return M2MIngestAuthorizationResponse(
         allowed=True,
         contract_code=contract.contract_code,
         data_category=data_category,
-        flow_profile_code=flow_profile.code,
-        flow=flow.strip(),
+        flow_profile_code=flow_profile_code,
+        flow=resolution.input_flow_version["deployment_name"],
         grant_id=grant.pk if grant else None,
     )
 
@@ -1173,12 +1608,27 @@ def m2m_contract_ingest_authorization(request, contract_code: str, data_category
     "/v1/contracts/{contract_code}/required-inputs",
     response=RequiredInputsResponse,
 )
-def m2m_contract_required_inputs(request, contract_code: str):
+def m2m_contract_required_inputs(
+    request,
+    contract_code: str,
+    response: HttpResponse,
+):
+    _reject_legacy_temporal_parameters(request)
     _principal, contract, _grant = require_m2m_contract_access(
         request,
         contract_code=contract_code,
     )
-    return _contract_required_inputs_schema(contract)
+    try:
+        payload = _legacy_revision_required_inputs_schema(contract)
+    except IngestResolutionError as exc:
+        raise _legacy_revision_error(exc) from exc
+    _mark_legacy_m2m_response(
+        request,
+        response,
+        endpoint="required-inputs",
+        contract_code=contract.contract_code,
+    )
+    return payload
 
 
 @m2m_api.get(
