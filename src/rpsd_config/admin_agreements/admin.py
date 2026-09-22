@@ -546,6 +546,7 @@ class OperationalFlowAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
 class ContractPublicationAdmin(admin.ModelAdmin):
     list_display = (
         "contract",
+        "configuration_revision",
         "publication_version",
         "published_at",
         "published_by",
@@ -554,14 +555,16 @@ class ContractPublicationAdmin(admin.ModelAdmin):
     list_filter = ("snapshot_schema_version", "published_at")
     search_fields = (
         "contract__contract_code",
+        "configuration_revision__code",
         "snapshot_checksum",
         "published_by__username",
         "published_by__email",
     )
     autocomplete_fields = ("contract", "published_by")
-    list_select_related = ("contract", "published_by")
+    list_select_related = ("contract", "configuration_revision", "published_by")
     readonly_fields = (
         "contract",
+        "configuration_revision",
         "publication_version",
         "published_at",
         "published_by",

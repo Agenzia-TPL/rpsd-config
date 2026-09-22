@@ -13,6 +13,7 @@ from django.utils import timezone
 
 from rpsd_config.exchange_agreement.models import (
     Contract,
+    ContractConfigurationRevision,
     ContractIndicator,
     ContractMembership,
     ContractPublication,
@@ -240,8 +241,9 @@ def publish_contract(*, contract: Contract, user) -> ContractPublication:
     """
     Publish (or republish) a contract by creating a versioned immutable snapshot.
 
-    - first publish moves status draft -> active
-    - subsequent publishes on active create a new publication version
+    The publication is a verbatim, immutable copy of the current approved
+    configuration revision. The first publication moves a draft contract to
+    active; subsequent publications keep their own progressive audit version.
     """
     locked_contract = Contract.objects.select_for_update().get(pk=contract.pk)
 
@@ -249,11 +251,29 @@ def publish_contract(*, contract: Contract, user) -> ContractPublication:
 
     if locked_contract.status == Contract.ContractStatus.CLOSED:
         raise PublishContractError(400, "Closed contracts cannot be published.")
-    if locked_contract.flow_profile_id is None:
-        raise PublishContractError(400, "A flow profile is required before publishing.")
-    if not ContractIndicator.objects.filter(contract=locked_contract).exists():
+
+    today = timezone.localdate()
+    if locked_contract.start_date > today or (
+        locked_contract.end_date is not None and locked_contract.end_date < today
+    ):
         raise PublishContractError(
-            400, "At least one contract indicator is required before publishing."
+            400,
+            "The contract is not effective today.",
+        )
+    revision = (
+        ContractConfigurationRevision.objects.select_for_update()
+        .filter(
+            contract=locked_contract,
+            status=ContractConfigurationRevision.Status.APPROVED,
+            valid_from__lte=today,
+        )
+        .order_by("-valid_from", "-revision_number")
+        .first()
+    )
+    if revision is None:
+        raise PublishContractError(
+            400,
+            "The contract has no current approved configuration revision.",
         )
 
     next_version = (
@@ -268,24 +288,15 @@ def publish_contract(*, contract: Contract, user) -> ContractPublication:
         locked_contract.status = Contract.ContractStatus.ACTIVE
         status_changed = True
 
-    published_at = timezone.now()
-    snapshot = build_contract_snapshot(
-        locked_contract,
-        publication_version=next_version,
-        published_at=published_at,
-        published_by=user,
-        snapshot_schema_version=SNAPSHOT_SCHEMA_VERSION,
-    )
-    checksum = compute_snapshot_checksum(snapshot)
-
     publication = ContractPublication.objects.create(
         contract=locked_contract,
+        configuration_revision=revision,
         publication_version=next_version,
-        published_at=published_at,
+        published_at=timezone.now(),
         published_by=user if getattr(user, "is_authenticated", False) else None,
-        snapshot_schema_version=SNAPSHOT_SCHEMA_VERSION,
-        snapshot=snapshot,
-        snapshot_checksum=checksum,
+        snapshot_schema_version=revision.snapshot_schema_version,
+        snapshot=revision.configuration_snapshot,
+        snapshot_checksum=revision.snapshot_checksum,
     )
 
     if status_changed:

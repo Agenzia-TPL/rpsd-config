@@ -2734,6 +2734,11 @@ class ContractPublication(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="publications",
     )
+    configuration_revision = models.ForeignKey(
+        "ContractConfigurationRevision",
+        on_delete=models.PROTECT,
+        related_name="publications",
+    )
     publication_version = models.PositiveIntegerField()
     published_at = models.DateTimeField(default=timezone.now, db_index=True)
     published_by = models.ForeignKey(
@@ -2743,9 +2748,12 @@ class ContractPublication(TimeStampedModel):
         blank=True,
         related_name="contract_publications_created",
     )
-    snapshot_schema_version = models.CharField(max_length=16, default="1.0")
+    snapshot_schema_version = models.CharField(
+        max_length=32,
+        default="canonical-json-v1",
+    )
     snapshot = models.JSONField(default=dict)
-    snapshot_checksum = models.CharField(max_length=64, blank=True)
+    snapshot_checksum = models.CharField(max_length=71)
 
     class Meta:
         verbose_name = "Contract publication"
@@ -2773,16 +2781,64 @@ class ContractPublication(TimeStampedModel):
             errors["snapshot_schema_version"] = _(
                 "Snapshot schema version is required."
             )
-        if self.snapshot_checksum and len(self.snapshot_checksum) != 64:
+        checksum_value = self.snapshot_checksum.removeprefix("sha256:")
+        if (
+            not self.snapshot_checksum.startswith("sha256:")
+            or len(checksum_value) != 64
+            or any(character not in "0123456789abcdef" for character in checksum_value)
+        ):
             errors["snapshot_checksum"] = _(
-                "Snapshot checksum must be a SHA256 hex string."
+                "Snapshot checksum must use sha256:<64 lowercase hex characters>."
             )
+        if self.configuration_revision_id:
+            revision = self.configuration_revision
+            if revision.contract_id != self.contract_id:
+                errors["configuration_revision"] = _(
+                    "The configuration revision must belong to the publication "
+                    "contract."
+                )
+            if revision.status != ContractConfigurationRevision.Status.APPROVED:
+                errors["configuration_revision"] = _(
+                    "Only an approved configuration revision can be published."
+                )
+            if self.snapshot_schema_version != revision.snapshot_schema_version:
+                errors["snapshot_schema_version"] = _(
+                    "Publication and revision snapshot schema versions must match."
+                )
+            if self.snapshot != revision.configuration_snapshot:
+                errors["snapshot"] = _(
+                    "The publication must contain the exact approved revision snapshot."
+                )
+            if self.snapshot_checksum != revision.snapshot_checksum:
+                errors["snapshot_checksum"] = _(
+                    "Publication and revision snapshot checksums must match."
+                )
+        if self.pk:
+            original = type(self).objects.filter(pk=self.pk).first()
+            immutable_fields = (
+                "contract_id",
+                "configuration_revision_id",
+                "publication_version",
+                "published_at",
+                "published_by_id",
+                "snapshot_schema_version",
+                "snapshot",
+                "snapshot_checksum",
+            )
+            if original is not None and any(
+                getattr(self, field) != getattr(original, field)
+                for field in immutable_fields
+            ):
+                errors["__all__"] = _("Contract publications are immutable.")
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         self.full_clean()
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(_("Contract publications are immutable."))
 
     def __str__(self) -> str:
         return f"{self.contract.contract_code} v{self.publication_version}"

@@ -411,6 +411,9 @@ class PublicationActorSchema(Schema):
 class ContractPublicationSummarySchema(Schema):
     id: int
     contract_code: str
+    configuration_revision_code: str
+    configuration_revision_number: int
+    configuration_valid_from: str
     publication_version: int
     published_at: str
     published_by: PublicationActorSchema | None
@@ -988,6 +991,13 @@ def _contract_publication_summary_schema(
     return ContractPublicationSummarySchema(
         id=publication.id,
         contract_code=publication.contract.contract_code,
+        configuration_revision_code=publication.configuration_revision.code,
+        configuration_revision_number=(
+            publication.configuration_revision.revision_number
+        ),
+        configuration_valid_from=(
+            publication.configuration_revision.valid_from.isoformat()
+        ),
         publication_version=publication.publication_version,
         published_at=publication.published_at.isoformat(),
         published_by=_publication_actor_schema(publication.published_by),
@@ -1003,6 +1013,9 @@ def _contract_publication_detail_schema(
     return ContractPublicationDetailSchema(
         id=summary.id,
         contract_code=summary.contract_code,
+        configuration_revision_code=summary.configuration_revision_code,
+        configuration_revision_number=summary.configuration_revision_number,
+        configuration_valid_from=summary.configuration_valid_from,
         publication_version=summary.publication_version,
         published_at=summary.published_at,
         published_by=summary.published_by,
@@ -1653,7 +1666,9 @@ def m2m_contract_publications(request, contract_code: str):
         contract_code=contract_code,
     )
     publications = (
-        ContractPublication.objects.select_related("contract", "published_by")
+        ContractPublication.objects.select_related(
+            "contract", "configuration_revision", "published_by"
+        )
         .filter(contract=contract)
         .order_by("-publication_version")
     )
@@ -1954,7 +1969,7 @@ def publish_contract_endpoint(request, contract_code: str):
     except PublishContractError as exc:
         raise HttpError(exc.status_code, exc.message) from exc
     publication = ContractPublication.objects.select_related(
-        "contract", "published_by"
+        "contract", "configuration_revision", "published_by"
     ).get(pk=publication.pk)
     return _contract_publication_detail_schema(publication)
 
@@ -1966,7 +1981,9 @@ def publish_contract_endpoint(request, contract_code: str):
 def list_contract_publications(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
     publications = (
-        ContractPublication.objects.select_related("contract", "published_by")
+        ContractPublication.objects.select_related(
+            "contract", "configuration_revision", "published_by"
+        )
         .filter(contract=contract)
         .order_by("-publication_version")
     )
@@ -1982,7 +1999,9 @@ def get_contract_publication_by_version(
 ):
     contract = _get_authorized_contract(request, contract_code)
     publication = (
-        ContractPublication.objects.select_related("contract", "published_by")
+        ContractPublication.objects.select_related(
+            "contract", "configuration_revision", "published_by"
+        )
         .filter(contract=contract, publication_version=publication_version)
         .first()
     )
@@ -2299,7 +2318,9 @@ def get_flow_profile(request, flow_code: str):
 @api.get("/v1/publications/{publication_id}", response=ContractPublicationDetailSchema)
 def get_publication(request, publication_id: int):
     publication = (
-        ContractPublication.objects.select_related("contract", "published_by")
+        ContractPublication.objects.select_related(
+            "contract", "configuration_revision", "published_by"
+        )
         .filter(id=publication_id)
         .first()
     )
