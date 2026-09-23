@@ -8,6 +8,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import close_old_connections, transaction
+from django.db.models.deletion import ProtectedError
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
@@ -16,6 +17,7 @@ from rpsd_config.exchange_agreement.models import (
     Authority,
     AuthorityMembership,
     Company,
+    ConfigurationAsset,
     Contract,
     ContractConfigurationRevision,
     ContractIndicator,
@@ -23,6 +25,7 @@ from rpsd_config.exchange_agreement.models import (
     ContractInputSelection,
     Dataset,
     DatasetSpecification,
+    DatasetSpecificationAsset,
     Indicator,
     IndicatorVersion,
     InputFlowVersion,
@@ -100,15 +103,37 @@ class _ContractRevisionFixtureMixin:
 
     def _published_processing_profile(self):
         dataset = Dataset.objects.create(code="netex", name="NeTEx")
+        specification = DatasetSpecification.objects.create(
+            dataset=dataset,
+            code="netex-ita_v001",
+            version="001",
+            description="NeTEx Italia v1",
+        )
+        self.netex_asset = ConfigurationAsset.objects.create(
+            asset_type=ConfigurationAsset.AssetType.NETEX_XSD,
+            label="NeTEx validation schema",
+            version=1,
+            status=ConfigurationAsset.Status.ACTIVE,
+            is_active=True,
+            storage_url="s3://not-accessed/netex.xsd",
+            storage_provider="s3",
+            storage_key="schemas/netex.xsd",
+            original_filename="netex.xsd",
+            content_type="application/xml",
+            checksum_sha256="a" * 64,
+            size_bytes=123,
+        )
+        DatasetSpecificationAsset.objects.create(
+            dataset_specification=specification,
+            configuration_asset=self.netex_asset,
+            role=DatasetSpecificationAsset.Role.VALIDATION_SCHEMA,
+            required=True,
+        )
         specification = publish_dataset_specification(
-            DatasetSpecification.objects.create(
-                dataset=dataset,
-                code="netex-ita_v001",
-                version="001",
-                description="NeTEx Italia v1",
-            ),
+            specification,
             actor=self.user,
         )
+        self.netex_specification = specification
         fragment = publish_requirement_fragment(
             RequirementFragment.objects.create(
                 dataset_specification=specification,
@@ -359,6 +384,36 @@ class ContractConfigurationRevisionTests(_ContractRevisionFixtureMixin, TestCase
                 ContractConfigurationRevision.objects.filter(pk=revision.pk).delete()
         revision.refresh_from_db()
         self.assertEqual(revision.snapshot_checksum, original_checksum)
+
+    def test_approved_revision_protects_dataset_specification_and_asset(self):
+        revision = self._approve_first_revision(
+            self._revision(number=1, valid_from=self.contract.start_date)
+        )
+        netex_input = next(
+            item
+            for item in revision.configuration_snapshot["inputs"]
+            if item["dataset_code"] == "netex"
+        )
+        self.assertEqual(
+            netex_input["assets"][0]["checksum"],
+            f"sha256:{self.netex_asset.checksum_sha256}",
+        )
+
+        with self.assertRaises(ProtectedError):
+            with transaction.atomic():
+                DatasetSpecification.objects.filter(
+                    pk=self.netex_specification.pk
+                ).delete()
+        with self.assertRaises(ProtectedError):
+            with transaction.atomic():
+                ConfigurationAsset.objects.filter(pk=self.netex_asset.pk).delete()
+
+        self.assertTrue(
+            DatasetSpecification.objects.filter(pk=self.netex_specification.pk).exists()
+        )
+        self.assertTrue(
+            ConfigurationAsset.objects.filter(pk=self.netex_asset.pk).exists()
+        )
 
     def test_sequence_rejects_gaps_in_start_and_retroactive_changes(self):
         with self.assertRaisesMessage(
