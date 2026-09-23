@@ -396,9 +396,9 @@ def validate_revision_for_approval(
     configured_contract_indicator_ids = {
         configuration.contract_indicator_id for configuration in configurations
     }
-    missing_contract_indicators = revision.contract.indicators.filter(
-        logical_indicator__isnull=False
-    ).exclude(pk__in=configured_contract_indicator_ids)
+    missing_contract_indicators = revision.contract.indicators.exclude(
+        pk__in=configured_contract_indicator_ids
+    )
     for missing in missing_contract_indicators.select_related("logical_indicator"):
         issues.append(
             RevisionValidationIssue(
@@ -419,17 +419,6 @@ def validate_revision_for_approval(
                     code="contract_indicator_not_in_contract",
                     message=(
                         "A configured contract indicator belongs to another contract."
-                    ),
-                    details={"contract_indicator_id": contract_indicator.pk},
-                )
-            )
-        if contract_indicator.logical_indicator_id is None:
-            issues.append(
-                RevisionValidationIssue(
-                    code="logical_indicator_missing",
-                    message=(
-                        "Contract indicators used by revisions need a logical "
-                        "indicator."
                     ),
                     details={"contract_indicator_id": contract_indicator.pk},
                 )
@@ -479,10 +468,7 @@ def validate_revision_for_approval(
                     details={"indicator_version_code": version.code},
                 )
             )
-        if (
-            contract_indicator.logical_indicator_id is not None
-            and version.indicator_id != contract_indicator.logical_indicator_id
-        ):
+        if version.indicator_id != contract_indicator.logical_indicator_id:
             issues.append(
                 RevisionValidationIssue(
                     code="indicator_mismatch",
@@ -550,9 +536,7 @@ def available_processing_profiles(
 
     require_revision_preparer(user=actor, contract=contract)
     required_indicator_ids = set(
-        contract.indicators.filter(logical_indicator__isnull=False).values_list(
-            "logical_indicator_id", flat=True
-        )
+        contract.indicators.values_list("logical_indicator_id", flat=True)
     )
     profiles = ProcessingProfileVersion.objects.filter(
         status=ProcessingProfileVersion.Status.PUBLISHED
@@ -602,9 +586,7 @@ def create_revision_draft(
             ]
         )
     required_indicator_ids = set(
-        locked_contract.indicators.filter(logical_indicator__isnull=False).values_list(
-            "logical_indicator_id", flat=True
-        )
+        locked_contract.indicators.values_list("logical_indicator_id", flat=True)
     )
     profile_indicator_ids = set(
         locked_profile.indicator_version_links.values_list(
@@ -683,7 +665,7 @@ def create_revision_draft(
 
     contract_indicators = {
         item.logical_indicator_id: item
-        for item in locked_contract.indicators.filter(logical_indicator__isnull=False)
+        for item in locked_contract.indicators.all()
     }
     proposed_links = locked_profile.indicator_version_links.filter(
         proposed_by_default=True

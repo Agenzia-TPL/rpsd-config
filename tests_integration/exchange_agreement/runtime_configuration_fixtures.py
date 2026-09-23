@@ -13,8 +13,6 @@ from rpsd_config.exchange_agreement.models import (
     Dataset,
     DatasetSpecification,
     Indicator,
-    IndicatorDef,
-    IndicatorType,
     IndicatorVersion,
     InputFlowVersion,
     OrchestrationFlowVersion,
@@ -176,14 +174,8 @@ def install_approved_runtime_configuration(
     )
     profile = publish_processing_profile(profile, actor=actor)
 
-    legacy_indicator = IndicatorDef.objects.create(
-        code=logical_indicator_code,
-        type=IndicatorType.QUALITY,
-        name="Runtime contract indicator",
-    )
     contract_indicator = ContractIndicator.objects.create(
         contract=contract,
-        indicator=legacy_indicator,
         logical_indicator=logical_indicator,
     )
     revision = ContractConfigurationRevision.objects.create(

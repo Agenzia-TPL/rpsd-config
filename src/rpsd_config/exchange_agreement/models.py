@@ -1988,375 +1988,6 @@ class ProcessingProfileVersionStatusEvent(models.Model):
         )
 
 
-class Structure(TimeStampedModel):
-    """
-    Logical dataset section used by indicators.
-
-    Instead of storing validation files, this model keeps a JSONB definition
-    describing where data is located (e.g. XPath selector) and which fields
-    are mandatory for merit/quality calculations.
-    """
-
-    dataset = models.ForeignKey(
-        Dataset, on_delete=models.PROTECT, related_name="structures"
-    )
-    name = models.CharField(max_length=128)
-    description = models.TextField(blank=True)
-    definition = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text=_(
-            "Structured mandatory-field definition used by external processors. "
-            "Example: {'xpath': '//EstimatedVehicleJourney', 'fields': "
-            "['LineRef', 'DirectionRef']}.\n\n"
-            "Technical note: '//' in XPath means descendant-or-self"
-            " and matches nodes at any depth."
-        ),
-    )
-
-    class Meta:
-        verbose_name = "Structure"
-        verbose_name_plural = "Structures"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["dataset", "name"], name="unique_structure_dataset_name"
-            )
-        ]
-        ordering = ["dataset__code", "name"]
-
-    def __str__(self) -> str:
-        return f"{self.dataset.code}:{self.name}"
-
-    def get_mandatory_fields(self):
-        """Return required field names from JSON definition."""
-        if not isinstance(self.definition, dict):
-            return []
-        fields = self.definition.get("fields", [])
-        return fields if isinstance(fields, list) else []
-
-    def get_xpath_selector(self):
-        """Return XPath selector from JSON definition."""
-        if not isinstance(self.definition, dict):
-            return ""
-        xpath = self.definition.get("xpath", "")
-        return xpath if isinstance(xpath, str) else ""
-
-
-# ==========================
-# Indicators (definitions) & Contract association
-# ==========================
-
-
-class IndicatorType(models.TextChoices):
-    QUALITY = "QUALITY", _("Quality")
-    QUANTITY = "QUANTITY", _("Quantity")
-    PUNCTUALITY = "PUNCTUALITY", _("Punctuality")
-    OTHER = "OTHER", _("Other")
-
-
-class IndicatorDef(TimeStampedModel):
-    """
-    Contract indicator definition.
-
-    This model stores merit/monitoring guidance metadata used by external
-    processing pipelines. SQL fields are references/documentation only:
-    - `sql_procedure_name` is the stable reference to the external procedure.
-    - `sql_snippet` is optional documentation and is not executed by Django.
-    """
-
-    code = models.CharField(max_length=64, unique=True)
-    type = models.CharField(max_length=16, choices=IndicatorType.choices)
-    name = models.CharField(max_length=255, help_text="Indicator name")
-    description = models.TextField(blank=True)
-    formula = models.TextField(blank=True)
-    notes = models.TextField(blank=True)
-    sql_procedure_name = models.CharField(
-        max_length=255,
-        blank=True,
-        help_text="Stable reference to the external SQL procedure/function.",
-    )
-    sql_snippet = models.TextField(
-        blank=True,
-        help_text="Optional SQL documentation snippet (not executed by this service).",
-    )
-    structures = models.ManyToManyField(
-        Structure,
-        related_name="indicators",
-        help_text="Which dataset structures/segments are required",
-    )
-
-    class Meta:
-        verbose_name = "Indicator definition"
-        verbose_name_plural = "Indicator definitions"
-        ordering = ["code"]
-
-    def __str__(self) -> str:
-        return f"[{self.code}] {self.name}"
-
-
-class OperationalFlow(TimeStampedModel):
-    """Catalog entry for executable data-processing flows."""
-
-    FLOW_CODE_REGEX = r"^[a-z0-9][a-z0-9-]*_[0-9]{3}(?:[a-z0-9-]*)?$"
-    WHAT_CODE_REGEX = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
-
-    class Engine(models.TextChoices):
-        PREFECT = "prefect", _("Prefect")
-
-    class Status(models.TextChoices):
-        ACTIVE = "active", _("Active")
-        DEPRECATED = "deprecated", _("Deprecated")
-        DISABLED = "disabled", _("Disabled")
-
-    code = models.CharField(
-        max_length=96,
-        unique=True,
-        validators=[
-            RegexValidator(
-                regex=FLOW_CODE_REGEX,
-                message=_(
-                    "Flow code must match ^[a-z0-9][a-z0-9-]*_[0-9]{3}(?:[a-z0-9-]*)?$."
-                ),
-            )
-        ],
-    )
-    engine = models.CharField(
-        max_length=32,
-        choices=Engine.choices,
-        default=Engine.PREFECT,
-    )
-    deployment_name = models.CharField(max_length=255)
-    supported_what = models.CharField(
-        max_length=64,
-        validators=[
-            RegexValidator(
-                regex=WHAT_CODE_REGEX,
-                message=_(
-                    "Supported what must use canonical filename stem syntax "
-                    "(example: netex or siri-pt)."
-                ),
-            )
-        ],
-    )
-    status = models.CharField(
-        max_length=32,
-        choices=Status.choices,
-        default=Status.ACTIVE,
-    )
-    description = models.TextField(blank=True)
-    version = models.CharField(max_length=32, default="001")
-
-    class Meta:
-        verbose_name = "Operational flow"
-        verbose_name_plural = "Operational flows"
-        ordering = ["supported_what", "code"]
-        indexes = [
-            models.Index(fields=["status"], name="exchange_ag_status_8c0478_idx"),
-            models.Index(
-                fields=["supported_what"],
-                name="exchange_ag_support_1da89f_idx",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.code} ({self.engine})"
-
-    @property
-    def is_active(self) -> bool:
-        return self.status == self.Status.ACTIVE
-
-    def is_referenced_by_flow_profiles(self) -> bool:
-        for profile in FlowProfile.objects.all().only("options"):
-            data_ingestion = profile.options.get("data_ingestion")
-            if not isinstance(data_ingestion, dict):
-                continue
-            for item in data_ingestion.values():
-                if isinstance(item, dict) and item.get("flow") == self.code:
-                    return True
-        return False
-
-    def clean(self):
-        super().clean()
-        if self.pk:
-            original = type(self).objects.filter(pk=self.pk).first()
-            if original is not None and original.is_referenced_by_flow_profiles():
-                locked_fields = {
-                    "code": original.code,
-                    "engine": original.engine,
-                    "deployment_name": original.deployment_name,
-                    "supported_what": original.supported_what,
-                }
-                errors = {}
-                for field_name, original_value in locked_fields.items():
-                    if getattr(self, field_name) != original_value:
-                        errors[field_name] = _(
-                            "This field cannot be changed while the operational "
-                            "flow is referenced by flow profiles. Create a new "
-                            "flow version instead."
-                        )
-                if errors:
-                    raise ValidationError(errors)
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        return super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        if self.is_referenced_by_flow_profiles():
-            raise ValidationError(
-                _("Operational flows referenced by flow profiles cannot be deleted.")
-            )
-        return super().delete(*args, **kwargs)
-
-
-class FlowProfile(TimeStampedModel):
-    """
-    Reusable operational flow configuration assigned to contracts.
-
-    `options` stores structured flow configuration blocks (planned master,
-    ingestion, retention, ...). Validation is intentionally minimal and checks
-    only the required top-level sections and core field types.
-    """
-
-    code = models.CharField(max_length=64, unique=True)
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    schema_version = models.CharField(max_length=16, default="1.0")
-    options = models.JSONField(default=dict, blank=True)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        verbose_name = "Flow profile"
-        verbose_name_plural = "Flow profiles"
-        ordering = ["code"]
-        indexes = [models.Index(fields=["is_active"])]
-
-    def __str__(self) -> str:
-        return f"{self.code} ({self.schema_version})"
-
-    def clean(self):
-        super().clean()
-        if self.pk:
-            original = type(self).objects.filter(pk=self.pk).first()
-            if original is not None and original.contracts.exists():
-                locked_fields = {
-                    "code": original.code,
-                    "schema_version": original.schema_version,
-                    "options": original.options,
-                }
-                errors = {}
-                for field_name, original_value in locked_fields.items():
-                    if getattr(self, field_name) != original_value:
-                        errors[field_name] = _(
-                            "This field cannot be changed while the flow profile "
-                            "is associated with contracts. Create a new version "
-                            "instead."
-                        )
-                if errors:
-                    raise ValidationError(errors)
-
-        if not isinstance(self.options, dict):
-            raise ValidationError({"options": _("options must be a JSON object.")})
-
-        required_keys = [
-            "general_profile",
-            "planned_master",
-            "data_ingestion",
-            "data_retention",
-        ]
-        option_errors: list[str] = []
-        for key in required_keys:
-            if key not in self.options:
-                option_errors.append(f"Missing required key: {key}")
-
-        if option_errors:
-            raise ValidationError({"options": option_errors})
-
-        general_profile = self.options.get("general_profile")
-        option_errors = []
-        if not isinstance(general_profile, str) or not general_profile.strip():
-            option_errors.append("general_profile must be a non-empty string.")
-
-        for block_key in ["planned_master", "data_ingestion"]:
-            block = self.options.get(block_key)
-            if not isinstance(block, dict):
-                option_errors.append(f"{block_key} must be a JSON object.")
-                continue
-            for item_key, item in block.items():
-                if not isinstance(item, dict):
-                    option_errors.append(
-                        f"{block_key}.{item_key} must be a JSON object."
-                    )
-                    continue
-                if not isinstance(item.get("active"), bool):
-                    option_errors.append(
-                        f"{block_key}.{item_key}.active must be a boolean."
-                    )
-                if (
-                    not isinstance(item.get("flow"), str)
-                    or not item.get("flow", "").strip()
-                ):
-                    option_errors.append(
-                        f"{block_key}.{item_key}.flow must be a non-empty string."
-                    )
-                if not isinstance(item.get("description"), str):
-                    option_errors.append(
-                        f"{block_key}.{item_key}.description must be a string."
-                    )
-                if block_key == "data_ingestion":
-                    flow_code = item.get("flow")
-                    flow = OperationalFlow.objects.filter(code=flow_code).first()
-                    if flow is None:
-                        option_errors.append(
-                            f"{block_key}.{item_key}.flow references unknown "
-                            f"operational flow: {flow_code}"
-                        )
-                    elif flow.supported_what != item_key:
-                        option_errors.append(
-                            f"{block_key}.{item_key}.flow supports "
-                            f"{flow.supported_what}, not {item_key}."
-                        )
-                    elif flow.status == OperationalFlow.Status.DISABLED:
-                        option_errors.append(
-                            f"{block_key}.{item_key}.flow references disabled "
-                            f"operational flow: {flow_code}"
-                        )
-
-        retention = self.options.get("data_retention")
-        if not isinstance(retention, dict):
-            option_errors.append("data_retention must be a JSON object.")
-        else:
-            for item_key, item in retention.items():
-                if not isinstance(item, dict):
-                    option_errors.append(
-                        f"data_retention.{item_key} must be a JSON object."
-                    )
-                    continue
-                days = item.get("days")
-                if not isinstance(days, int) or days < 0:
-                    option_errors.append(
-                        f"data_retention.{item_key}.days must be an integer >= 0."
-                    )
-                if (
-                    not isinstance(item.get("flow"), str)
-                    or not item.get("flow", "").strip()
-                ):
-                    option_errors.append(
-                        f"data_retention.{item_key}.flow must be a non-empty string."
-                    )
-                if not isinstance(item.get("description"), str):
-                    option_errors.append(
-                        f"data_retention.{item_key}.description must be a string."
-                    )
-
-        if option_errors:
-            raise ValidationError({"options": option_errors})
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        return super().save(*args, **kwargs)
-
-
 # ==========================
 # Contracts
 # ==========================
@@ -2452,15 +2083,6 @@ class Contract(TimeStampedModel):
         validators=[FileExtensionValidator(allowed_extensions=["xml", "zip"])],
         help_text="NetEx file (XML/ZIP) with the contractual program",
     )
-    flow_profile = models.ForeignKey(
-        FlowProfile,
-        on_delete=models.PROTECT,
-        related_name="contracts",
-        blank=True,
-        null=True,
-        help_text="Operational flow profile associated to this contract.",
-    )
-
     lot = models.ForeignKey(Lot, on_delete=models.PROTECT, related_name="contracts")
     status = models.CharField(
         max_length=16,
@@ -2618,7 +2240,6 @@ class Contract(TimeStampedModel):
             "contract_type",
             "version",
             "contract_program_file",
-            "flow_profile_id",
             "lot_id",
             "status",
             "closed_at",
@@ -2845,32 +2466,15 @@ class ContractPublication(TimeStampedModel):
 
 
 class ContractIndicator(models.Model):
-    """
-    Contract ↔ IndicatorDef association with optional JSON parameters
-    (thresholds/weights/etc.).
-    """
+    """Contract association with a stable logical indicator."""
 
     contract = models.ForeignKey(
         Contract, on_delete=models.CASCADE, related_name="indicators"
-    )
-    indicator = models.ForeignKey(
-        IndicatorDef, on_delete=models.PROTECT, related_name="contracts"
     )
     logical_indicator = models.ForeignKey(
         Indicator,
         on_delete=models.PROTECT,
         related_name="contract_links",
-        blank=True,
-        null=True,
-        help_text=(
-            "Stable target-model indicator. The legacy indicator definition is "
-            "retained temporarily for API v1 compatibility."
-        ),
-    )
-    params = models.JSONField(
-        blank=True,
-        null=True,
-        help_text="Thresholds/weights/domain-specific configuration",
     )
 
     class Meta:
@@ -2878,22 +2482,13 @@ class ContractIndicator(models.Model):
         verbose_name_plural = "Contract indicators"
         constraints = [
             models.UniqueConstraint(
-                fields=["contract", "indicator"], name="unique_contract_indicator"
-            ),
-            models.UniqueConstraint(
                 fields=["contract", "logical_indicator"],
-                condition=models.Q(logical_indicator__isnull=False),
                 name="unique_contract_logical_indicator",
             ),
         ]
 
     def __str__(self) -> str:
-        indicator_code = (
-            self.logical_indicator.code
-            if self.logical_indicator_id
-            else self.indicator.code
-        )
-        return f"{self.contract.contract_code}:{indicator_code}"
+        return f"{self.contract.contract_code}:{self.logical_indicator.code}"
 
     def clean(self):
         super().clean()
@@ -2908,7 +2503,6 @@ class ContractIndicator(models.Model):
         if protected.exists() and (
             self.contract_id != original.contract_id
             or self.logical_indicator_id != original.logical_indicator_id
-            or self.indicator_id != original.indicator_id
         ):
             raise ValidationError(
                 _("Indicators referenced by approved revisions are immutable.")
@@ -3324,10 +2918,7 @@ class ContractIndicatorConfiguration(models.Model):
                     "The indicator version must belong to the revision profile."
                 )
             logical_indicator_id = self.contract_indicator.logical_indicator_id
-            if (
-                logical_indicator_id
-                and profile_link.indicator_version.indicator_id != logical_indicator_id
-            ):
+            if profile_link.indicator_version.indicator_id != logical_indicator_id:
                 errors["processing_profile_indicator_version"] = _(
                     "The technical version must match the contract indicator."
                 )

@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import Client, TestCase, override_settings
@@ -245,6 +246,28 @@ class M2MApiV1ContractTests(TestCase):
         for table in legacy_tables:
             self.assertNotIn(table, executed_sql)
 
+    def test_legacy_persistence_is_physically_removed(self):
+        for model_name in (
+            "Structure",
+            "IndicatorDef",
+            "OperationalFlow",
+            "FlowProfile",
+        ):
+            with self.assertRaises(LookupError):
+                apps.get_model("exchange_agreement", model_name)
+
+        tables = set(connection.introspection.table_names())
+        self.assertTrue(
+            {
+                "exchange_agreement_structure",
+                "exchange_agreement_indicatordef",
+                "exchange_agreement_operationalflow",
+                "exchange_agreement_flowprofile",
+            }.isdisjoint(tables)
+        )
+        contract_fields = {field.name for field in Contract._meta.fields}
+        self.assertNotIn("flow_profile", contract_fields)
+
     def test_management_v1_rejects_direct_profile_assignment(self):
         self.client.force_login(self.configuration_admin)
 
@@ -256,8 +279,6 @@ class M2MApiV1ContractTests(TestCase):
 
         self.assertEqual(response.status_code, 409)
         self.assertIn("configuration revision", response.json()["detail"])
-        self.contract.refresh_from_db()
-        self.assertIsNone(self.contract.flow_profile_id)
 
     def test_management_v1_contract_create_ignores_compatibility_profile_field(self):
         self.client.force_login(self.configuration_admin)
@@ -285,7 +306,6 @@ class M2MApiV1ContractTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         created = Contract.objects.get(contract_code="CTR-GOLDEN-002")
-        self.assertIsNone(created.flow_profile_id)
         self.assertFalse(created.configuration_revisions.exists())
 
     def test_unauthenticated_request_matches_golden_rejection(self):

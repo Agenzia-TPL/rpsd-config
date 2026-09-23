@@ -24,8 +24,6 @@ from rpsd_config.exchange_agreement.models import (
     Dataset,
     DatasetSpecification,
     Indicator,
-    IndicatorDef,
-    IndicatorType,
     IndicatorVersion,
     InputFlowVersion,
     Lot,
@@ -95,14 +93,8 @@ class _ContractRevisionFixtureMixin:
             status=Contract.ContractStatus.ACTIVE,
         )
         self.profile = self._published_processing_profile()
-        legacy_indicator = IndicatorDef.objects.create(
-            code="commercial-speed",
-            type=IndicatorType.QUALITY,
-            name="Commercial speed",
-        )
         self.contract_indicator = ContractIndicator.objects.create(
             contract=self.contract,
-            indicator=legacy_indicator,
             logical_indicator=self.logical_indicator,
         )
 

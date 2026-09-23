@@ -134,6 +134,18 @@
 {% elif active_tab == "flussi" %}
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
+      <h2 class="h5">Cataloghi tecnici versionati</h2>
+      <p class="text-body-secondary">
+        Flow di input, orchestrazioni e profili di elaborazione sono gestiti nei
+        cataloghi tecnici versionati. I vecchi profili JSON non sono più usati.
+      </p>
+      <a class="btn btn-primary" href="{% url 'admin:index' %}">Apri cataloghi tecnici</a>
+    </div>
+  </div>
+{% comment %}Legacy flow-profile UI retained only until the final template cleanup.{% endcomment %}
+{% comment %}
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
       <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
         <div>
           <h2 class="h5 mb-1">Profili flussi dati</h2>
@@ -493,6 +505,7 @@
       </form>
     </div>
   </div>
+{% endcomment %}
 {% else %}
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">

@@ -106,7 +106,6 @@ class ContractRevisionWebCutoverTests(_ContractRevisionFixtureMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         created = Contract.objects.get(contract_code="CTR-WEB-CUTOVER")
         self.assertEqual(created.governing_authority, self.authority)
-        self.assertIsNone(created.flow_profile)
         self.assertContains(response, "configurazione tecnica")
 
     def test_agency_creates_guided_draft_and_platform_admin_approves_it(self):

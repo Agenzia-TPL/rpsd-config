@@ -17,16 +17,13 @@ from rpsd_config.exchange_agreement.models import (
     ContractMembership,
     ContractPublication,
     Dataset,
-    FlowProfile,
-    IndicatorDef,
+    Indicator,
     IndicatorProfile,
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
     NetexValidationProfile,
-    OperationalFlow,
     SiriValidationProfile,
-    Structure,
 )
 
 
@@ -69,14 +66,9 @@ class DatasetHidden(_HiddenAdmin):
     search_fields = ("code", "name")
 
 
-@admin.register(FlowProfile)
-class FlowProfileHidden(_HiddenAdmin):
+@admin.register(Indicator)
+class IndicatorHidden(_HiddenAdmin):
     search_fields = ("code", "name")
-
-
-@admin.register(OperationalFlow)
-class OperationalFlowHidden(_HiddenAdmin):
-    search_fields = ("code", "deployment_name", "supported_what")
 
 
 @admin.register(NetexValidationProfile)
@@ -104,16 +96,6 @@ class ConfigurationAssetEventHidden(_HiddenAdmin):
     search_fields = ("event_type", "routing_key", "last_error")
 
 
-@admin.register(Structure)
-class StructureHidden(_HiddenAdmin):
-    search_fields = ("name", "dataset__code")
-
-
-@admin.register(IndicatorDef)
-class IndicatorDefHidden(_HiddenAdmin):
-    search_fields = ("code", "name")
-
-
 @admin.register(Contract)
 class ContractHidden(_HiddenAdmin):
     search_fields = ("contract_code",)
@@ -126,7 +108,11 @@ class ContractDocumentHidden(_HiddenAdmin):
 
 @admin.register(ContractIndicator)
 class ContractIndicatorHidden(_HiddenAdmin):
-    search_fields = ("contract__contract_code", "indicator__code", "indicator__name")
+    search_fields = (
+        "contract__contract_code",
+        "logical_indicator__code",
+        "logical_indicator__name",
+    )
 
 
 @admin.register(ContractMembership)

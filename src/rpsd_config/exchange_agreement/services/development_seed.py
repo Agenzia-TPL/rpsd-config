@@ -18,8 +18,6 @@ from rpsd_config.exchange_agreement.models import (
     ContractIndicator,
     ContractMembership,
     ContractPublication,
-    IndicatorDef,
-    IndicatorType,
     Lot,
     ProcessingProfileIndicatorVersion,
     ProcessingProfileInputFlow,
@@ -165,18 +163,9 @@ def ensure_target_development_seed() -> DevelopmentSeedResult:
         },
     )
 
-    legacy_indicator, _created = IndicatorDef.objects.get_or_create(
-        code="commercial-speed",
-        defaults={
-            "type": IndicatorType.QUALITY,
-            "name": "Commercial speed",
-            "description": "Temporary v1 adapter identity for the target indicator.",
-        },
-    )
     ContractIndicator.objects.get_or_create(
         contract=contract,
         logical_indicator=logical_indicator,
-        defaults={"indicator": legacy_indicator, "params": {}},
     )
 
     revision = ContractConfigurationRevision.objects.filter(contract=contract).first()

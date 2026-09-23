@@ -16,38 +16,10 @@ from rpsd_config.exchange_agreement.models import (
     Contract,
     ContractInvitation,
     ContractMembership,
-    FlowProfile,
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
 )
-
-
-def _flow_profile_options() -> dict:
-    return {
-        "general_profile": "it",
-        "planned_master": {
-            "netex": {
-                "active": True,
-                "flow": "planned-master-netex",
-                "description": "Planned master ingestion",
-            }
-        },
-        "data_ingestion": {
-            "avm": {
-                "active": True,
-                "flow": "data-ingestion-avm",
-                "description": "AVM ingestion",
-            }
-        },
-        "data_retention": {
-            "avm": {
-                "days": 30,
-                "flow": "retention-avm",
-                "description": "AVM retention policy",
-            }
-        },
-    }
 
 
 class ContractScopeAndInvitationsPhase4Tests(TestCase):
@@ -82,13 +54,6 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
             lot=self.lot_b,
             start_date=date(2035, 1, 2),
             status=Contract.ContractStatus.DRAFT,
-        )
-
-        self.flow_profile = FlowProfile.objects.create(
-            code="flow-profile-v1",
-            name="Flow profile v1",
-            options=_flow_profile_options(),
-            is_active=True,
         )
 
         self.platform_admin = self._create_oidc_user(
@@ -243,19 +208,19 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_contract_write_scope_allows_editor_and_denies_reader(self):
+    def test_contract_write_scope_reaches_lifecycle_guard_and_denies_reader(self):
         self.client.force_login(self.agency_editor_a)
         editor_response = self.client.put(
             f"/exchange_agreement/api/v1/contracts/{self.contract_a.contract_code}/flow-profile",
-            data=json.dumps({"flow_profile_code": self.flow_profile.code}),
+            data=json.dumps({"flow_profile_code": "missing-target-profile"}),
             content_type="application/json",
         )
-        self.assertEqual(editor_response.status_code, 200)
+        self.assertEqual(editor_response.status_code, 404)
 
         self.client.force_login(self.agency_reader_a)
         reader_response = self.client.put(
             f"/exchange_agreement/api/v1/contracts/{self.contract_a.contract_code}/flow-profile",
-            data=json.dumps({"flow_profile_code": self.flow_profile.code}),
+            data=json.dumps({"flow_profile_code": "missing-target-profile"}),
             content_type="application/json",
         )
         self.assertEqual(reader_response.status_code, 403)
@@ -263,7 +228,7 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
         self.client.force_login(self.agency_editor_b)
         out_scope_response = self.client.put(
             f"/exchange_agreement/api/v1/contracts/{self.contract_a.contract_code}/flow-profile",
-            data=json.dumps({"flow_profile_code": self.flow_profile.code}),
+            data=json.dumps({"flow_profile_code": "missing-target-profile"}),
             content_type="application/json",
         )
         self.assertEqual(out_scope_response.status_code, 404)
@@ -342,16 +307,20 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
             ).exists()
         )
 
-    def test_user_area_shows_contract_invite_action_for_editor_only(self):
+    def test_user_area_hides_contract_invite_without_direct_membership(self):
         self.client.force_login(self.agency_editor_a)
-        editor_page = self.client.get(reverse("exchange_agreement:user-area"))
-        self.assertContains(
+        editor_page = self.client.get(
+            f"{reverse('exchange_agreement:user-area')}?tab=membership"
+        )
+        self.assertNotContains(
             editor_page,
             reverse("exchange_agreement:contract-invitation-create"),
         )
 
         self.client.force_login(self.agency_reader_a)
-        reader_page = self.client.get(reverse("exchange_agreement:user-area"))
+        reader_page = self.client.get(
+            f"{reverse('exchange_agreement:user-area')}?tab=membership"
+        )
         self.assertNotContains(
             reader_page,
             reverse("exchange_agreement:contract-invitation-create"),
@@ -438,7 +407,10 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Esiste gia' una azienda con questo nome.")
+        self.assertContains(
+            response,
+            "Esiste gia&#x27; una azienda con questo nome.",
+        )
         self.assertEqual(Company.objects.filter(name__iexact="atm").count(), 1)
 
     def test_agency_contract_create_page_handles_company_create_race_integrity_error(
@@ -479,6 +451,6 @@ class ContractScopeAndInvitationsPhase4Tests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
-            "Azienda gia' creata da un altro utente in parallelo.",
+            "Impossibile creare azienda: vincolo dati non rispettato.",
         )
-        self.assertEqual(Company.objects.filter(name__iexact="Race Company").count(), 1)
+        self.assertFalse(Company.objects.filter(name__iexact="Race Company").exists())

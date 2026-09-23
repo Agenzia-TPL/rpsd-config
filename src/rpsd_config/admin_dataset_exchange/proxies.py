@@ -7,7 +7,6 @@ from rpsd_config.exchange_agreement.models import (
     DatasetSpecification,
     DatasetSpecificationStatusEvent,
     Indicator,
-    IndicatorDef,
     IndicatorProfile,
     IndicatorVersion,
     IndicatorVersionStatusEvent,
@@ -21,7 +20,6 @@ from rpsd_config.exchange_agreement.models import (
     RequirementFragment,
     RequirementFragmentStatusEvent,
     SiriValidationProfile,
-    Structure,
 )
 
 
@@ -139,22 +137,6 @@ class ProcessingProfileVersionStatusEventAdminProxy(
         app_label = "admin_dataset_exchange"
         verbose_name = "Processing profile version status event"
         verbose_name_plural = "Processing profile version status events"
-
-
-class StructureAdminProxy(Structure):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Structure"
-        verbose_name_plural = "Structures"
-
-
-class IndicatorDefAdminProxy(IndicatorDef):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Indicator definition"
-        verbose_name_plural = "Indicator definitions"
 
 
 class NetexValidationProfileAdminProxy(NetexValidationProfile):

@@ -64,7 +64,6 @@ from .proxies import (
     DatasetSpecificationAdminProxy,
     DatasetSpecificationStatusEventAdminProxy,
     IndicatorAdminProxy,
-    IndicatorDefAdminProxy,
     IndicatorProfileAdminProxy,
     IndicatorVersionAdminProxy,
     IndicatorVersionStatusEventAdminProxy,
@@ -78,7 +77,6 @@ from .proxies import (
     RequirementFragmentAdminProxy,
     RequirementFragmentStatusEventAdminProxy,
     SiriValidationProfileAdminProxy,
-    StructureAdminProxy,
 )
 
 
@@ -792,44 +790,6 @@ class ProcessingProfileVersionStatusEventAdmin(
 
     def has_delete_permission(self, request, obj=None):
         return False
-
-
-@admin.register(StructureAdminProxy)
-class StructureAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
-    list_display = ("dataset", "name", "created_at", "updated_at")
-    list_filter = ("dataset",)
-    search_fields = ("name", "dataset__code", "dataset__name")
-    autocomplete_fields = ("dataset",)
-    readonly_fields = ("created_at_human", "updated_at_human")
-
-
-@admin.register(IndicatorDefAdminProxy)
-class IndicatorDefAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
-    list_display = (
-        "code",
-        "name",
-        "type",
-        "sql_procedure_name",
-        "structures_list",
-        "created_at",
-        "updated_at",
-    )
-    list_filter = ("type", "structures__dataset")
-    search_fields = (
-        "code",
-        "name",
-        "description",
-        "sql_procedure_name",
-        "sql_snippet",
-        "structures__name",
-        "structures__dataset__code",
-    )
-    autocomplete_fields = ("structures",)
-    readonly_fields = ("created_at_human", "updated_at_human")
-
-    @admin.display(description="Structures")
-    def structures_list(self, obj):
-        return ", ".join(str(structure) for structure in obj.structures.all())
 
 
 @admin.register(NetexValidationProfileAdminProxy)

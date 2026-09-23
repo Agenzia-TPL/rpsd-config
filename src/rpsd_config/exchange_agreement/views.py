@@ -38,12 +38,10 @@ from .models import (
     ContractConfigurationRevision,
     ContractInvitation,
     ContractMembership,
-    FlowProfile,
     IndicatorProfile,
     IntegrationPrincipal,
     Lot,
     NetexValidationProfile,
-    OperationalFlow,
     SiriValidationProfile,
 )
 from .rbac import resolve_user_agency_scope
@@ -88,11 +86,6 @@ from .services.contract_revisions import (
     revision_temporal_state,
     validate_revision_for_approval,
     withdraw_revision,
-)
-from .services.flow_profiles import (
-    ensure_standard_flow_profiles,
-    ensure_standard_operational_flows,
-    summarize_flow_profile_options,
 )
 from .services.invitation_rejections import (
     InvitationRejectValidationError,
@@ -895,38 +888,6 @@ def _build_initialization_state() -> dict:
     }
 
 
-def _build_flow_profile_rows() -> list[dict]:
-    profiles = FlowProfile.objects.annotate(contract_count=Count("contracts")).order_by(
-        "name", "code"
-    )
-    return [
-        {
-            "profile": profile,
-            "contract_count": profile.contract_count,
-            "summary": summarize_flow_profile_options(profile.options),
-        }
-        for profile in profiles
-    ]
-
-
-def _build_operational_flow_rows() -> list[dict]:
-    flows = OperationalFlow.objects.all().order_by("supported_what", "code")
-    rows = []
-    for flow in flows:
-        referenced_count = 0
-        for profile in FlowProfile.objects.all().only("options"):
-            data_ingestion = profile.options.get("data_ingestion")
-            if not isinstance(data_ingestion, dict):
-                continue
-            if any(
-                isinstance(item, dict) and item.get("flow") == flow.code
-                for item in data_ingestion.values()
-            ):
-                referenced_count += 1
-        rows.append({"flow": flow, "referenced_count": referenced_count})
-    return rows
-
-
 def _normalize_boolean_flag(value: str) -> bool:
     return (value or "").strip().lower() in {"1", "true", "on", "yes"}
 
@@ -1109,7 +1070,6 @@ def company_detail_page(request: HttpRequest, company_id: int) -> HttpResponse:
         Contract.objects.select_related(
             "client_agency",
             "lot",
-            "flow_profile",
         )
         .filter(contractor_company=company)
         .order_by("-start_date", "contract_code")
@@ -1464,7 +1424,7 @@ def _agency_invitation_summary(agency: Agency) -> dict[str, int]:
 
 def _agency_contracts_qs(agency: Agency):
     return (
-        Contract.objects.select_related("lot", "contractor_company", "flow_profile")
+        Contract.objects.select_related("lot", "contractor_company")
         .filter(client_agency=agency)
         .order_by("-start_date", "contract_code")
     )
@@ -1753,7 +1713,6 @@ def agency_lot_detail_page(
     agency_contracts = list(
         Contract.objects.select_related(
             "contractor_company",
-            "flow_profile",
         )
         .filter(
             client_agency=agency,
@@ -1832,7 +1791,6 @@ def user_contract_detail_page(
             "lot",
             "client_agency",
             "contractor_company",
-            "flow_profile",
             "replaced_by",
         ),
         contract_code=contract_code,
@@ -1957,7 +1915,6 @@ def agency_contract_detail_page(
             "lot",
             "client_agency",
             "contractor_company",
-            "flow_profile",
             "replaced_by",
         ),
         contract_code=contract_code,
@@ -2352,22 +2309,6 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "indicator_label": "",
             "indicator_is_active": False,
         },
-        "flow_profile_form_values": {
-            "code": "",
-            "name": "",
-            "description": "",
-            "schema_version": "1.0",
-            "options": "",
-            "is_active": True,
-        },
-        "operational_flow_form_values": {
-            "code": "",
-            "deployment_name": "",
-            "supported_what": "",
-            "description": "",
-            "version": "001",
-            "status": OperationalFlow.Status.ACTIVE,
-        },
     }
 
     if request.method == "POST":
@@ -2390,155 +2331,8 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                 request.POST.get("indicator_is_active", "")
             ),
         }
-        result_context["flow_profile_form_values"] = {
-            "code": request.POST.get("flow_code", "").strip(),
-            "name": request.POST.get("flow_name", "").strip(),
-            "description": request.POST.get("flow_description", "").strip(),
-            "schema_version": request.POST.get("flow_schema_version", "").strip()
-            or "1.0",
-            "options": request.POST.get("flow_options", "").strip(),
-            "is_active": _normalize_boolean_flag(
-                request.POST.get("flow_is_active", "")
-            ),
-        }
-        result_context["operational_flow_form_values"] = {
-            "code": request.POST.get("operational_flow_code", "").strip(),
-            "deployment_name": request.POST.get(
-                "operational_flow_deployment_name", ""
-            ).strip(),
-            "supported_what": request.POST.get(
-                "operational_flow_supported_what", ""
-            ).strip(),
-            "description": request.POST.get("operational_flow_description", "").strip(),
-            "version": request.POST.get("operational_flow_version", "").strip()
-            or "001",
-            "status": request.POST.get(
-                "operational_flow_status",
-                OperationalFlow.Status.ACTIVE,
-            ).strip(),
-        }
-
         try:
-            if action == "init-standard-flow-profiles":
-                ensure_standard_operational_flows()
-                ensure_standard_flow_profiles()
-                result_context["success_message"] = (
-                    "Flow operativi e profili flussi standard inizializzati."
-                )
-
-            elif action == "create-operational-flow":
-                status = result_context["operational_flow_form_values"]["status"]
-                allowed_statuses = {
-                    choice[0] for choice in OperationalFlow.Status.choices
-                }
-                if status not in allowed_statuses:
-                    raise ValidationError("Stato flow operativo non supportato.")
-                flow = OperationalFlow(
-                    code=result_context["operational_flow_form_values"]["code"],
-                    engine=OperationalFlow.Engine.PREFECT,
-                    deployment_name=result_context["operational_flow_form_values"][
-                        "deployment_name"
-                    ],
-                    supported_what=result_context["operational_flow_form_values"][
-                        "supported_what"
-                    ],
-                    status=status,
-                    description=result_context["operational_flow_form_values"][
-                        "description"
-                    ],
-                    version=result_context["operational_flow_form_values"]["version"],
-                )
-                flow.full_clean()
-                flow.save()
-                result_context["success_message"] = "Flow operativo creato."
-                result_context["operational_flow_form_values"] = {
-                    "code": "",
-                    "deployment_name": "",
-                    "supported_what": "",
-                    "description": "",
-                    "version": "001",
-                    "status": OperationalFlow.Status.ACTIVE,
-                }
-
-            elif action == "set-operational-flow-status":
-                flow_id = int(request.POST.get("flow_id", "0"))
-                status = request.POST.get("status", "").strip()
-                allowed_statuses = {
-                    choice[0] for choice in OperationalFlow.Status.choices
-                }
-                if status not in allowed_statuses:
-                    raise ValidationError("Stato flow operativo non supportato.")
-                flow = OperationalFlow.objects.filter(pk=flow_id).first()
-                if flow is None:
-                    raise ValidationError("Flow operativo non trovato.")
-                flow.status = status
-                flow.save(update_fields=["status", "updated_at"])
-                result_context["success_message"] = "Stato flow operativo aggiornato."
-
-            elif action == "create-flow-profile":
-                raw_options = result_context["flow_profile_form_values"]["options"]
-                try:
-                    parsed_options = json.loads(raw_options)
-                except json.JSONDecodeError as exc:
-                    raise ValidationError(f"JSON options non valido: {exc}") from exc
-                profile = FlowProfile(
-                    code=result_context["flow_profile_form_values"]["code"],
-                    name=result_context["flow_profile_form_values"]["name"],
-                    description=result_context["flow_profile_form_values"][
-                        "description"
-                    ],
-                    schema_version=result_context["flow_profile_form_values"][
-                        "schema_version"
-                    ],
-                    options=parsed_options,
-                    is_active=result_context["flow_profile_form_values"]["is_active"],
-                )
-                profile.full_clean()
-                profile.save()
-                result_context["success_message"] = "Profilo flussi creato."
-                result_context["flow_profile_form_values"] = {
-                    "code": "",
-                    "name": "",
-                    "description": "",
-                    "schema_version": "1.0",
-                    "options": "",
-                    "is_active": True,
-                }
-
-            elif action == "duplicate-flow-profile":
-                profile_id = int(request.POST.get("profile_id", "0"))
-                source = FlowProfile.objects.filter(pk=profile_id).first()
-                if source is None:
-                    raise ValidationError("Profilo flussi non trovato.")
-                new_code = request.POST.get("new_code", "").strip()
-                if not new_code:
-                    raise ValidationError("Il nuovo codice profilo e' obbligatorio.")
-                duplicated = FlowProfile(
-                    code=new_code,
-                    name=f"{source.name} - nuova versione",
-                    description=source.description,
-                    schema_version=source.schema_version,
-                    options=source.options,
-                    is_active=False,
-                )
-                duplicated.full_clean()
-                duplicated.save()
-                result_context["success_message"] = (
-                    "Nuova versione profilo creata come non attiva."
-                )
-
-            elif action == "set-flow-profile-active":
-                profile_id = int(request.POST.get("profile_id", "0"))
-                profile = FlowProfile.objects.filter(pk=profile_id).first()
-                if profile is None:
-                    raise ValidationError("Profilo flussi non trovato.")
-                profile.is_active = _normalize_boolean_flag(
-                    request.POST.get("set_active", "")
-                )
-                profile.save(update_fields=["is_active", "updated_at"])
-                result_context["success_message"] = "Stato profilo flussi aggiornato."
-
-            elif action == "upload-netex":
+            if action == "upload-netex":
                 uploaded_file = request.FILES.get("netex_file")
                 if uploaded_file is None:
                     raise ValidationError("Seleziona un file Netex (.xsd).")
@@ -2733,8 +2527,6 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
 
     platform_users, platform_user_summary = _build_platform_user_rows()
     initialization_state = _build_initialization_state()
-    flow_profile_rows = _build_flow_profile_rows()
-    operational_flow_rows = _build_operational_flow_rows()
 
     return render(
         request,
@@ -2752,9 +2544,6 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "indicator_profiles": initialization_state["indicator_profiles"],
             "configuration_assets": initialization_state["configuration_assets"],
             "configuration_asset_type_choices": ConfigurationAsset.AssetType.choices,
-            "flow_profile_rows": flow_profile_rows,
-            "operational_flow_rows": operational_flow_rows,
-            "operational_flow_status_choices": OperationalFlow.Status.choices,
             "initialization_summary": initialization_state["summary"],
             "siri_type_choices": SiriValidationProfile.ProfileType.choices,
             **result_context,
