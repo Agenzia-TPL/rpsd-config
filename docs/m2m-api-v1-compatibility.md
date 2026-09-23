@@ -15,16 +15,17 @@ active `ingest:write` grant belonging to the contractor company.
 | `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/required-inputs` | `200` | `contract_code`, grouped `required_inputs`, dataset identity, structures, indicator codes | `401` missing/invalid authentication; `403` missing or inactive grant; `404` unknown or invisible contract |
 | `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/ingest-authorization?data_category={what}` | `200` | `allowed`, `contract_code`, `data_category`, `flow_profile_code`, `flow`, `grant_id` | `400` invalid/inactive flow profile or category; `401` missing/invalid authentication; `403` missing or inactive grant; `404` unknown or invisible contract; `422` missing query parameter |
 
-In the current implementation the legacy `flow` field contains an
-`OperationalFlow.code`. Ingest reads that same value as the Prefect deployment
-descriptor. The golden fixture deliberately uses a code different from
-`OperationalFlow.deployment_name` to make this semantic mismatch visible.
+The legacy-shaped fields are compatibility projections; the removed
+`FlowProfile` and `OperationalFlow` tables are not read. Config resolves the
+contract's current approved revision, then projects its
+`ProcessingProfileVersion` and `InputFlowVersion` records. The public `flow`
+field contains the selected `InputFlowVersion.deployment_name`, which is the
+runtime descriptor expected by the consumer.
 
-When the new model adapter is introduced, the intended contract is to project
-`InputFlowVersion.deployment_name` into `flow`, because that is the invocable
-value required by ingest. This is an intentional semantic correction: it must
-be reviewed explicitly and recorded by incrementing the golden fixture's
-`schema_version`, rather than passing unnoticed as an incidental payload change.
+No endpoint accepts a client-supplied reference date. Historic and future
+revisions cannot be selected through the operational API. Any future semantic
+change to these stable fields requires explicit review and a corresponding
+golden-fixture update.
 
 The golden contract is stored in
 `tests_integration/exchange_agreement/fixtures/m2m_api_v1_contract.json` and is

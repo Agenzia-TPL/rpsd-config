@@ -1,16 +1,16 @@
 descrizione applicativo:
 
-L’applicazione exchange_agreement modella l’ecosistema dei contratti di servizio nel trasporto pubblico locale, mettendo in relazione i soggetti coinvolti, la rete di servizio, i dataset di riferimento e gli indicatori con cui viene monitorato l’andamento del contratto. Il punto di partenza è la distinzione tra i diversi stakeholder: le agenzie (Agency), che tipicamente rappresentano gli enti concedenti o clienti; le aziende (Company), che svolgono il ruolo di gestori o contraenti; e le autorità territoriali (Authority), che rappresentano il contesto amministrativo (Regioni, Comuni, altri enti) e ne descrivono anche l’estensione geografica tramite geometrie GIS. In questo modo il sistema riesce a contestualizzare ogni elemento del contratto sia dal punto di vista istituzionale che territoriale.
+L’applicazione `exchange_agreement` governa la configurazione dei contratti di servizio TPL. Distingue l’agenzia (`Agency`), che crea lotti e contratti, l’azienda (`Company`) affidataria e l’autorità di governo (`Authority`), che ha visibilità istituzionale sui contratti associati senza controllarne la configurazione.
 
 Su questo sfondo si colloca la modellazione della rete di servizio. Nel runtime Django corrente viene mantenuto il livello dei lotti (`Lot`) come contesto contrattuale, mentre linee, fermate e corse sono demandate a un database PostgreSQL esterno. Questo consente di mantenere in Django il dominio contratti/indicatori riducendo l'accoppiamento con il dettaglio della rete operativa.
 
 Nota: i precedenti modelli runtime Django per il dettaglio della rete di servizio (`Route`, `Stop`, `Trip`, `TripStop`) sono stati rimossi dal runtime Django e sono ora previsti su un database PostgreSQL esterno.
 
-Parallelamente alla rete, il sistema gestisce i dataset e le loro strutture logiche. Il modello Dataset identifica le diverse famiglie di dati utilizzate (ad esempio NetEx, SIRI PT, SIRI VM), mentre Structure descrive le singole sezioni o segmenti di ciascun dataset, associando a ognuno un eventuale schema di validazione (XSD, XML, JSON, YAML). A partire da queste strutture vengono definite le metriche di monitoraggio tramite IndicatorDef, che descrive gli indicatori utilizzati per la valutazione del servizio (indicatori di qualità, quantità, puntualità, ecc.). Ogni indicatore è collegato a una struttura di dataset, rendendo esplicite le dipendenze informative necessarie per il suo calcolo.
+Il catalogo tecnico separa i concetti stabili dalle loro versioni. `Dataset` identifica la famiglia logica e il valore canonico `what`; `DatasetSpecification` ne descrive una versione tecnica e gli asset di validazione. `RequirementFragment` individua, tramite locator tipizzato (per esempio XPath), una parte necessaria del formato e `FragmentValidationRule` esprime controlli dichiarativi che saranno interpretati dal validator esterno. Analogamente, `Indicator` è l’identità logica della metrica e `IndicatorVersion` ne rappresenta una definizione tecnica immutabile collegata ai frammenti richiesti.
 
-Il cuore applicativo si trova nei modelli di contratto. Contract rappresenta un contratto di servizio tra un’agenzia cliente e un’azienda contraente, collegato a un lotto di servizio e caratterizzato da un codice univoco, da un intervallo di validità temporale e da un tipo (avvio, rinnovo) con versione progressiva. All’interno del contratto è possibile associare il programma di esercizio contrattuale tramite un file NetEx (contract_program_file), che viene archiviato in una struttura di directory organizzata per codice di contratto. A complemento di questo, ContractDocument consente di archiviare la documentazione di supporto (atti, allegati, verbali), anch’essa organizzata per contratto.
+Il cuore applicativo è `Contract`, associato direttamente a un lotto dell’agenzia, a un’azienda, a un’autorità di governo e al proprio periodo giuridico. La configurazione tecnica non è memorizzata direttamente sul contratto: ogni `ContractConfigurationRevision` seleziona un `ProcessingProfileVersion`, gli input e le versioni indicatore, con soglie, aggregazioni, penalità e parametri. Ogni revisione è uno snapshot completo, non una differenza dalla precedente.
 
-Infine, il modello ContractIndicator mette in relazione contratti e indicatori, permettendo di specificare per ogni combinazione contratto–indicatore una configurazione dedicata (parametri, soglie, pesi) rappresentata in un campo JSON. Questo consente di adattare il significato operativo degli indicatori al singolo contratto, senza duplicare le definizioni di base. L’insieme di questi modelli costruisce un quadro coerente in cui gli accordi contrattuali, la rete di servizio, i dati disponibili e gli strumenti di monitoraggio sono descritti in modo strutturato, tracciabile e interoperabile con altri sistemi.
+Una revisione nasce `draft` ed è approvata dal platform admin dopo i controlli di coerenza. Le revisioni approvate o ritirate sono immutabili. Le API operative risolvono soltanto la revisione approvata corrente in base alla data del server, senza accettare una data dal chiamante. Una nuova revisione diventa corrente dalla propria `valid_from`; il termine della precedente è derivato come giorno antecedente. I riferimenti ai flow Prefect sono metadati opzionali: Config non distribuisce, pianifica o esegue i flow e non conserva i risultati degli indicatori.
 
 ## Setup devcontainer e Keycloak
 
@@ -76,7 +76,8 @@ Documentazione API:
 - Swagger UI: `/exchange_agreement/api/docs`
 - OpenAPI JSON: `/exchange_agreement/api/openapi.json`
 
-Endpoint principali (v1):
+Endpoint principali (v1; le letture con forma legacy sono proiezioni di
+compatibilità):
 
 - Contratti
   - `GET /exchange_agreement/api/v1/contracts`
@@ -96,6 +97,11 @@ Endpoint principali (v1):
   - `GET /exchange_agreement/api/v1/indicators`
   - `GET /exchange_agreement/api/v1/structures`
   - `GET /exchange_agreement/api/v1/flow-profiles`
+
+L'assegnazione diretta tramite `PUT .../flow-profile` viene rifiutata con
+`409`: la configurazione si cambia creando e approvando una revisione. I nuovi
+consumer dei cataloghi usano `/v1/flow-catalog/...`,
+`/v1/processing-profiles` e `/v1/indicator-catalog`.
 - Helper onboarding inviti
   - `GET /exchange_agreement/api/invitations/{token}/check`
   - `POST /exchange_agreement/api/invitations/{token}/start`
@@ -113,6 +119,7 @@ Endpoint azienda M2M:
   - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/flow-profile`
   - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/required-inputs`
   - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/ingest-authorization?data_category={what}`
+  - `GET /exchange_agreement/api/m2m/v2/contracts/{contract_code}/ingest-resolution?data_category={what}`
 
 L'invio file verso `rpsd-ingest` e' standardizzato sul flusso aziendale M2M:
 il client aziendale ottiene un token Keycloak con `client_credentials`, invia
@@ -138,18 +145,7 @@ Comportamento:
 
 `ContractPublication` e' visibile anche in admin come vista tecnica in sola lettura per ispezionare gli snapshot.
 
-2do:
-onboarding di un admin agenzia quando non ci sono contratti.
-va fatta sull'istanza di agenzia ?
-oppure si lascia preparare da admin un account specifico e lo si assegna ad un utente ?
-
-
-
-
-
-
-
-## Comandi Django per seed dummy completo.
+## Comandi Django per seed e reset di sviluppo
 
 ### Reset di sviluppo del modello target
 
@@ -181,69 +177,17 @@ manutenzione PostgreSQL, applica tutte le migrazioni Django ed esegue
 ingest o altri servizi. Usare `--skip-seed` soltanto se serve un database config
 vuoto ma migrato.
 
-La precedente opzione `seed_dummy_data --reset` elimina soltanto le righe
-applicative, non ricrea lo schema e rappresenta ancora il demo legacy
-transitorio.
+`seed_target_demo` crea in modo idempotente anagrafiche, cataloghi versionati,
+riferimenti ai flow, un profilo pubblicato, un contratto, la revisione corrente
+approvata e la relativa pubblicazione. I comandi e i modelli legacy rimossi non
+sono piu necessari per predisporre l'ambiente locale.
 
-File creati:
-- `src/rpsd_config/exchange_agreement/management/__init__.py`
-- `src/rpsd_config/exchange_agreement/management/commands/__init__.py`
-- `src/rpsd_config/exchange_agreement/management/commands/seed_dummy_data.py`
+## Confine del repository
 
-Cosa popola:
-- anagrafiche: `Agency`, `Company`, `Authority`, `Lot`
-- catalogo dati: `Dataset`, `Structure`
-- indicatori: `IndicatorDef` + relazione `structures`
-- flow profile: `FlowProfile`
-- contratti: `Contract` + file programma + `ContractDocument`
-- mapping: `ContractIndicator`
-- accessi: `ContractMembership`
-- onboarding: `ContractInvitation`
-- opzionale: `ContractPublication` (se usi `--publish-contracts`)
-
-Uso:
-```bash
-uv run python src/rpsd_config/manage.py seed_dummy_data
-```
-
-Con reset totale prima del seed:
-```bash
-uv run python src/rpsd_config/manage.py seed_dummy_data --reset
-```
-
-Con reset e pubblicazione dei contratti dummy:
-```bash
-uv run python src/rpsd_config/manage.py seed_dummy_data --reset --publish-contracts
-```
-
-Parametri utili:
-```bash
-uv run python src/rpsd_config/manage.py seed_dummy_data --lots 5 --indicators 10 --seed 123
-```
-
-
-# 2do
-salvare gtfs in area condivisa bisogna importare libreria e aggiungere una azione customa l modello del contratto. 
-In modo che una volta salvato deve salvare o fare una copia i file nello spazio condiviso. 
--------------------------------------
-Cambiare nome nel db da "dataset" a "tipi di dataset" o datasetType
----------------------------------------------- 
------------------------------------------------------------------------------
-serve da rivalutare come si fa l'invito iniziale ad un admin agenzia che possa creare nuovi cotratti. 
----------------------------------------------------------------------------------------
-Gli indicatori devono essere immutabili. Una volta salvato puoi solo cancellarli o crearne di nuovi o duplicarne uno (magari aggiungendo una versoine da mostrare anche nel nome)
------------------------------------------------------------------------------------------
-Un contratto è vincolato dal fatto che solo lui puo avere quel codice univoco.
-
-non ci possono essere contratti con codice diverso, ma associati allo stesso lotto, stessa azienda e stessa agenzia e stessa versione. 
-Se ne vuoi creare uno uguale deve incrementare la versione. 
-Inoltre non esiste il vincolo di sovrapposizione temporale sullo stesso lotto
-----------------------------------------------------------------------------------------------
-
-Aggiungere una funzione di pubblicaizone che genera una tabella con dentro 
-Un contratto pubblicato una seconda volta crea una versione 2. 
-Quando viene avviata una pubblicaizone si genera un record di una tabella contratti pubblicati con versione.
-Va aggiunto un range di pubblicazione in modo da sapere quando è stata pubblicata. 
--------------------------------------------------------------------------------------
-si può anche rimuovere lo stato in modo da non dover mantenere questa informazione
--------------------------------------------------------------------------------------- 
+`rpsd-config` possiede metadata di configurazione, requisiti di validazione,
+revisioni contrattuali, proiezioni API e client Django. Non possiede ricezione o
+storage dei file, esecuzione del validator, deployment/scheduling Prefect,
+provisioning del realm/client Keycloak, librerie condivise o Compose di
+piattaforma. Il cutover del modello non richiede quindi modifiche a
+`rpsd-ingest`, `rpsd-commons` o `rpsd`: la compatibilità rimane negli adapter
+API di Config.

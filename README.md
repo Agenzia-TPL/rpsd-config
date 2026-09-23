@@ -13,10 +13,11 @@ configuration needed for this monitoring:
 
 - **Who is involved** — transport agencies (contracting authorities),
   companies (operators), and territorial authorities (Regions, Municipalities).
-- **What is being monitored** — datasets, data structures, and indicator
-  definitions that describe how service performance is measured.
-- **How it is configured** — contracts link agencies and operators to a set
-  of indicators, thresholds, and data-ingestion profiles.
+- **What is being monitored** — logical datasets and indicators, separated
+  from their immutable technical versions and required data fragments.
+- **How it is configured** — a contract has complete, dated configuration
+  revisions that select a published processing profile, inputs, indicator
+  versions, thresholds and penalties.
 - **Versioned publications** — once a contract is configured, it can be
   published as an immutable, checksum-verified snapshot used downstream by
   other platform components.
@@ -31,7 +32,8 @@ The domain starts from stakeholders:
 
 - `Agency`: client / contracting authority
 - `Company`: operator / contractor
-- `Authority`: territorial authority (Region, Municipality, etc.), optionally with GIS geometry
+- `Authority`: governing authority associated with contracts for read-only
+  institutional visibility, optionally with GIS geometry
 
 Service network modeling is intentionally split:
 
@@ -42,18 +44,38 @@ Note: the former Django runtime models for service-network details (`Route`, `St
 
 This keeps the Django codebase focused on contracts and monitoring configuration while reducing coupling with detailed network operations.
 
-### Datasets and Structures
+### Versioned Technical Catalogs
 
-- `Dataset` identifies data families (for example NetEx, SIRI PT, SIRI VM)
-- `Structure` describes logical sections/segments of a dataset (with JSON definition, selectors, required fields)
-- `IndicatorDef` defines monitoring indicators and the dataset structures required to compute them
+- `Dataset` identifies a stable data family and its canonical `what` value.
+- `DatasetSpecification` versions the technical format (for example a NeTEx
+  national profile) and links validation assets.
+- `RequirementFragment` locates required data with a typed definition such as
+  XPath or table/column selection; `FragmentValidationRule` adds declarative
+  checks interpreted by the external validator.
+- `Indicator` is the stable business identity; `IndicatorVersion` identifies
+  an immutable calculation definition and its required fragments.
+- `InputFlowVersion` and `OrchestrationFlowVersion` store versioned references
+  to executable artifacts. Config does not deploy, schedule or run them.
+- `ProcessingProfileVersion` is a platform-approved relational composition of
+  compatible input flows and indicator versions.
 
 ### Contracts and Monitoring Configuration
 
 - `Contract` represents a service contract between one client agency and one contractor company, bound to one `Lot`
 - `ContractDocument` stores supporting contract documents
-- `ContractIndicator` associates indicators to a contract with contract-specific JSON parameters (thresholds, weights, etc.)
-- `FlowProfile` stores reusable operational ingestion/retention configuration that can be assigned to contracts
+- `ContractIndicator` associates the stable logical indicators monitored by a
+  contract.
+- `ContractConfigurationRevision` is a complete configuration snapshot with a
+  `valid_from` date. Drafts are editable; approved or withdrawn revisions are
+  immutable.
+- `ContractInputSelection` and `ContractIndicatorConfiguration` store the input
+  and indicator choices of one revision, including thresholds, aggregation,
+  penalties and parameters.
+
+The runtime API resolves only the current approved revision using the server
+date. Callers cannot select a historic or future revision. When a later
+revision becomes effective, the previous interval ends logically on the day
+before the new `valid_from`; no stored revision is overwritten.
 
 ### Access and Onboarding
 
@@ -147,10 +169,10 @@ rpsd-config/
    uv run python src/rpsd_config/manage.py migrate
    ```
 
-5. (Optional) Seed dummy data:
+5. (Optional) Seed target-model demo data:
 
    ```bash
-   uv run python src/rpsd_config/manage.py seed_dummy_data --reset --publish-contracts
+   uv run python src/rpsd_config/manage.py seed_target_demo
    ```
 
 6. Start the development server:
@@ -248,7 +270,7 @@ API docs:
 - Swagger UI: `/exchange_agreement/api/docs`
 - OpenAPI JSON: `/exchange_agreement/api/openapi.json`
 
-Key endpoints (v1):
+Key endpoints (v1; legacy-shaped reads are compatibility projections):
 
 - Contracts
   - `GET /exchange_agreement/api/v1/contracts`
@@ -268,6 +290,11 @@ Key endpoints (v1):
   - `GET /exchange_agreement/api/v1/indicators`
   - `GET /exchange_agreement/api/v1/structures`
   - `GET /exchange_agreement/api/v1/flow-profiles`
+
+Direct assignment through the v1 `PUT .../flow-profile` endpoint is rejected
+with `409`; create and approve a contract configuration revision instead. New
+catalog consumers should use `/v1/flow-catalog/...`,
+`/v1/processing-profiles` and `/v1/indicator-catalog`.
 - Onboarding invite helpers
   - `GET /exchange_agreement/api/invitations/{token}/check`
   - `POST /exchange_agreement/api/invitations/{token}/start`
@@ -285,6 +312,7 @@ M2M company endpoints:
   - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/flow-profile`
   - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/required-inputs`
   - `GET /exchange_agreement/api/m2m/v1/contracts/{contract_code}/ingest-authorization?data_category={what}`
+  - `GET /exchange_agreement/api/m2m/v2/contracts/{contract_code}/ingest-resolution?data_category={what}`
 
 File submission to `rpsd-ingest` is standardized on the M2M company flow:
 company clients obtain a Keycloak token with `client_credentials`, send the
@@ -292,6 +320,12 @@ file to ingest with `Authorization: Bearer <token>`, and Config validates the
 JWT, contract, grant and data category. User-based Config APIs remain available
 for authenticated user workflows, but user-based file submission is not the
 standard ingest path.
+
+The v1 flow-profile-shaped responses are compatibility projections built from
+the current revision and versioned catalogs. They do not imply that a legacy
+`FlowProfile` record can still be selected or edited. The v2 ingest-resolution
+endpoint exposes the resolved model explicitly and likewise accepts no client
+supplied reference date.
 
 ## Admin Backoffice Notes
 
@@ -310,7 +344,7 @@ Behavior:
 
 `ContractPublication` is also exposed in the admin as a technical, read-only view for snapshot inspection.
 
-## Dummy Data Seed Command
+## Development Seed and Safe Reset
 
 ### Target-model development reset
 
@@ -341,48 +375,19 @@ maintenance databases, applies all Django migrations and runs
 storage or any other service. Use `--skip-seed` only when an empty migrated
 config database is required.
 
-The older `seed_dummy_data --reset` option deletes application rows but does
-not recreate the schema and still represents the transitional legacy demo.
+`seed_target_demo` creates an idempotent example containing stakeholders,
+versioned dataset and indicator catalogs, flow references, a published
+processing profile, a contract, its approved current revision and publication.
+The removed legacy commands and models are not prerequisites for local setup.
 
-Management command:
+## Repository Boundary
 
-- `src/rpsd_config/exchange_agreement/management/commands/seed_dummy_data.py`
-
-What it seeds:
-
-- stakeholders: `Agency`, `Company`, `Authority`, `Lot`
-- dataset catalog: `Dataset`, `Structure`
-- indicators: `IndicatorDef` + `structures` relation
-- flow profiles: `FlowProfile`
-- contracts: `Contract` + program file + `ContractDocument`
-- mappings: `ContractIndicator`
-- access: `ContractMembership`
-- onboarding: `ContractInvitation`
-- optional publications: `ContractPublication`
-
-Usage:
-
-```bash
-uv run python src/rpsd_config/manage.py seed_dummy_data
-```
-
-Reset before seed:
-
-```bash
-uv run python src/rpsd_config/manage.py seed_dummy_data --reset
-```
-
-Seed and publish dummy contracts:
-
-```bash
-uv run python src/rpsd_config/manage.py seed_dummy_data --reset --publish-contracts
-```
-
-Useful parameters:
-
-```bash
-uv run python src/rpsd_config/manage.py seed_dummy_data --lots 5 --indicators 10 --seed 123
-```
+This repository owns configuration metadata, validation requirements,
+contract revisions, API projections and the Django UI. It does not own file
+receipt/storage, validator execution, Prefect deployment or scheduling,
+Keycloak realm/client provisioning, shared libraries or platform Compose.
+Accordingly, the model cutover requires no source changes in `rpsd-ingest`,
+`rpsd-commons` or `rpsd`; compatibility remains inside the Config API adapters.
 
 ## Project Status
 
@@ -394,7 +399,6 @@ Known limitations:
 - The onboarding flow for the first agency admin when no contracts exist is not
   yet fully defined.
 - GTFS shared-area storage integration is under evaluation.
-- The publication lifecycle (range semantics, revocation) may be refined.
 
 See the Open Notes / Backlog section below for the full list of pending items.
 
@@ -406,9 +410,6 @@ The following notes are kept as a lightweight project backlog and need refinemen
 - Reassess the initial invitation mechanism for an agency admin who can create new contracts
 - Evaluate GTFS shared-area storage integration (copy/export files after contract save via a custom action or dedicated workflow)
 - Re-evaluate naming in the DB around `dataset` vs `dataset type`
-- Indicator immutability policy: after creation, prefer create-new / clone-new-version rather than in-place edits
-- Contract constraints are already enforced on unique code and version tuple; keep documentation aligned with actual model constraints
-- Publication lifecycle refinements (if needed): publication range semantics, status simplification, and future revocation strategy
 
 ## Language Policy (Suggested)
 
