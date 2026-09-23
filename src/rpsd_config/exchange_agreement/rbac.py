@@ -40,6 +40,12 @@ def _agency_group_regex() -> re.Pattern[str]:
 
 
 def extract_user_groups(user) -> set[str]:
+    if (
+        not getattr(user, "is_authenticated", False)
+        or getattr(user, "pk", None) is None
+    ):
+        return set()
+
     social = (
         SocialAccount.objects.filter(user=user)
         .order_by("-last_login", "-date_joined")

@@ -41,6 +41,12 @@ class TechnicalCatalogAdminTests(TestCase):
             description="Prima specifica NeTEx italiana.",
         )
 
+    def test_anonymous_user_can_open_admin_login(self):
+        response = self.client.get(reverse("admin:login"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="login-form"')
+
     def test_platform_admin_can_open_all_target_catalogs(self):
         self.client.force_login(self.platform_admin)
 
@@ -57,9 +63,7 @@ class TechnicalCatalogAdminTests(TestCase):
         for model_name in model_names:
             with self.subTest(model=model_name):
                 response = self.client.get(
-                    reverse(
-                        f"admin:admin_dataset_exchange_{model_name}_changelist"
-                    )
+                    reverse(f"admin:admin_dataset_exchange_{model_name}_changelist")
                 )
                 self.assertEqual(response.status_code, 200)
 
@@ -151,9 +155,7 @@ class TechnicalCatalogAdminTests(TestCase):
     def test_platform_configuration_links_to_technical_catalogs(self):
         self.client.force_login(self.platform_admin)
 
-        response = self.client.get(
-            reverse("exchange_agreement:platform-configuration")
-        )
+        response = self.client.get(reverse("exchange_agreement:platform-configuration"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Cataloghi tecnici")
