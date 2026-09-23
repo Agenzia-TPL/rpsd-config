@@ -46,7 +46,6 @@ def accessible_contracts_for_principal(
             "client_agency",
             "contractor_company",
             "replaced_by",
-            "flow_profile",
         )
         .filter(
             status=Contract.ContractStatus.ACTIVE,
@@ -144,7 +143,6 @@ def require_m2m_contract_access(
             "client_agency",
             "contractor_company",
             "replaced_by",
-            "flow_profile",
         )
         .filter(contract_code=contract_code)
         .get()

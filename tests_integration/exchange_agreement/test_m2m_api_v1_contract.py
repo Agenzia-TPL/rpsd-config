@@ -6,7 +6,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import Client, TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from rpsd_config.exchange_agreement.models import (
@@ -156,6 +158,12 @@ class M2MApiV1ContractTests(TestCase):
             f"{self.contract.contract_code}/{suffix}"
         )
 
+    def _public_contract_path(self, suffix: str) -> str:
+        return (
+            "/exchange_agreement/api/v1/contracts/"
+            f"{self.contract.contract_code}/{suffix}"
+        )
+
     def _assert_golden(self, response, expected: dict, *, kind: str) -> None:
         payload = response.json()
         if kind == "required_inputs":
@@ -196,6 +204,89 @@ class M2MApiV1ContractTests(TestCase):
                     ),
                     1,
                 )
+
+    def test_v1_adapters_do_not_query_legacy_configuration_tables(self):
+        """The compatibility surface is a projection of target-model data only."""
+
+        m2m_paths = (
+            "/exchange_agreement/api/m2m/v1/contracts",
+            f"/exchange_agreement/api/m2m/v1/contracts/{self.contract.contract_code}",
+            self._path("flow-profile"),
+            self._path("required-inputs"),
+            self._path("indicators"),
+        )
+        with CaptureQueriesContext(connection) as captured:
+            for path in m2m_paths:
+                response = self._get(path)
+                self.assertEqual(response.status_code, 200, path)
+
+            self.client.force_login(self.configuration_admin)
+            public_paths = (
+                "/exchange_agreement/api/v1/contracts",
+                f"/exchange_agreement/api/v1/contracts/{self.contract.contract_code}",
+                self._public_contract_path("flow-profile"),
+                self._public_contract_path("required-inputs"),
+                self._public_contract_path("indicators"),
+                "/exchange_agreement/api/v1/indicators",
+                "/exchange_agreement/api/v1/structures",
+                "/exchange_agreement/api/v1/flow-profiles",
+            )
+            for path in public_paths:
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200, path)
+
+        legacy_tables = {
+            "exchange_agreement_structure",
+            "exchange_agreement_indicatordef",
+            "exchange_agreement_operationalflow",
+            "exchange_agreement_flowprofile",
+        }
+        executed_sql = "\n".join(query["sql"].lower() for query in captured)
+        for table in legacy_tables:
+            self.assertNotIn(table, executed_sql)
+
+    def test_management_v1_rejects_direct_profile_assignment(self):
+        self.client.force_login(self.configuration_admin)
+
+        response = self.client.put(
+            self._public_contract_path("flow-profile"),
+            data=json.dumps({"flow_profile_code": self.flow_profile.code}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("configuration revision", response.json()["detail"])
+        self.contract.refresh_from_db()
+        self.assertIsNone(self.contract.flow_profile_id)
+
+    def test_management_v1_contract_create_ignores_compatibility_profile_field(self):
+        self.client.force_login(self.configuration_admin)
+        lot = Lot.objects.create(
+            agency=self.agency,
+            short_description="GOLDEN-LOT-2",
+            description="Second golden contract lot",
+        )
+
+        response = self.client.post(
+            "/exchange_agreement/api/v1/contracts",
+            data=json.dumps(
+                {
+                    "contract_code": "CTR-GOLDEN-002",
+                    "client_agency_id": self.agency.id,
+                    "contractor_company_id": self.company.id,
+                    "lot_id": lot.id,
+                    "start_date": date.today().isoformat(),
+                    "status": Contract.ContractStatus.DRAFT,
+                    "flow_profile_code": self.flow_profile.code,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        created = Contract.objects.get(contract_code="CTR-GOLDEN-002")
+        self.assertIsNone(created.flow_profile_id)
+        self.assertFalse(created.configuration_revisions.exists())
 
     def test_unauthenticated_request_matches_golden_rejection(self):
         response = self._get(self._path("flow-profile"), authenticated=False)

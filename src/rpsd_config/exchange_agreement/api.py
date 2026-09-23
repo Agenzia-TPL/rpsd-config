@@ -30,15 +30,12 @@ from .models import (
     Company,
     ConfigurationAsset,
     Contract,
-    ContractIndicator,
     ContractInvitation,
     ContractMembership,
     ContractPublication,
     Dataset,
     DatasetSpecification,
-    FlowProfile,
     Indicator,
-    IndicatorDef,
     IndicatorVersion,
     InputFlowVersion,
     IntegrationGrant,
@@ -46,7 +43,7 @@ from .models import (
     Lot,
     OrchestrationFlowVersion,
     ProcessingProfileVersion,
-    Structure,
+    RequirementFragment,
 )
 from .rbac import resolve_user_agency_scope
 from .services.agency_bootstrap import (
@@ -67,7 +64,6 @@ from .services.flow_catalog import (
     input_flow_runtime_projection,
     orchestration_flow_runtime_projection,
 )
-from .services.flow_profiles import get_default_flow_profile
 from .services.indicator_catalog import serialize_indicator_catalog_entry
 from .services.ingest_resolution import (
     IngestResolutionError,
@@ -645,7 +641,6 @@ def _authorized_contracts_qs(request):
         "contractor_company",
         "governing_authority",
         "replaced_by",
-        "flow_profile",
     )
     if user.is_superuser:
         return qs
@@ -817,28 +812,16 @@ def _orchestration_flow_catalog_schema(
     )
 
 
-def _flow_profile_ref_schema(
-    flow_profile: FlowProfile | None,
-) -> FlowProfileRefSchema | None:
-    if flow_profile is None:
-        return None
+def _processing_profile_ref_schema(
+    profile: ProcessingProfileVersion,
+) -> FlowProfileRefSchema:
     return FlowProfileRefSchema(
-        code=flow_profile.code,
-        name=flow_profile.name,
-        schema_version=flow_profile.schema_version,
-        is_active=flow_profile.is_active,
-    )
-
-
-def _flow_profile_schema(flow_profile: FlowProfile) -> FlowProfileSchema:
-    options = flow_profile.options if isinstance(flow_profile.options, dict) else {}
-    return FlowProfileSchema(
-        code=flow_profile.code,
-        name=flow_profile.name,
-        schema_version=flow_profile.schema_version,
-        is_active=flow_profile.is_active,
-        description=flow_profile.description,
-        options=options,
+        code=profile.code,
+        name=profile.name,
+        schema_version=profile.version,
+        # In this projection "active" means selected by today's approved
+        # contract revision, not mutable catalog lifecycle state.
+        is_active=True,
     )
 
 
@@ -855,34 +838,53 @@ def _processing_profile_legacy_schema(
     )
 
 
-def _structure_schema(structure: Structure) -> StructureSchema:
-    definition = structure.definition if isinstance(structure.definition, dict) else {}
+def _fragment_structure_schema(fragment: RequirementFragment) -> StructureSchema:
+    locator = (
+        fragment.locator_definition
+        if isinstance(fragment.locator_definition, dict)
+        else {}
+    )
+    definition = dict(locator)
+    xpath = locator.get("path", "") if fragment.locator_type == "xpath" else ""
+    if xpath:
+        definition["xpath"] = xpath
+    definition.setdefault("fields", [])
     return StructureSchema(
-        id=structure.id,
-        name=structure.name,
-        description=structure.description,
-        dataset=_dataset_ref(structure.dataset),
+        id=fragment.id,
+        name=fragment.name,
+        description=fragment.description,
+        dataset=_dataset_ref(fragment.dataset_specification.dataset),
         definition=definition,
-        xpath=structure.get_xpath_selector(),
-        fields=structure.get_mandatory_fields(),
+        xpath=xpath,
+        fields=[],
     )
 
 
-def _indicator_schema(indicator: IndicatorDef) -> IndicatorSchema:
-    structures_raw = list(indicator.structures.all())
-    structures_raw.sort(key=lambda s: (s.dataset.code, s.name))
-    structures = [_structure_schema(s) for s in structures_raw]
+def _indicator_version_legacy_schema(version: IndicatorVersion) -> IndicatorSchema:
+    fragments = list(version.required_fragments.all())
+    fragments.sort(
+        key=lambda item: (item.dataset_specification.dataset.code, item.code)
+    )
     return IndicatorSchema(
-        code=indicator.code,
-        type=indicator.type,
-        name=indicator.name,
-        description=indicator.description,
-        formula=indicator.formula,
-        notes=indicator.notes,
-        sql_procedure_name=indicator.sql_procedure_name,
-        sql_snippet=indicator.sql_snippet,
-        structures=structures,
+        code=version.indicator.code,
+        type="OTHER",
+        name=version.indicator.name,
+        description=version.indicator.description,
+        formula=version.formula_description,
+        notes=version.description,
+        sql_procedure_name=version.execution_reference,
+        sql_snippet="",
+        structures=[_fragment_structure_schema(item) for item in fragments],
     )
+
+
+def _current_processing_profile(contract: Contract) -> ProcessingProfileVersion | None:
+    try:
+        return resolve_current_contract_configuration(
+            contract
+        ).revision.processing_profile_version
+    except IngestResolutionError:
+        return None
 
 
 def _contract_summary_schema(contract: Contract) -> ContractSummarySchema:
@@ -908,7 +910,11 @@ def _contract_summary_schema(contract: Contract) -> ContractSummarySchema:
             id=contract.contractor_company_id,
             name=contract.contractor_company.name,
         ),
-        flow_profile=_flow_profile_ref_schema(contract.flow_profile),
+        flow_profile=(
+            _processing_profile_ref_schema(profile)
+            if (profile := _current_processing_profile(contract))
+            else None
+        ),
     )
 
 
@@ -943,7 +949,11 @@ def _contract_detail_schema(request, contract: Contract) -> ContractDetailSchema
             id=contract.contractor_company_id,
             name=contract.contractor_company.name,
         ),
-        flow_profile=_flow_profile_ref_schema(contract.flow_profile),
+        flow_profile=(
+            _processing_profile_ref_schema(profile)
+            if (profile := _current_processing_profile(contract))
+            else None
+        ),
         contract_program_file=file_name,
         contract_program_file_url=file_url,
         replaced_by_contract_code=contract.replaced_by.contract_code
@@ -1046,45 +1056,6 @@ def _m2m_grant_schema(grant: IntegrationGrant) -> M2MGrantSchema:
         status=grant.status,
         valid_from=grant.valid_from.isoformat() if grant.valid_from else None,
         valid_to=grant.valid_to.isoformat() if grant.valid_to else None,
-    )
-
-
-def _contract_required_inputs_schema(contract: Contract) -> RequiredInputsResponse:
-    links = (
-        ContractIndicator.objects.select_related("indicator")
-        .prefetch_related("indicator__structures__dataset")
-        .filter(contract=contract)
-        .order_by("indicator__code")
-    )
-
-    groups: dict[str, dict] = {}
-    for link in links:
-        indicator_code = link.indicator.code
-        for structure in link.indicator.structures.all():
-            dataset = structure.dataset
-            key = dataset.code
-            group = groups.setdefault(
-                key,
-                {
-                    "dataset": _dataset_ref(dataset),
-                    "structures_by_id": {},
-                    "used_by_indicators": set(),
-                },
-            )
-            group["structures_by_id"][structure.id] = _structure_schema(structure)
-            group["used_by_indicators"].add(indicator_code)
-
-    required_inputs = [
-        RequiredInputGroupSchema(
-            dataset=group["dataset"],
-            structures=list(group["structures_by_id"].values()),
-            used_by_indicators=sorted(group["used_by_indicators"]),
-        )
-        for _, group in sorted(groups.items())
-    ]
-    return RequiredInputsResponse(
-        contract_code=contract.contract_code,
-        required_inputs=required_inputs,
     )
 
 
@@ -1257,19 +1228,45 @@ def _mark_legacy_m2m_response(
 
 
 def _contract_indicators_schema(contract: Contract) -> list[ContractIndicatorSchema]:
-    links = (
-        ContractIndicator.objects.select_related("indicator")
-        .prefetch_related("indicator__structures__dataset")
-        .filter(contract=contract)
-        .order_by("indicator__code")
-    )
-    return [
-        ContractIndicatorSchema(
-            indicator=_indicator_schema(link.indicator),
-            contract_params=link.params,
-        )
-        for link in links
+    current = resolve_current_contract_configuration(contract)
+    snapshots = [
+        item
+        for item in current.snapshot.get("indicators", [])
+        if isinstance(item, dict)
     ]
+    version_codes = {
+        item.get("indicator_version", {}).get("code")
+        for item in snapshots
+        if isinstance(item.get("indicator_version"), dict)
+    }
+    versions = {
+        version.code: version
+        for version in IndicatorVersion.objects.select_related("indicator")
+        .prefetch_related("required_fragments__dataset_specification__dataset")
+        .filter(code__in=version_codes)
+    }
+
+    result = []
+    for item in sorted(snapshots, key=lambda value: value.get("indicator_code", "")):
+        version_data = item.get("indicator_version", {})
+        version = versions.get(version_data.get("code"))
+        if version is None:
+            raise IngestResolutionError(
+                "configuration_invariant_violation",
+                "A configured indicator version is not available",
+            )
+        params = {
+            name: item[name]
+            for name in ("thresholds", "aggregation", "penalties", "parameters")
+            if item.get(name) not in (None, {}, [])
+        }
+        result.append(
+            ContractIndicatorSchema(
+                indicator=_indicator_version_legacy_schema(version),
+                contract_params=params or None,
+            )
+        )
+    return result
 
 
 def _m2m_user_schema_map(memberships) -> list[M2MUserSchema]:
@@ -1826,20 +1823,6 @@ def create_contract(request, payload: ContractCreateRequest):
     if payload.status == Contract.ContractStatus.CLOSED:
         raise HttpError(400, "Closed contracts cannot be created directly.")
 
-    if payload.flow_profile_code:
-        flow_profile = FlowProfile.objects.filter(
-            code=payload.flow_profile_code,
-            is_active=True,
-        ).first()
-    else:
-        flow_profile = get_default_flow_profile()
-    if flow_profile is None:
-        raise HttpError(
-            400,
-            "No active flow profile is available. Configure a flow profile "
-            "before creating contracts.",
-        )
-
     try:
         with transaction.atomic():
             contract = Contract.objects.create(
@@ -1851,7 +1834,6 @@ def create_contract(request, payload: ContractCreateRequest):
                 end_date=payload.end_date,
                 tender_id=payload.tender_id,
                 status=payload.status,
-                flow_profile=flow_profile,
             )
             ensure_default_contract_ingest_grant(
                 contract=contract,
@@ -1924,11 +1906,13 @@ def create_contract_invitation(
 )
 def get_contract_flow_profile(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
+    try:
+        flow_profile = _legacy_revision_flow_profile_schema(contract)
+    except IngestResolutionError:
+        flow_profile = None
     return ContractFlowProfileResponse(
         contract_code=contract.contract_code,
-        flow_profile=_flow_profile_schema(contract.flow_profile)
-        if contract.flow_profile
-        else None,
+        flow_profile=flow_profile,
     )
 
 
@@ -1944,17 +1928,15 @@ def set_contract_flow_profile(
     if contract.status == Contract.ContractStatus.CLOSED:
         raise HttpError(400, "Cannot modify flow profile on a closed contract.")
 
-    flow_profile = FlowProfile.objects.filter(
-        code=payload.flow_profile_code, is_active=True
-    ).first()
-    if flow_profile is None:
-        raise HttpError(404, "Active flow profile not found.")
-
-    contract.flow_profile = flow_profile
-    contract.save(update_fields=["flow_profile", "updated_at"])
-    return ContractFlowProfileResponse(
-        contract_code=contract.contract_code,
-        flow_profile=_flow_profile_schema(flow_profile),
+    if not ProcessingProfileVersion.objects.filter(
+        code=payload.flow_profile_code,
+        status=ProcessingProfileVersion.Status.PUBLISHED,
+    ).exists():
+        raise HttpError(404, "Published processing profile not found.")
+    raise HttpError(
+        409,
+        "Direct flow profile assignment is no longer supported; create a contract "
+        "configuration revision.",
     )
 
 
@@ -2015,7 +1997,10 @@ def get_contract_publication_by_version(
 )
 def list_contract_indicators(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
-    return _contract_indicators_schema(contract)
+    try:
+        return _contract_indicators_schema(contract)
+    except IngestResolutionError as exc:
+        raise _legacy_revision_error(exc) from exc
 
 
 @api.get(
@@ -2024,18 +2009,14 @@ def list_contract_indicators(request, contract_code: str):
 )
 def get_contract_indicator(request, contract_code: str, indicator_code: str):
     contract = _get_authorized_contract(request, contract_code)
-    link = (
-        ContractIndicator.objects.select_related("indicator")
-        .prefetch_related("indicator__structures__dataset")
-        .filter(contract=contract, indicator__code=indicator_code)
-        .first()
-    )
-    if link is None:
-        raise HttpError(404, "Indicator not found for the selected contract.")
-    return ContractIndicatorSchema(
-        indicator=_indicator_schema(link.indicator),
-        contract_params=link.params,
-    )
+    try:
+        indicators = _contract_indicators_schema(contract)
+    except IngestResolutionError as exc:
+        raise _legacy_revision_error(exc) from exc
+    for item in indicators:
+        if item.indicator.code == indicator_code:
+            return item
+    raise HttpError(404, "Indicator not found for the selected contract.")
 
 
 @api.get(
@@ -2043,7 +2024,10 @@ def get_contract_indicator(request, contract_code: str, indicator_code: str):
 )
 def get_contract_required_inputs(request, contract_code: str):
     contract = _get_authorized_contract(request, contract_code)
-    return _contract_required_inputs_schema(contract)
+    try:
+        return _legacy_revision_required_inputs_schema(contract)
+    except IngestResolutionError as exc:
+        raise _legacy_revision_error(exc) from exc
 
 
 @api.get("/v1/flow-catalog/input", response=list[InputFlowCatalogSchema])
@@ -2180,54 +2164,74 @@ def get_published_indicator_catalog_entry(request, indicator_code: str):
 @api.get("/v1/indicators", response=list[IndicatorSchema])
 def list_indicators(request):
     _require_auth(request)
-    indicators = (
-        IndicatorDef.objects.prefetch_related("structures__dataset")
-        .all()
-        .order_by("code")
+    versions = (
+        IndicatorVersion.objects.filter(
+            status=IndicatorVersion.Status.PUBLISHED,
+            indicator__status=Indicator.Status.ACTIVE,
+        )
+        .select_related("indicator")
+        .prefetch_related("required_fragments__dataset_specification__dataset")
+        .order_by("indicator__code", "-version", "-id")
     )
-    return [_indicator_schema(indicator) for indicator in indicators]
+    latest_by_indicator = {}
+    for version in versions:
+        latest_by_indicator.setdefault(version.indicator.code, version)
+    return [
+        _indicator_version_legacy_schema(version)
+        for version in latest_by_indicator.values()
+    ]
 
 
 @api.get("/v1/indicators/{indicator_code}", response=IndicatorSchema)
 def get_indicator(request, indicator_code: str):
     _require_auth(request)
-    indicator = (
-        IndicatorDef.objects.prefetch_related("structures__dataset")
-        .filter(code=indicator_code)
+    version = (
+        IndicatorVersion.objects.filter(
+            indicator__code=indicator_code,
+            indicator__status=Indicator.Status.ACTIVE,
+            status=IndicatorVersion.Status.PUBLISHED,
+        )
+        .select_related("indicator")
+        .prefetch_related("required_fragments__dataset_specification__dataset")
+        .order_by("-version", "-id")
         .first()
     )
-    if indicator is None:
+    if version is None:
         raise HttpError(404, "Indicator not found.")
-    return _indicator_schema(indicator)
+    return _indicator_version_legacy_schema(version)
 
 
 @api.get("/v1/indicators/{indicator_code}/structures", response=list[StructureSchema])
 def get_indicator_structures(request, indicator_code: str):
     _require_auth(request)
-    indicator = (
-        IndicatorDef.objects.prefetch_related("structures__dataset")
-        .filter(code=indicator_code)
+    version = (
+        IndicatorVersion.objects.filter(
+            indicator__code=indicator_code,
+            indicator__status=Indicator.Status.ACTIVE,
+            status=IndicatorVersion.Status.PUBLISHED,
+        )
+        .select_related("indicator")
+        .prefetch_related("required_fragments__dataset_specification__dataset")
+        .order_by("-version", "-id")
         .first()
     )
-    if indicator is None:
+    if version is None:
         raise HttpError(404, "Indicator not found.")
-    return [
-        _structure_schema(s)
-        for s in indicator.structures.select_related("dataset")
-        .all()
-        .order_by("dataset__code", "name")
-    ]
+    return _indicator_version_legacy_schema(version).structures
 
 
 @api.get("/v1/structures", response=list[StructureSchema])
 def list_structures(request, dataset_slug: str | None = None):
     _require_auth(request)
-    qs = Structure.objects.select_related("dataset").all()
+    qs = RequirementFragment.objects.filter(
+        status=RequirementFragment.Status.PUBLISHED,
+        dataset_specification__status=DatasetSpecification.Status.PUBLISHED,
+    ).select_related("dataset_specification__dataset")
     if dataset_slug:
-        qs = qs.filter(dataset__code=dataset_slug)
+        qs = qs.filter(dataset_specification__dataset__code=dataset_slug)
     return [
-        _structure_schema(structure)
-        for structure in qs.order_by("dataset__code", "name")
+        _fragment_structure_schema(fragment)
+        for fragment in qs.order_by("dataset_specification__dataset__code", "name")
     ]
 
 
@@ -2273,28 +2277,29 @@ def get_published_dataset(request, dataset_code: str):
 @api.get("/v1/structures/{structure_id}", response=StructureSchema)
 def get_structure(request, structure_id: int):
     _require_auth(request)
-    structure = (
-        Structure.objects.select_related("dataset").filter(id=structure_id).first()
+    fragment = (
+        RequirementFragment.objects.filter(
+            id=structure_id,
+            status=RequirementFragment.Status.PUBLISHED,
+            dataset_specification__status=DatasetSpecification.Status.PUBLISHED,
+        )
+        .select_related("dataset_specification__dataset")
+        .first()
     )
-    if structure is None:
+    if fragment is None:
         raise HttpError(404, "Structure not found.")
-    return _structure_schema(structure)
+    return _fragment_structure_schema(fragment)
 
 
 @api.get("/v1/flow-profiles", response=list[FlowProfileSchema])
 def list_flow_profiles(request, is_active: bool | None = None):
     _require_auth(request)
-    qs = FlowProfile.objects.all().order_by("code")
-    if is_active is not None:
-        qs = qs.filter(is_active=is_active)
-    legacy_profiles = [_flow_profile_schema(flow_profile) for flow_profile in qs]
-    legacy_codes = {profile.code for profile in legacy_profiles}
     processing_profiles = ProcessingProfileVersion.objects.filter(
         status=ProcessingProfileVersion.Status.PUBLISHED
-    ).exclude(code__in=legacy_codes)
+    )
     if is_active is False:
         processing_profiles = processing_profiles.none()
-    return legacy_profiles + [
+    return [
         _processing_profile_legacy_schema(profile)
         for profile in processing_profiles.order_by("code")
     ]
@@ -2303,9 +2308,6 @@ def list_flow_profiles(request, is_active: bool | None = None):
 @api.get("/v1/flow-profiles/{flow_code}", response=FlowProfileSchema)
 def get_flow_profile(request, flow_code: str):
     _require_auth(request)
-    flow_profile = FlowProfile.objects.filter(code=flow_code).first()
-    if flow_profile is not None:
-        return _flow_profile_schema(flow_profile)
     processing_profile = ProcessingProfileVersion.objects.filter(
         code=flow_code,
         status=ProcessingProfileVersion.Status.PUBLISHED,
