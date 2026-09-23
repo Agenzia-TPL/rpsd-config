@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Approvazione revisioni - RPSD Config{% endblock %}
+{% block title %}Diagnostica revisioni - RPSD Config{% endblock %}
 
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
   <div>
-    <h1 class="h3 mb-0">Revisioni contrattuali</h1>
-    <p class="text-body-secondary mb-0">Verifica tecnica, approvazione e ritiro delle configurazioni future.</p>
+    <h1 class="h3 mb-0">Diagnostica revisioni contrattuali</h1>
+    <p class="text-body-secondary mb-0">Vista tecnica trasversale. Approvazione e ritiro competono al proprietario del contratto.</p>
   </div>
   <a class="btn btn-outline-secondary btn-sm" href="{% url 'exchange_agreement:platform-configuration' %}">Configurazione piattaforma</a>
 </div>
@@ -53,25 +53,7 @@
             </div>
           {% endif %}
 
-          {% if row.revision.status == "draft" %}
-            <form method="post" class="d-inline">
-              {% csrf_token %}
-              <input type="hidden" name="action" value="approve-contract-revision">
-              <input type="hidden" name="revision_id" value="{{ row.revision.id }}">
-              <button class="btn btn-primary btn-sm" {% if row.issues %}disabled{% endif %}>Approva revisione</button>
-            </form>
-          {% elif row.can_withdraw %}
-            <form method="post" class="row g-2 align-items-end">
-              {% csrf_token %}
-              <input type="hidden" name="action" value="withdraw-contract-revision">
-              <input type="hidden" name="revision_id" value="{{ row.revision.id }}">
-              <div class="col-md-8">
-                <label class="form-label" for="withdrawal_reason_{{ row.revision.id }}">Motivazione ritiro</label>
-                <input class="form-control form-control-sm" id="withdrawal_reason_{{ row.revision.id }}" name="withdrawal_reason" required>
-              </div>
-              <div class="col-md-4"><button class="btn btn-outline-danger btn-sm">Ritira revisione futura</button></div>
-            </form>
-          {% endif %}
+          <a class="btn btn-outline-primary btn-sm" href="{% url 'exchange_agreement:contract-revision-detail' row.revision.contract.contract_code row.revision.id %}">Apri dettaglio</a>
         </div>
       </section>
     </div>

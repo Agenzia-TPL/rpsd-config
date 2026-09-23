@@ -98,8 +98,15 @@ def validate_processing_profile_for_publication(
             "The processing profile must contain at least one indicator version."
         )
 
+    logical_indicator_ids: set[int] = set()
     for link in indicator_links:
         version = link.indicator_version
+        if version.indicator_id in logical_indicator_ids:
+            raise ProcessingProfileTransitionError(
+                "A processing profile cannot expose multiple versions of "
+                f"indicator {version.indicator.code}."
+            )
+        logical_indicator_ids.add(version.indicator_id)
         if version.status != IndicatorVersion.Status.PUBLISHED:
             raise ProcessingProfileTransitionError(
                 f"Indicator version {version.code} is not published."

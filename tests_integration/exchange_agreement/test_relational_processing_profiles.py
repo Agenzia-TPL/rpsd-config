@@ -29,9 +29,6 @@ from rpsd_config.exchange_agreement.services.flow_catalog import (
     publish_input_flow_version,
     publish_orchestration_flow_version,
 )
-from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
-    transport_message_invocation_contract,
-)
 from rpsd_config.exchange_agreement.services.indicator_catalog import (
     publish_indicator_version,
 )
@@ -103,7 +100,6 @@ class RelationalProcessingProfileTests(TestCase):
                 description="Coordinate contract processing.",
                 deployment_name="contract-processing/default",
                 artifact_identifier="git:rpsd-flows@contract-processing-002",
-                invocation_contract=transport_message_invocation_contract(),
             ),
             actor=self.user,
         )
@@ -143,11 +139,6 @@ class RelationalProcessingProfileTests(TestCase):
                 description=f"Import {specification.dataset.code}.",
                 deployment_name=f"validators/{specification.dataset.code}",
                 artifact_identifier=f"git:rpsd-flows@{code}",
-                invocation_contract=transport_message_invocation_contract(),
-                compatibility={
-                    "schema_version": 1,
-                    "what": specification.dataset.code,
-                },
             ),
             actor=self.user,
         )
@@ -216,6 +207,28 @@ class RelationalProcessingProfileTests(TestCase):
         with self.assertRaisesMessage(
             ProcessingProfileTransitionError,
             "Input flow siri-vm-import_003 is not published.",
+        ):
+            publish_processing_profile(profile, actor=self.user)
+
+    def test_publication_rejects_two_versions_of_same_logical_indicator(self):
+        profile = self._complete_profile()
+        second = IndicatorVersion.objects.create(
+            indicator=self.indicator_version.indicator,
+            code="commercial-speed_003",
+            version="003",
+            description="Alternative technical version.",
+            formula_description="Alternative formula.",
+        )
+        second.required_fragments.add(self.netex_fragment, self.siri_fragment)
+        second = publish_indicator_version(second, actor=self.user)
+        ProcessingProfileIndicatorVersion.objects.create(
+            processing_profile_version=profile,
+            indicator_version=second,
+        )
+
+        with self.assertRaisesMessage(
+            ProcessingProfileTransitionError,
+            "multiple versions of indicator commercial-speed",
         ):
             publish_processing_profile(profile, actor=self.user)
 

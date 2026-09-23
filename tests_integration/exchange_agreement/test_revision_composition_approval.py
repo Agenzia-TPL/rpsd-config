@@ -45,6 +45,17 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
             status=AgencyMembership.Status.ACTIVE,
             created_by=self.user,
         )
+        self.agency_admin = get_user_model().objects.create_user(
+            username="agency-revision-admin",
+            password="test-password",
+        )
+        AgencyMembership.objects.create(
+            agency=self.agency,
+            user=self.agency_admin,
+            role=AgencyMembership.Role.AGENCY_ADMIN,
+            status=AgencyMembership.Status.ACTIVE,
+            created_by=self.user,
+        )
 
     def test_agency_creates_complete_guided_draft_from_published_profile(self):
         revision = create_revision_draft(
@@ -82,7 +93,7 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
             )
         self.assertEqual(raised.exception.code, "profile_not_published")
 
-    def test_replace_is_atomic_and_missing_coverage_is_structured(self):
+    def test_replace_derives_mandatory_inputs_and_is_atomic(self):
         revision = create_revision_draft(
             self.contract,
             self.profile,
@@ -107,22 +118,8 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
         )
 
         issues = validate_revision_for_approval(revision)
-        self.assertIn("missing_inputs", {issue.code for issue in issues})
-        missing_fragment = next(
-            issue
-            for issue in issues
-            if issue.code == "missing_fragment"
-            and issue.details["fragment_code"] == "scheduled-journey-movement"
-        )
-        self.assertEqual(
-            missing_fragment.details,
-            {
-                "indicator_code": "commercial-speed-target",
-                "indicator_version_code": "commercial-speed-target_001",
-                "fragment_code": "scheduled-journey-movement",
-                "specification_code": "netex-ita_v001",
-            },
-        )
+        self.assertEqual(issues, ())
+        self.assertEqual(revision.input_selections.count(), 2)
 
         with self.assertRaises(ValidationError):
             replace_draft_configuration(
@@ -139,10 +136,10 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
                 ],
                 actor=self.agency_user,
             )
-        self.assertEqual(revision.input_selections.count(), 0)
+        self.assertEqual(revision.input_selections.count(), 2)
         self.assertEqual(revision.indicator_configurations.count(), 1)
 
-    def test_only_platform_admin_approves_and_approval_is_atomic(self):
+    def test_contract_owner_approves_and_approval_is_atomic(self):
         revision = create_revision_draft(
             self.contract,
             self.profile,
@@ -157,11 +154,11 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
             "rpsd_config.exchange_agreement.services.contract_revisions.timezone.localdate",
             return_value=self.contract.start_date,
         ):
-            approved = approve_revision(revision, self.user)
+            approved = approve_revision(revision, self.agency_admin)
 
         event = approved.status_events.get()
         self.assertEqual(event.to_status, ContractConfigurationRevision.Status.APPROVED)
-        self.assertEqual(event.changed_by, self.user)
+        self.assertEqual(event.changed_by, self.agency_admin)
         self.assertEqual(event.snapshot_checksum, approved.snapshot_checksum)
         self.assertEqual(event.reason, "Approved configuration reason.")
 
@@ -204,7 +201,7 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
             ),
             self.assertRaisesMessage(TypeError, "snapshot failure"),
         ):
-            approve_revision(revision, self.user)
+            approve_revision(revision, self.agency_admin)
 
         revision.refresh_from_db()
         self.assertEqual(revision.status, ContractConfigurationRevision.Status.DRAFT)
@@ -223,7 +220,7 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
             "rpsd_config.exchange_agreement.services.contract_revisions.timezone.localdate",
             return_value=self.contract.start_date,
         ):
-            first = approve_revision(first, self.user)
+            first = approve_revision(first, self.agency_admin)
 
         replacement = create_replacement_revision(
             first,
@@ -233,17 +230,17 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
         )
         replacement.valid_from = timezone.localdate() + timedelta(days=1)
         replacement.save()
-        replacement = approve_revision(replacement, self.user)
+        replacement = approve_revision(replacement, self.agency_admin)
         original_snapshot = replacement.configuration_snapshot
 
         with self.assertRaises(ContractRevisionValidationError) as raised:
-            withdraw_revision(replacement, "", self.user)
+            withdraw_revision(replacement, "", self.agency_admin)
         self.assertEqual(raised.exception.code, "withdrawal_reason_required")
 
         replacement = withdraw_revision(
             replacement,
             "Deployment superseded before its effective date.",
-            self.user,
+            self.agency_admin,
         )
         self.assertEqual(
             replacement.status,

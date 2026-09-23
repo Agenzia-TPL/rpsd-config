@@ -519,7 +519,6 @@ class _FlowVersionAdminBase(
                     "engine",
                     "deployment_name",
                     "artifact_identifier",
-                    "invocation_contract",
                 ]
             )
         return fields
@@ -571,7 +570,7 @@ class InputFlowVersionAdmin(_FlowVersionAdminBase):
     def get_readonly_fields(self, request, obj=None):
         fields = list(super().get_readonly_fields(request, obj))
         if obj is not None and obj.status != obj.Status.DRAFT:
-            fields.extend(["dataset_specification", "compatibility"])
+            fields.append("dataset_specification")
         return fields
 
 

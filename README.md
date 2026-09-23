@@ -55,9 +55,13 @@ This keeps the Django codebase focused on contracts and monitoring configuration
 - `Indicator` is the stable business identity; `IndicatorVersion` identifies
   an immutable calculation definition and its required fragments.
 - `InputFlowVersion` and `OrchestrationFlowVersion` store versioned references
-  to executable artifacts. Config does not deploy, schedule or run them.
-- `ProcessingProfileVersion` is a platform-approved relational composition of
-  compatible input flows and indicator versions.
+  to executable artifacts. Dataset compatibility is derived from
+  `DatasetSpecification`; the runtime message contract is not duplicated as
+  configurable JSON. Config does not deploy, schedule or run flows.
+- `ProcessingProfileVersion` is a platform-approved compatibility envelope of
+  input flows and indicator versions. A contract revision can select a subset
+  of indicators, the inputs they require and additional inputs admitted by the
+  same profile.
 
 ### Contracts and Monitoring Configuration
 
@@ -76,6 +80,13 @@ The runtime API resolves only the current approved revision using the server
 date. Callers cannot select a historic or future revision. When a later
 revision becomes effective, the previous interval ends logically on the day
 before the new `valid_from`; no stored revision is overwritten.
+
+The platform admin publishes technical catalogs and processing profiles. The
+agency admin or contract admin chooses when to adopt a published profile and
+approves the revision from its detail page. Editors can prepare drafts but do
+not approve them. The product UI under `/exchange_agreement/me/platform-configuration/catalogs/`
+is the ordinary catalog-management surface; Django admin remains available for
+recovery.
 
 ### Access and Onboarding
 

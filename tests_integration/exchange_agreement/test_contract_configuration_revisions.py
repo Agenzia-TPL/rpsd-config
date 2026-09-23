@@ -53,9 +53,6 @@ from rpsd_config.exchange_agreement.services.flow_catalog import (
     publish_input_flow_version,
     publish_orchestration_flow_version,
 )
-from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
-    transport_message_invocation_contract,
-)
 from rpsd_config.exchange_agreement.services.indicator_catalog import (
     publish_indicator_version,
 )
@@ -199,8 +196,6 @@ class _ContractRevisionFixtureMixin:
                 description="Validate and import NeTEx.",
                 deployment_name="validators/netex-default",
                 artifact_identifier="git:rpsd-flows@netex-import-002",
-                invocation_contract=transport_message_invocation_contract(),
-                compatibility={"schema_version": 1, "what": "netex"},
             ),
             actor=self.user,
         )
@@ -213,8 +208,6 @@ class _ContractRevisionFixtureMixin:
                 description="Validate and import SIRI VM.",
                 deployment_name="validators/siri-vm-default",
                 artifact_identifier="git:rpsd-flows@siri-vm-import-003",
-                invocation_contract=transport_message_invocation_contract(),
-                compatibility={"schema_version": 1, "what": "siri-vm"},
             ),
             actor=self.user,
         )
@@ -226,7 +219,6 @@ class _ContractRevisionFixtureMixin:
                 description="Coordinate contract processing.",
                 deployment_name="contract-processing/default",
                 artifact_identifier="git:rpsd-flows@contract-processing-001",
-                invocation_contract=transport_message_invocation_contract(),
             ),
             actor=self.user,
         )

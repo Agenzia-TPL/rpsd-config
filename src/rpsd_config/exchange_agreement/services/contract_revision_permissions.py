@@ -24,9 +24,7 @@ def can_prepare_contract_revision(*, user, contract: Contract) -> bool:
 
     scope = resolve_user_agency_scope(user)
     agency_key = contract.client_agency.agency_key
-    if scope.is_platform_admin or agency_key in (
-        set(scope.admin_agency_keys) | set(scope.editor_agency_keys)
-    ):
+    if agency_key in (set(scope.admin_agency_keys) | set(scope.editor_agency_keys)):
         return True
 
     if AgencyMembership.objects.filter(
@@ -50,14 +48,37 @@ def can_prepare_contract_revision(*, user, contract: Contract) -> bool:
     ).exists()
 
 
-def can_approve_contract_revision(*, user) -> bool:
-    """Return whether a user may approve or withdraw a revision."""
+def can_approve_contract_revision(*, user, contract: Contract) -> bool:
+    """Return whether a contract owner may approve or withdraw a revision."""
 
     if not getattr(user, "is_authenticated", False):
         return False
     if user.is_superuser:
         return True
-    return resolve_user_agency_scope(user).is_platform_admin
+
+    scope = resolve_user_agency_scope(user)
+    if contract.client_agency.agency_key in set(scope.admin_agency_keys):
+        return True
+
+    if AgencyMembership.objects.filter(
+        agency_id=contract.client_agency_id,
+        user=user,
+        status=AgencyMembership.Status.ACTIVE,
+        role=AgencyMembership.Role.AGENCY_ADMIN,
+    ).exists():
+        return True
+
+    return ContractMembership.objects.filter(
+        contract=contract,
+        user=user,
+        role=ContractMembership.Role.CONTRACT_ADMIN,
+    ).exists()
+
+
+def can_withdraw_contract_revision(*, user, contract: Contract) -> bool:
+    """Withdrawal follows the same ownership rule as approval."""
+
+    return can_approve_contract_revision(user=user, contract=contract)
 
 
 def require_revision_preparer(*, user, contract: Contract) -> None:
@@ -67,8 +88,15 @@ def require_revision_preparer(*, user, contract: Contract) -> None:
         )
 
 
-def require_revision_approver(*, user) -> None:
-    if not can_approve_contract_revision(user=user):
+def require_revision_approver(*, user, contract: Contract) -> None:
+    if not can_approve_contract_revision(user=user, contract=contract):
         raise ContractRevisionPermissionError(
-            "Only a platform administrator can approve or withdraw revisions."
+            "Only an agency admin or contract admin may approve this revision."
+        )
+
+
+def require_revision_withdrawer(*, user, contract: Contract) -> None:
+    if not can_withdraw_contract_revision(user=user, contract=contract):
+        raise ContractRevisionPermissionError(
+            "Only an agency admin or contract admin may withdraw this revision."
         )

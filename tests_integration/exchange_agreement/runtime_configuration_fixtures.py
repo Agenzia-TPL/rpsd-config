@@ -31,9 +31,6 @@ from rpsd_config.exchange_agreement.services.flow_catalog import (
     publish_input_flow_version,
     publish_orchestration_flow_version,
 )
-from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
-    transport_message_invocation_contract,
-)
 from rpsd_config.exchange_agreement.services.indicator_catalog import (
     publish_indicator_version,
 )
@@ -116,8 +113,6 @@ def install_approved_runtime_configuration(
                 description=item.flow_description,
                 deployment_name=item.deployment_name,
                 artifact_identifier=f"git:rpsd-flows@{item.flow_code}",
-                invocation_contract=transport_message_invocation_contract(),
-                compatibility={"schema_version": 1, "what": item.category},
             ),
             actor=actor,
         )
@@ -147,7 +142,6 @@ def install_approved_runtime_configuration(
             description="Coordinate the contract processing pipeline.",
             deployment_name=orchestration_deployment_name,
             artifact_identifier=f"git:rpsd-flows@{profile_code}-orchestration-001",
-            invocation_contract=transport_message_invocation_contract(),
         ),
         actor=actor,
     )

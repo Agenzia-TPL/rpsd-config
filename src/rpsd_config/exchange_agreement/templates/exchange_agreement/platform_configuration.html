@@ -6,8 +6,8 @@
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
   <h1 class="h3 mb-0">Configurazione Piattaforma</h1>
   <div class="d-flex flex-wrap gap-2">
-    <a class="btn btn-outline-primary btn-sm" href="{% url 'admin:index' %}">Cataloghi tecnici</a>
-    <a class="btn btn-primary btn-sm" href="{% url 'exchange_agreement:platform-revision-queue' %}">Revisioni da approvare</a>
+    <a class="btn btn-primary btn-sm" href="{% url 'exchange_agreement:technical-catalog-index' %}">Cataloghi tecnici</a>
+    <a class="btn btn-outline-primary btn-sm" href="{% url 'exchange_agreement:platform-revision-queue' %}">Diagnostica revisioni</a>
   </div>
 </div>
 <p class="text-body-secondary mb-0">
@@ -139,7 +139,8 @@
         Flow di input, orchestrazioni e profili di elaborazione sono gestiti nei
         cataloghi tecnici versionati. I vecchi profili JSON non sono più usati.
       </p>
-      <a class="btn btn-primary" href="{% url 'admin:index' %}">Apri cataloghi tecnici</a>
+      <a class="btn btn-primary" href="{% url 'exchange_agreement:technical-catalog-index' %}">Apri cataloghi tecnici</a>
+      <a class="btn btn-outline-secondary" href="{% url 'admin:index' %}">Django admin (fallback)</a>
     </div>
   </div>
 {% else %}

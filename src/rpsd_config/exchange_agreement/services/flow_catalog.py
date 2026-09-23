@@ -14,8 +14,6 @@ from rpsd_config.exchange_agreement.models import (
 )
 from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
     validate_flow_executable_references,
-    validate_input_compatibility,
-    validate_invocation_contract,
 )
 
 
@@ -32,7 +30,6 @@ ALLOWED_TRANSITIONS = {
 
 
 def _validate_common_for_publication(flow) -> None:
-    validate_invocation_contract(flow.invocation_contract)
     validate_flow_executable_references(
         engine=flow.engine,
         deployment_name=flow.deployment_name,
@@ -64,10 +61,6 @@ def transition_input_flow_version(
             )
         locked.full_clean()
         _validate_common_for_publication(locked)
-        validate_input_compatibility(
-            locked.compatibility,
-            expected_what=locked.dataset_specification.dataset.code,
-        )
 
     source_status = locked.status
     update_fields = {"status": target_status, "updated_at": timezone.now()}
@@ -174,7 +167,7 @@ def withdraw_orchestration_flow_version(flow, *, actor=None):
 
 
 def input_flow_runtime_projection(flow: InputFlowVersion) -> dict:
-    """Return runtime identifiers without assuming code equals deployment."""
+    """Return runtime identifiers and legacy derived protocol metadata."""
 
     return {
         "code": flow.code,
@@ -182,8 +175,14 @@ def input_flow_runtime_projection(flow: InputFlowVersion) -> dict:
         "deployment_name": flow.deployment_name,
         "artifact_identifier": flow.artifact_identifier,
         "engine": flow.engine,
-        "invocation_contract": flow.invocation_contract,
-        "compatibility": flow.compatibility,
+        "invocation_contract": {
+            "schema_version": 1,
+            "message_type": "TransportMessage",
+        },
+        "compatibility": {
+            "schema_version": 1,
+            "what": flow.dataset_specification.dataset.code,
+        },
         "dataset_specification_code": flow.dataset_specification.code,
         "what": flow.dataset_specification.dataset.code,
     }
@@ -196,5 +195,8 @@ def orchestration_flow_runtime_projection(flow: OrchestrationFlowVersion) -> dic
         "deployment_name": flow.deployment_name,
         "artifact_identifier": flow.artifact_identifier,
         "engine": flow.engine,
-        "invocation_contract": flow.invocation_contract,
+        "invocation_contract": {
+            "schema_version": 1,
+            "message_type": "TransportMessage",
+        },
     }

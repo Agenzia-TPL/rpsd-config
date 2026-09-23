@@ -32,5 +32,15 @@ class TargetDevelopmentSeedTests(TestCase):
         self.assertEqual(publication.configuration_revision, revision)
         self.assertEqual(publication.snapshot, revision.configuration_snapshot)
         self.assertEqual(publication.snapshot_checksum, revision.snapshot_checksum)
-        self.assertEqual(profile.input_flow_links.count(), 2)
+        self.assertEqual(profile.input_flow_links.count(), 3)
         self.assertEqual(profile.indicator_version_links.count(), 1)
+        self.assertEqual(revision.input_selections.count(), 2)
+        self.assertEqual(
+            set(
+                revision.input_selections.values_list(
+                    "processing_profile_input_flow__dataset__code",
+                    flat=True,
+                )
+            ),
+            {"netex", "siri-vm"},
+        )

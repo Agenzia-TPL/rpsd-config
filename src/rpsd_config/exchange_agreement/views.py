@@ -42,6 +42,7 @@ from .models import (
     IntegrationPrincipal,
     Lot,
     NetexValidationProfile,
+    ProcessingProfileIndicatorVersion,
     SiriValidationProfile,
 )
 from .rbac import resolve_user_agency_scope
@@ -75,6 +76,7 @@ from .services.contract_revision_permissions import (
     ContractRevisionPermissionError,
     can_approve_contract_revision,
     can_prepare_contract_revision,
+    can_withdraw_contract_revision,
 )
 from .services.contract_revisions import (
     ContractRevisionError,
@@ -82,6 +84,8 @@ from .services.contract_revisions import (
     approve_revision,
     available_processing_profiles,
     create_revision_draft,
+    replace_draft_configuration,
+    resolve_revision_inputs,
     revision_effective_period,
     revision_temporal_state,
     validate_revision_for_approval,
@@ -1316,6 +1320,34 @@ def _revision_error_message(exc: Exception, *, technical: bool) -> str:
     return str(exc)
 
 
+def _revision_indicator_configs_from_post(request, revision):
+    link_ids = {
+        int(value)
+        for value in request.POST.getlist("indicator_link_ids")
+        if value.isdigit()
+    }
+    links = list(
+        ProcessingProfileIndicatorVersion.objects.filter(
+            processing_profile_version=revision.processing_profile_version,
+            pk__in=link_ids,
+        ).select_related("indicator_version__indicator")
+    )
+    existing = {
+        item.processing_profile_indicator_version_id: item
+        for item in revision.indicator_configurations.all()
+    }
+    return [
+        {
+            "processing_profile_indicator_version": link,
+            "thresholds": getattr(existing.get(link.pk), "thresholds", {}),
+            "aggregation": getattr(existing.get(link.pk), "aggregation", {}),
+            "penalties": getattr(existing.get(link.pk), "penalties", {}),
+            "parameters": getattr(existing.get(link.pk), "parameters", {}),
+        }
+        for link in links
+    ]
+
+
 def _handle_revision_draft_action(
     request: HttpRequest,
     *,
@@ -1354,7 +1386,7 @@ def _handle_revision_draft_action(
         )
     else:
         result_context["success_message"] = (
-            f"Bozza {revision.code} creata e pronta per la verifica tecnica."
+            f"Bozza {revision.code} creata e pronta per la configurazione."
         )
     return True
 
@@ -2204,44 +2236,17 @@ def create_agency_contract_page(request: HttpRequest, agency_key: str) -> HttpRe
 @login_required
 @require_http_methods(["GET", "POST"])
 def platform_revision_queue_page(request: HttpRequest) -> HttpResponse:
-    if not can_approve_contract_revision(user=request.user):
+    agency_scope = resolve_user_agency_scope(request.user)
+    if not (request.user.is_superuser or agency_scope.is_platform_admin):
         raise PermissionDenied(
-            "Solo platform admin o superuser possono approvare revisioni."
+            "Solo platform admin o superuser possono consultare la diagnostica."
         )
 
     result_context = {"error_message": "", "success_message": ""}
     if request.method == "POST":
-        revision = get_object_or_404(
-            ContractConfigurationRevision.objects.select_related("contract"),
-            pk=request.POST.get("revision_id"),
+        raise PermissionDenied(
+            "Il platform admin consulta le revisioni ma non le approva."
         )
-        action = (request.POST.get("action") or "").strip()
-        try:
-            if action == "approve-contract-revision":
-                approve_revision(revision, request.user)
-                result_context["success_message"] = (
-                    f"Revisione {revision.code} approvata."
-                )
-            elif action == "withdraw-contract-revision":
-                withdraw_revision(
-                    revision,
-                    request.POST.get("withdrawal_reason", "").strip(),
-                    request.user,
-                )
-                result_context["success_message"] = (
-                    f"Revisione {revision.code} ritirata."
-                )
-            else:
-                raise ValidationError("Azione revisione non supportata.")
-        except (
-            ContractRevisionError,
-            ContractRevisionPermissionError,
-            ValidationError,
-        ) as exc:
-            result_context["error_message"] = _revision_error_message(
-                exc,
-                technical=True,
-            )
 
     revisions = list(
         ContractConfigurationRevision.objects.select_related(
@@ -2265,11 +2270,7 @@ def platform_revision_queue_page(request: HttpRequest) -> HttpResponse:
                 "revision": revision,
                 "issues": issues,
                 "temporal_state": revision_temporal_state(revision),
-                "can_withdraw": (
-                    revision.status == ContractConfigurationRevision.Status.APPROVED
-                    and revision.valid_from is not None
-                    and revision.valid_from > timezone.localdate()
-                ),
+                "can_withdraw": False,
             }
         )
 
@@ -2277,6 +2278,162 @@ def platform_revision_queue_page(request: HttpRequest) -> HttpResponse:
         request,
         "exchange_agreement/platform_revision_queue.html",
         {"revision_rows": rows, **result_context},
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def contract_revision_detail_page(
+    request: HttpRequest,
+    contract_code: str,
+    revision_id: int,
+) -> HttpResponse:
+    contract = get_object_or_404(
+        Contract.objects.select_related("client_agency", "contractor_company", "lot"),
+        contract_code=contract_code,
+    )
+    if not _can_view_contract_via_membership_or_agency(
+        user=request.user, contract=contract
+    ):
+        raise PermissionDenied("Non hai accesso a questo contratto.")
+    revision = get_object_or_404(
+        ContractConfigurationRevision.objects.select_related(
+            "contract", "processing_profile_version", "created_by", "approved_by"
+        ),
+        pk=revision_id,
+        contract=contract,
+    )
+
+    can_prepare = can_prepare_contract_revision(user=request.user, contract=contract)
+    can_approve = can_approve_contract_revision(user=request.user, contract=contract)
+    can_withdraw = can_withdraw_contract_revision(
+        user=request.user, contract=contract
+    )
+    error_message = ""
+    success_message = ""
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+        try:
+            if action == "save-revision-composition":
+                if not can_prepare:
+                    raise PermissionDenied("Non puoi modificare questa revisione.")
+                optional_ids = [
+                    int(value)
+                    for value in request.POST.getlist("optional_input_ids")
+                    if value.isdigit()
+                ]
+                replace_draft_configuration(
+                    revision,
+                    selections=optional_ids,
+                    indicator_configs=_revision_indicator_configs_from_post(
+                        request, revision
+                    ),
+                    actor=request.user,
+                )
+                success_message = "Configurazione della bozza aggiornata."
+            elif action == "approve-contract-revision":
+                if not can_approve:
+                    raise PermissionDenied("Non puoi approvare questa revisione.")
+                revision = approve_revision(revision, request.user)
+                success_message = f"Revisione {revision.code} approvata."
+            elif action == "withdraw-contract-revision":
+                if not can_withdraw:
+                    raise PermissionDenied("Non puoi ritirare questa revisione.")
+                revision = withdraw_revision(
+                    revision,
+                    request.POST.get("withdrawal_reason", "").strip(),
+                    request.user,
+                )
+                success_message = f"Revisione {revision.code} ritirata."
+            else:
+                raise ValidationError("Azione revisione non supportata.")
+        except PermissionDenied:
+            raise
+        except (
+            ContractRevisionError,
+            ContractRevisionPermissionError,
+            ValidationError,
+        ) as exc:
+            error_message = _revision_error_message(exc, technical=False)
+        revision.refresh_from_db()
+
+    profile = revision.processing_profile_version
+    indicator_links = list(
+        profile.indicator_version_links.select_related(
+            "indicator_version__indicator"
+        ).order_by("indicator_version__indicator__code")
+    )
+    selected_indicator_ids = set(
+        revision.indicator_configurations.values_list(
+            "processing_profile_indicator_version_id", flat=True
+        )
+    )
+    selected_input_ids = set(
+        revision.input_selections.values_list(
+            "processing_profile_input_flow_id", flat=True
+        )
+    )
+    selected_indicator_links = [
+        link for link in indicator_links if link.pk in selected_indicator_ids
+    ]
+    resolution = resolve_revision_inputs(profile, selected_indicator_links)
+    optional_rows = [
+        {"link": item, "selected": item.pk in selected_input_ids}
+        for item in resolution.optional_inputs
+    ]
+    indicator_rows = [
+        {"link": link, "selected": link.pk in selected_indicator_ids}
+        for link in indicator_links
+    ]
+    mandatory_rows = [
+        {"link": item, "selected": item.pk in selected_input_ids}
+        for item in resolution.mandatory_inputs
+    ]
+    issues = (
+        validate_revision_for_approval(revision)
+        if revision.status == ContractConfigurationRevision.Status.DRAFT
+        else ()
+    )
+    may_withdraw_now = (
+        can_withdraw
+        and revision.status == ContractConfigurationRevision.Status.APPROVED
+        and revision.valid_from is not None
+        and revision.valid_from > timezone.localdate()
+    )
+    agency_scope = resolve_user_agency_scope(request.user)
+    if _can_view_agency(
+        user=request.user,
+        agency=contract.client_agency,
+        agency_scope=agency_scope,
+    ):
+        contract_back_url = reverse(
+            "exchange_agreement:agency-contract-detail",
+            args=[contract.client_agency.agency_key, contract.contract_code],
+        )
+    else:
+        contract_back_url = reverse(
+            "exchange_agreement:user-contract-detail",
+            args=[contract.contract_code],
+        )
+
+    return render(
+        request,
+        "exchange_agreement/contract_revision_detail.html",
+        {
+            "contract": contract,
+            "revision": revision,
+            "indicator_rows": indicator_rows,
+            "mandatory_input_rows": mandatory_rows,
+            "optional_input_rows": optional_rows,
+            "issues": issues,
+            "can_prepare_revision": can_prepare,
+            "can_approve_revision": can_approve,
+            "can_withdraw_revision": may_withdraw_now,
+            "contract_back_url": contract_back_url,
+            "error_message": error_message,
+            "success_message": success_message,
+        },
     )
 
 

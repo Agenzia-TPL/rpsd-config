@@ -33,6 +33,17 @@ class ContractRevisionWebCutoverTests(_ContractRevisionFixtureMixin, TestCase):
             status=AgencyMembership.Status.ACTIVE,
             created_by=self.user,
         )
+        self.agency_admin = user_model.objects.create_user(
+            username="revision-web-agency-admin",
+            password="test-password",
+        )
+        AgencyMembership.objects.create(
+            agency=self.agency,
+            user=self.agency_admin,
+            role=AgencyMembership.Role.AGENCY_ADMIN,
+            status=AgencyMembership.Status.ACTIVE,
+            created_by=self.user,
+        )
         self.agency_reader = user_model.objects.create_user(
             username="revision-web-agency-reader",
             password="test-password",
@@ -108,7 +119,7 @@ class ContractRevisionWebCutoverTests(_ContractRevisionFixtureMixin, TestCase):
         self.assertEqual(created.governing_authority, self.authority)
         self.assertContains(response, "configurazione tecnica")
 
-    def test_agency_creates_guided_draft_and_platform_admin_approves_it(self):
+    def test_agency_creates_guided_draft_and_owner_approves_it(self):
         self.client.force_login(self.agency_editor)
         created = self.client.post(
             self._agency_detail_url(),
@@ -120,28 +131,28 @@ class ContractRevisionWebCutoverTests(_ContractRevisionFixtureMixin, TestCase):
             },
         )
         self.assertEqual(created.status_code, 200)
-        self.assertContains(created, "pronta per la verifica tecnica")
+        self.assertContains(created, "pronta per la configurazione")
         revision = ContractConfigurationRevision.objects.get(contract=self.contract)
         self.assertEqual(revision.status, ContractConfigurationRevision.Status.DRAFT)
         self.assertEqual(revision.input_selections.count(), 2)
         self.assertEqual(revision.indicator_configurations.count(), 1)
 
-        self.client.force_login(self.user)
-        queue_url = reverse("exchange_agreement:platform-revision-queue")
-        queue = self.client.get(queue_url)
-        self.assertEqual(queue.status_code, 200)
-        self.assertContains(queue, revision.code)
-        self.assertNotContains(queue, "Controlli da risolvere")
+        self.client.force_login(self.agency_admin)
+        detail_url = reverse(
+            "exchange_agreement:contract-revision-detail",
+            args=[self.contract.contract_code, revision.pk],
+        )
+        detail = self.client.get(detail_url)
+        self.assertContains(detail, "Approva revisione")
 
         with patch(
             "rpsd_config.exchange_agreement.services.contract_revisions.timezone.localdate",
             return_value=self.contract.start_date,
         ):
             approved = self.client.post(
-                queue_url,
+                detail_url,
                 {
                     "action": "approve-contract-revision",
-                    "revision_id": revision.pk,
                 },
             )
         self.assertEqual(approved.status_code, 200)
@@ -206,7 +217,7 @@ class ContractRevisionWebCutoverTests(_ContractRevisionFixtureMixin, TestCase):
         self.assertEqual(self.client.get(self._agency_detail_url()).status_code, 403)
         self.assertEqual(self.client.get(self._direct_detail_url()).status_code, 403)
 
-    def test_platform_queue_explains_invalid_coverage_and_keeps_draft(self):
+    def test_diagnostic_queue_explains_invalid_coverage_and_owner_keeps_draft(self):
         self.client.force_login(self.agency_editor)
         created = self.client.post(
             self._agency_detail_url(),
@@ -227,15 +238,19 @@ class ContractRevisionWebCutoverTests(_ContractRevisionFixtureMixin, TestCase):
         self.assertEqual(queue.status_code, 200)
         self.assertContains(queue, "missing_inputs")
 
+        self.client.force_login(self.agency_admin)
+        detail_url = reverse(
+            "exchange_agreement:contract-revision-detail",
+            args=[self.contract.contract_code, revision.pk],
+        )
         rejected = self.client.post(
-            queue_url,
+            detail_url,
             {
                 "action": "approve-contract-revision",
-                "revision_id": revision.pk,
             },
         )
         self.assertEqual(rejected.status_code, 200)
-        self.assertContains(rejected, "missing_inputs")
+        self.assertContains(rejected, "must select at least one input")
         revision.refresh_from_db()
         self.assertEqual(revision.status, ContractConfigurationRevision.Status.DRAFT)
         self.assertEqual(revision.configuration_snapshot, {})

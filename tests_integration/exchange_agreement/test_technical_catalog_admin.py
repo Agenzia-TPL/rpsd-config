@@ -152,11 +152,34 @@ class TechnicalCatalogAdminTests(TestCase):
         self.assertContains(response, "Processing profile input flows")
         self.assertContains(response, "Processing profile indicator versions")
 
-    def test_platform_configuration_links_to_technical_catalogs(self):
+    def test_platform_configuration_links_to_product_catalog_ui(self):
         self.client.force_login(self.platform_admin)
 
         response = self.client.get(reverse("exchange_agreement:platform-configuration"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Cataloghi tecnici")
-        self.assertContains(response, reverse("admin:index"))
+        self.assertContains(
+            response,
+            reverse("exchange_agreement:technical-catalog-index"),
+        )
+
+        catalog = self.client.get(
+            reverse("exchange_agreement:technical-catalog-index")
+        )
+        self.assertEqual(catalog.status_code, 200)
+        self.assertContains(catalog, "Specifiche dataset")
+        self.assertContains(catalog, "Profili tecnici")
+
+    def test_specification_detail_shows_assets_outside_django_admin(self):
+        self.client.force_login(self.platform_admin)
+        response = self.client.get(
+            reverse(
+                "exchange_agreement:technical-catalog-detail",
+                args=["dataset-specifications", self.specification.pk],
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Asset della specifica")
+        self.assertContains(response, "Nessun asset associato")

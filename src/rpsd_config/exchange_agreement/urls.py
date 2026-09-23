@@ -3,6 +3,11 @@
 from django.contrib import admin
 from django.urls import path
 
+from .technical_catalog_views import (
+    technical_catalog_detail_page,
+    technical_catalog_index_page,
+    technical_catalog_list_page,
+)
 from .views import (
     agencies_page,
     agency_contract_detail_page,
@@ -16,6 +21,7 @@ from .views import (
     company_list_page,
     configuration_asset_download_page,
     contract_m2m_config_download_page,
+    contract_revision_detail_page,
     create_agency_contract_page,
     create_agency_invitation_page,
     create_contract_invitation_page,
@@ -45,6 +51,11 @@ urlpatterns = [
         "me/contracts/<str:contract_code>/",
         user_contract_detail_page,
         name="user-contract-detail",
+    ),
+    path(
+        "me/contracts/<str:contract_code>/revisions/<int:revision_id>/",
+        contract_revision_detail_page,
+        name="contract-revision-detail",
     ),
     path(
         "me/contracts/<str:contract_code>/m2m-config.json",
@@ -103,6 +114,21 @@ urlpatterns = [
         "me/platform-configuration/revisions/",
         platform_revision_queue_page,
         name="platform-revision-queue",
+    ),
+    path(
+        "me/platform-configuration/catalogs/",
+        technical_catalog_index_page,
+        name="technical-catalog-index",
+    ),
+    path(
+        "me/platform-configuration/catalogs/<slug:catalog_slug>/",
+        technical_catalog_list_page,
+        name="technical-catalog-list",
+    ),
+    path(
+        "me/platform-configuration/catalogs/<slug:catalog_slug>/<int:object_id>/",
+        technical_catalog_detail_page,
+        name="technical-catalog-detail",
     ),
     path(
         "me/platform-configuration/assets/<int:asset_id>/download/",

@@ -36,6 +36,7 @@ from rpsd_config.exchange_agreement.models import (
 from rpsd_config.exchange_agreement.services.contract_revision_permissions import (
     require_revision_approver,
     require_revision_preparer,
+    require_revision_withdrawer,
 )
 from rpsd_config.exchange_agreement.services.processing_profiles import (
     ProcessingProfileTransitionError,
@@ -71,6 +72,138 @@ class ContractRevisionValidationError(ContractRevisionError):
     @property
     def code(self) -> str:
         return self.issues[0].code
+
+
+@dataclass(frozen=True)
+class RevisionInputResolution:
+    """Server-authoritative input selection derived from chosen indicators."""
+
+    mandatory_inputs: tuple[ProcessingProfileInputFlow, ...]
+    optional_inputs: tuple[ProcessingProfileInputFlow, ...]
+    selected_inputs: tuple[ProcessingProfileInputFlow, ...]
+    issues: tuple[RevisionValidationIssue, ...] = ()
+
+
+def resolve_revision_inputs(
+    profile: ProcessingProfileVersion,
+    indicator_links: Iterable[ProcessingProfileIndicatorVersion | int],
+    selected_optional_inputs: Iterable[ProcessingProfileInputFlow | int] = (),
+) -> RevisionInputResolution:
+    """Resolve mandatory inputs without trusting browser-provided selections."""
+
+    resolved_indicators = [
+        _resolve_profile_indicator(value) for value in indicator_links
+    ]
+    requested_inputs = [
+        _resolve_profile_input(value) for value in selected_optional_inputs
+    ]
+    issues: list[RevisionValidationIssue] = []
+
+    logical_indicator_ids: set[int] = set()
+    required_specification_ids: set[int] = set()
+    for link in resolved_indicators:
+        version = link.indicator_version
+        if link.processing_profile_version_id != profile.pk:
+            issues.append(
+                RevisionValidationIssue(
+                    code="selection_not_in_profile",
+                    message=f"Indicator version {version.code} is not in the profile.",
+                    details={"indicator_version_code": version.code},
+                )
+            )
+            continue
+        if version.indicator_id in logical_indicator_ids:
+            issues.append(
+                RevisionValidationIssue(
+                    code="multiple_versions_for_indicator",
+                    message=(
+                        "Only one version of indicator "
+                        f"{version.indicator.code} can be selected."
+                    ),
+                    details={"indicator_code": version.indicator.code},
+                )
+            )
+            continue
+        logical_indicator_ids.add(version.indicator_id)
+        required_specification_ids.update(
+            version.required_fragments.values_list(
+                "dataset_specification_id", flat=True
+            )
+        )
+
+    profile_inputs = list(
+        profile.input_flow_links.select_related(
+            "dataset", "input_flow_version__dataset_specification"
+        ).order_by("dataset__code", "input_flow_version__code")
+    )
+    inputs_by_specification: dict[int, list[ProcessingProfileInputFlow]] = {}
+    for profile_input in profile_inputs:
+        specification_id = profile_input.input_flow_version.dataset_specification_id
+        inputs_by_specification.setdefault(specification_id, []).append(profile_input)
+
+    mandatory: list[ProcessingProfileInputFlow] = []
+    for specification_id in sorted(required_specification_ids):
+        candidates = inputs_by_specification.get(specification_id, [])
+        if not candidates:
+            specification = DatasetSpecification.objects.filter(
+                pk=specification_id
+            ).first()
+            issues.append(
+                RevisionValidationIssue(
+                    code="required_input_not_available_in_profile",
+                    message=(
+                        "The profile has no input for required specification "
+                        f"{getattr(specification, 'code', specification_id)}."
+                    ),
+                    details={
+                        "specification_code": getattr(
+                            specification, "code", str(specification_id)
+                        )
+                    },
+                )
+            )
+        elif len(candidates) > 1:
+            issues.append(
+                RevisionValidationIssue(
+                    code="ambiguous_input_flow",
+                    message=(
+                        "The profile exposes multiple inputs for specification "
+                        f"{candidates[0].input_flow_version.dataset_specification.code}."
+                    ),
+                    details={"specification_id": specification_id},
+                )
+            )
+        else:
+            mandatory.append(candidates[0])
+
+    profile_input_ids = {item.pk for item in profile_inputs}
+    mandatory_ids = {item.pk for item in mandatory}
+    requested_by_id: dict[int, ProcessingProfileInputFlow] = {}
+    for profile_input in requested_inputs:
+        if profile_input.pk not in profile_input_ids:
+            issues.append(
+                RevisionValidationIssue(
+                    code="selection_not_in_profile",
+                    message=f"Input {profile_input.pk} is not in the profile.",
+                    details={"profile_input_id": profile_input.pk},
+                )
+            )
+            continue
+        requested_by_id[profile_input.pk] = profile_input
+
+    selected_by_id = {item.pk: item for item in mandatory}
+    selected_by_id.update(requested_by_id)
+    optional = [item for item in profile_inputs if item.pk not in mandatory_ids]
+    selected = sorted(
+        selected_by_id.values(),
+        key=lambda item: (item.dataset.code, item.input_flow_version.code),
+    )
+    return RevisionInputResolution(
+        mandatory_inputs=tuple(mandatory),
+        optional_inputs=tuple(optional),
+        selected_inputs=tuple(selected),
+        issues=tuple(issues),
+    )
 
 
 def _canonical_value(value):
@@ -393,24 +526,7 @@ def validate_revision_for_approval(
             )
         )
 
-    configured_contract_indicator_ids = {
-        configuration.contract_indicator_id for configuration in configurations
-    }
-    missing_contract_indicators = revision.contract.indicators.exclude(
-        pk__in=configured_contract_indicator_ids
-    )
-    for missing in missing_contract_indicators.select_related("logical_indicator"):
-        issues.append(
-            RevisionValidationIssue(
-                code="missing_contract_indicator_configuration",
-                message=(
-                    f"Contract indicator {missing.logical_indicator.code} is not "
-                    "configured in the revision."
-                ),
-                details={"indicator_code": missing.logical_indicator.code},
-            )
-        )
-
+    configured_logical_indicator_ids: set[int] = set()
     for configuration in configurations:
         contract_indicator = configuration.contract_indicator
         if contract_indicator.contract_id != revision.contract_id:
@@ -436,6 +552,18 @@ def validate_revision_for_approval(
             )
             continue
         version = profile_indicator.indicator_version
+        if version.indicator_id in configured_logical_indicator_ids:
+            issues.append(
+                RevisionValidationIssue(
+                    code="multiple_versions_for_indicator",
+                    message=(
+                        "Only one version of indicator "
+                        f"{version.indicator.code} can be configured."
+                    ),
+                    details={"indicator_code": version.indicator.code},
+                )
+            )
+        configured_logical_indicator_ids.add(version.indicator_id)
         if version.status != IndicatorVersion.Status.PUBLISHED:
             issues.append(
                 RevisionValidationIssue(
@@ -532,23 +660,14 @@ def available_processing_profiles(
     contract: Contract,
     actor,
 ) -> tuple[ProcessingProfileVersion, ...]:
-    """Return published profiles that expose every contract indicator."""
+    """Return technically valid published profiles available to the operator."""
 
     require_revision_preparer(user=actor, contract=contract)
-    required_indicator_ids = set(
-        contract.indicators.values_list("logical_indicator_id", flat=True)
-    )
     profiles = ProcessingProfileVersion.objects.filter(
         status=ProcessingProfileVersion.Status.PUBLISHED
     ).prefetch_related("indicator_version_links__indicator_version")
     applicable = []
     for profile in profiles:
-        profile_indicator_ids = {
-            link.indicator_version.indicator_id
-            for link in profile.indicator_version_links.all()
-        }
-        if not required_indicator_ids.issubset(profile_indicator_ids):
-            continue
         try:
             validate_processing_profile_for_publication(profile)
         except ProcessingProfileTransitionError:
@@ -581,27 +700,6 @@ def create_revision_draft(
                 RevisionValidationIssue(
                     code="profile_not_published",
                     message="The processing profile must be published.",
-                    details={"profile_code": locked_profile.code},
-                )
-            ]
-        )
-    required_indicator_ids = set(
-        locked_contract.indicators.values_list("logical_indicator_id", flat=True)
-    )
-    profile_indicator_ids = set(
-        locked_profile.indicator_version_links.values_list(
-            "indicator_version__indicator_id", flat=True
-        )
-    )
-    if not required_indicator_ids.issubset(profile_indicator_ids):
-        raise ContractRevisionValidationError(
-            [
-                RevisionValidationIssue(
-                    code="indicator_not_in_profile",
-                    message=(
-                        "The processing profile does not contain every contract "
-                        "indicator."
-                    ),
                     details={"profile_code": locked_profile.code},
                 )
             ]
@@ -652,48 +750,31 @@ def create_revision_draft(
         created_by=actor,
     )
 
-    profile_inputs = list(
-        locked_profile.input_flow_links.select_related(
-            "input_flow_version__dataset_specification"
-        )
+    proposed_links = list(
+        locked_profile.indicator_version_links.filter(
+            proposed_by_default=True
+        ).select_related("indicator_version__indicator")
     )
-    for profile_input in profile_inputs:
+    resolution = resolve_revision_inputs(locked_profile, proposed_links)
+    if resolution.issues:
+        raise ContractRevisionValidationError(resolution.issues)
+    for profile_input in resolution.selected_inputs:
         ContractInputSelection.objects.create(
             revision=revision,
             processing_profile_input_flow=profile_input,
         )
 
-    contract_indicators = {
-        item.logical_indicator_id: item
-        for item in locked_contract.indicators.all()
-    }
-    proposed_links = locked_profile.indicator_version_links.filter(
-        proposed_by_default=True
-    ).select_related("indicator_version")
-    configured_logical_indicators: set[int] = set()
     for profile_indicator in proposed_links:
         logical_indicator_id = profile_indicator.indicator_version.indicator_id
-        contract_indicator = contract_indicators.get(logical_indicator_id)
-        if contract_indicator is None:
-            continue
-        if logical_indicator_id in configured_logical_indicators:
-            raise ContractRevisionValidationError(
-                [
-                    RevisionValidationIssue(
-                        code="duplicate_indicator_proposal",
-                        message=(
-                            "The profile proposes multiple versions of indicator "
-                            f"{profile_indicator.indicator_version.indicator.code}."
-                        ),
-                    )
-                ]
-            )
+        contract_indicator, _created = ContractIndicator.objects.get_or_create(
+            contract=locked_contract,
+            logical_indicator_id=logical_indicator_id,
+        )
         ContractIndicatorConfiguration.objects.create(
             revision=revision,
             contract_indicator=contract_indicator,
             processing_profile_indicator_version=profile_indicator,
         )
-        configured_logical_indicators.add(logical_indicator_id)
 
     return revision
 
@@ -740,8 +821,10 @@ def replace_draft_configuration(
             "Only a draft revision configuration can be replaced."
         )
 
-    resolved_inputs = [_resolve_profile_input(value) for value in selections]
+    requested_inputs = [_resolve_profile_input(value) for value in selections]
     resolved_configurations = []
+    selected_profile_indicators = []
+    selected_logical_indicator_ids: set[int] = set()
     for item in indicator_configs:
         if not isinstance(item, dict):
             raise ContractRevisionError("Indicator configurations must be objects.")
@@ -749,11 +832,63 @@ def replace_draft_configuration(
             profile_indicator = _resolve_profile_indicator(
                 item["processing_profile_indicator_version"]
             )
-            contract_indicator = _resolve_contract_indicator(item["contract_indicator"])
         except KeyError as exc:
             raise ContractRevisionError(
                 f"Missing indicator configuration key: {exc.args[0]}."
             ) from exc
+        if profile_indicator.processing_profile_version_id != (
+            locked.processing_profile_version_id
+        ):
+            raise ContractRevisionValidationError(
+                [
+                    RevisionValidationIssue(
+                        code="selection_not_in_profile",
+                        message=(
+                            "Indicator version "
+                            f"{profile_indicator.indicator_version.code} "
+                            "is not in the revision profile."
+                        ),
+                    )
+                ]
+            )
+        logical_indicator_id = profile_indicator.indicator_version.indicator_id
+        if logical_indicator_id in selected_logical_indicator_ids:
+            raise ContractRevisionValidationError(
+                [
+                    RevisionValidationIssue(
+                        code="multiple_versions_for_indicator",
+                        message=(
+                            "Only one version per logical indicator can be selected."
+                        ),
+                    )
+                ]
+            )
+        selected_logical_indicator_ids.add(logical_indicator_id)
+        supplied_contract_indicator = item.get("contract_indicator")
+        if supplied_contract_indicator is not None:
+            contract_indicator = _resolve_contract_indicator(
+                supplied_contract_indicator
+            )
+            if (
+                contract_indicator.contract_id != locked.contract_id
+                or contract_indicator.logical_indicator_id != logical_indicator_id
+            ):
+                raise ContractRevisionValidationError(
+                    [
+                        RevisionValidationIssue(
+                            code="indicator_mismatch",
+                            message=(
+                                "The selected indicator does not match the contract."
+                            ),
+                        )
+                    ]
+                )
+        else:
+            contract_indicator, _created = ContractIndicator.objects.get_or_create(
+                contract=locked.contract,
+                logical_indicator_id=logical_indicator_id,
+            )
+        selected_profile_indicators.append(profile_indicator)
         resolved_configurations.append(
             {
                 "profile_indicator": profile_indicator,
@@ -765,9 +900,17 @@ def replace_draft_configuration(
             }
         )
 
+    resolution = resolve_revision_inputs(
+        locked.processing_profile_version,
+        selected_profile_indicators,
+        requested_inputs,
+    )
+    if resolution.issues:
+        raise ContractRevisionValidationError(resolution.issues)
+
     locked.input_selections.all().delete()
     locked.indicator_configurations.all().delete()
-    for profile_input in resolved_inputs:
+    for profile_input in resolution.selected_inputs:
         ContractInputSelection.objects.create(
             revision=locked,
             processing_profile_input_flow=profile_input,
@@ -791,8 +934,8 @@ def approve_contract_revision(
     *,
     actor=None,
 ) -> ContractConfigurationRevision:
-    require_revision_approver(user=actor)
     contract = Contract.objects.select_for_update().get(pk=revision.contract_id)
+    require_revision_approver(user=actor, contract=contract)
     revisions = ContractConfigurationRevision.objects.select_for_update().filter(
         contract=contract
     )
@@ -903,7 +1046,8 @@ def withdraw_contract_revision(
     reason: str | None = None,
     actor=None,
 ) -> ContractConfigurationRevision:
-    require_revision_approver(user=actor)
+    contract = Contract.objects.select_for_update().get(pk=revision.contract_id)
+    require_revision_withdrawer(user=actor, contract=contract)
     reason = (reason or "").strip()
     if not reason:
         raise ContractRevisionValidationError(
@@ -914,7 +1058,6 @@ def withdraw_contract_revision(
                 )
             ]
         )
-    Contract.objects.select_for_update().get(pk=revision.contract_id)
     locked = ContractConfigurationRevision.objects.select_for_update().get(
         pk=revision.pk
     )

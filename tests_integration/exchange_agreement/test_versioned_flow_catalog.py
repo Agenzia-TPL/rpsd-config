@@ -32,9 +32,6 @@ from rpsd_config.exchange_agreement.services.flow_catalog import (
 from rpsd_config.exchange_agreement.services.flow_catalog_bootstrap import (
     ensure_standard_flow_catalog,
 )
-from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
-    transport_message_invocation_contract,
-)
 
 
 @override_settings(ROOT_URLCONF="rpsd_config.server.urls")
@@ -65,8 +62,6 @@ class VersionedFlowCatalogTests(TestCase):
             "dataset_specification": self.specification,
             "deployment_name": "validators/netex-default",
             "artifact_identifier": "git:rpsd-flows@netex-import-001",
-            "invocation_contract": transport_message_invocation_contract(),
-            "compatibility": {"schema_version": 1, "what": "netex"},
         }
         values.update(kwargs)
         return InputFlowVersion.objects.create(**values)
@@ -85,7 +80,6 @@ class VersionedFlowCatalogTests(TestCase):
             "description": "Coordinate the configured contract processing.",
             "deployment_name": "rpsd-contract-processing/default",
             "artifact_identifier": "git:rpsd-flows@contract-processing-001",
-            "invocation_contract": transport_message_invocation_contract(),
         }
         values.update(kwargs)
         return OrchestrationFlowVersion.objects.create(**values)
@@ -94,36 +88,20 @@ class VersionedFlowCatalogTests(TestCase):
         flow = self._input_flow()
         self.assertNotEqual(flow.code, flow.deployment_name)
         self.assertEqual(flow.dataset_specification, self.specification)
-        self.assertEqual(flow.compatibility["what"], self.dataset.code)
+        self.assertFalse(hasattr(flow, "compatibility"))
 
         with self.assertRaises(ValidationError):
             self._input_flow(code="netex-alias_001")
-        with self.assertRaises(ValidationError):
-            self._input_flow(
-                code="netex-import_002",
-                version="002",
-                compatibility={"schema_version": 1, "what": "siri-vm"},
-            )
 
-    def test_closed_invocation_contract_adds_no_runtime_parameters(self):
+    def test_protocol_metadata_is_derived_only_in_legacy_projection(self):
         flow = self._input_flow()
+        projection = input_flow_runtime_projection(flow)
+        self.assertFalse(hasattr(flow, "invocation_contract"))
         self.assertEqual(
-            flow.invocation_contract,
+            projection["invocation_contract"],
             {"schema_version": 1, "message_type": "TransportMessage"},
         )
-        self.assertNotIn("date", flow.invocation_contract)
-        self.assertNotIn("revision_id", flow.invocation_contract)
-
-        with self.assertRaises(ValidationError):
-            self._input_flow(
-                code="netex-import_002",
-                version="002",
-                invocation_contract={
-                    "schema_version": 1,
-                    "message_type": "TransportMessage",
-                    "revision_id": "required",
-                },
-            )
+        self.assertEqual(projection["compatibility"]["what"], self.dataset.code)
 
     def test_publication_requires_published_specification_and_executable_references(
         self,

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Revisione {{ revision.code }} - RPSD Config{% endblock %}
+
+{% block page_header %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <div>
+    <h1 class="h3 mb-0">Revisione {{ revision.code }}</h1>
+    <p class="text-body-secondary mb-0">Contratto <code>{{ contract.contract_code }}</code> · valida dal {{ revision.valid_from|date:"d/m/Y" }}</p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ contract_back_url }}">Torna al contratto</a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if error_message %}{% include "includes/ui_alert.html" with alert_variant="danger" alert_message=error_message %}{% endif %}
+{% if success_message %}{% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}{% endif %}
+
+<div class="row g-3">
+  <div class="col-12 col-xl-8">
+    <section class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between gap-2">
+          <div>
+            <h2 class="h5">{{ revision.processing_profile_version.name }}</h2>
+            <p class="text-body-secondary">{{ revision.processing_profile_version.description }}</p>
+          </div>
+          <span class="badge text-bg-secondary align-self-start">{{ revision.get_status_display }}</span>
+        </div>
+        <dl class="row mb-0">
+          <dt class="col-sm-4">Versione profilo</dt><dd class="col-sm-8">{{ revision.processing_profile_version.version }}</dd>
+          <dt class="col-sm-4">Motivazione</dt><dd class="col-sm-8">{{ revision.change_reason }}</dd>
+          <dt class="col-sm-4">Snapshot</dt><dd class="col-sm-8"><code>{{ revision.snapshot_checksum|default:"Non ancora generato" }}</code></dd>
+          <dt class="col-sm-4">Approvata da</dt><dd class="col-sm-8">{{ revision.approved_by|default:"-" }}</dd>
+        </dl>
+      </div>
+    </section>
+
+    {% if revision.status == "draft" and can_prepare_revision %}
+      <form method="post" class="card border-0 shadow-sm mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="save-revision-composition">
+        <div class="card-body">
+          <h2 class="h5">Indicatori da monitorare</h2>
+          <p class="text-body-secondary small">Puoi scegliere un sottoinsieme tra quelli validati nel profilo tecnico.</p>
+          {% for row in indicator_rows %}
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="indicator_link_ids" value="{{ row.link.id }}" id="indicator_{{ row.link.id }}" {% if row.selected %}checked{% endif %}>
+              <label class="form-check-label" for="indicator_{{ row.link.id }}">
+                {{ row.link.indicator_version.indicator.name }} · {{ row.link.indicator_version.version }}
+                {% if row.link.proposed_by_default %}<span class="badge text-bg-light border">proposto</span>{% endif %}
+              </label>
+            </div>
+          {% empty %}<p class="text-body-secondary">Nessun indicatore disponibile.</p>{% endfor %}
+
+          <h2 class="h5 mt-4">Input aggiuntivi</h2>
+          <p class="text-body-secondary small">Gli input obbligatori vengono ricalcolati e aggiunti automaticamente al salvataggio.</p>
+          {% for row in optional_input_rows %}
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="optional_input_ids" value="{{ row.link.id }}" id="input_{{ row.link.id }}" {% if row.selected %}checked{% endif %}>
+              <label class="form-check-label" for="input_{{ row.link.id }}">{{ row.link.dataset.name }} · {{ row.link.input_flow_version.dataset_specification.code }}</label>
+            </div>
+          {% empty %}<p class="text-body-secondary">Nessun input aggiuntivo disponibile.</p>{% endfor %}
+          <button class="btn btn-outline-primary btn-sm mt-2">Salva configurazione</button>
+        </div>
+      </form>
+    {% endif %}
+
+    <section class="card border-0 shadow-sm">
+      <div class="card-body">
+        <h2 class="h5">Input obbligatori</h2>
+        <ul class="mb-0">
+          {% for row in mandatory_input_rows %}
+            <li>{{ row.link.dataset.name }} · <code>{{ row.link.input_flow_version.dataset_specification.code }}</code> <span class="badge text-bg-primary">obbligatorio</span></li>
+          {% empty %}<li class="text-body-secondary">Nessun input derivato dagli indicatori selezionati.</li>{% endfor %}
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12 col-xl-4">
+    <section class="card border-0 shadow-sm mb-3">
+      <div class="card-body">
+        <h2 class="h5">Controlli</h2>
+        {% if issues %}
+          <ul class="mb-0">
+            {% for issue in issues %}<li>{{ issue.message }}</li>{% endfor %}
+          </ul>
+        {% else %}<p class="text-success mb-0">La revisione è pronta per l'approvazione.</p>{% endif %}
+      </div>
+    </section>
+
+    {% if revision.status == "draft" and can_approve_revision %}
+      <form method="post" class="card border-primary shadow-sm mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="approve-contract-revision">
+        <div class="card-body">
+          <h2 class="h5">Approvazione</h2>
+          <p class="small">Confermi la configurazione completa, che diventerà applicabile dal {{ revision.valid_from|date:"d/m/Y" }}.</p>
+          <button class="btn btn-primary" {% if issues %}disabled{% endif %}>Approva revisione</button>
+        </div>
+      </form>
+    {% endif %}
+
+    {% if can_withdraw_revision %}
+      <form method="post" class="card border-danger shadow-sm">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="withdraw-contract-revision">
+        <div class="card-body">
+          <label class="form-label" for="withdrawal_reason">Motivazione ritiro</label>
+          <input class="form-control mb-2" id="withdrawal_reason" name="withdrawal_reason" required>
+          <button class="btn btn-outline-danger">Ritira revisione futura</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

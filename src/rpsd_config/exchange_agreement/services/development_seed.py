@@ -73,7 +73,8 @@ def _ensure_processing_profile() -> ProcessingProfileVersion:
             "version": "001",
             "name": "NeTEx and SIRI commercial speed",
             "description": (
-                "Development profile covering the inputs required by commercial speed."
+                "Development profile covering the inputs required by commercial speed "
+                "and an optional SIRI PT input."
             ),
             "orchestration_flow_version": orchestration,
         },
@@ -82,9 +83,10 @@ def _ensure_processing_profile() -> ProcessingProfileVersion:
         selected_flows = {
             flow.dataset_specification.dataset.code: flow
             for flow in input_flows
-            if flow.dataset_specification.dataset.code in {"netex", "siri-vm"}
+            if flow.dataset_specification.dataset.code
+            in {"netex", "siri-vm", "siri-pt"}
         }
-        for dataset_code in ("netex", "siri-vm"):
+        for dataset_code in ("netex", "siri-vm", "siri-pt"):
             flow = selected_flows[dataset_code]
             ProcessingProfileInputFlow.objects.get_or_create(
                 processing_profile_version=profile,

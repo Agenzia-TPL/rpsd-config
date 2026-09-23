@@ -15,9 +15,6 @@ from rpsd_config.exchange_agreement.services.flow_catalog import (
     publish_input_flow_version,
     publish_orchestration_flow_version,
 )
-from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
-    transport_message_invocation_contract,
-)
 
 
 @transaction.atomic
@@ -39,8 +36,6 @@ def ensure_standard_flow_catalog() -> tuple[
                 "engine": InputFlowVersion.Engine.PREFECT,
                 "deployment_name": f"validators/{dataset_code}-default",
                 "artifact_identifier": f"git:rpsd-flows@{dataset_code}-import-001",
-                "invocation_contract": transport_message_invocation_contract(),
-                "compatibility": {"schema_version": 1, "what": dataset_code},
             },
         )
         if flow.status == InputFlowVersion.Status.DRAFT:
@@ -56,7 +51,6 @@ def ensure_standard_flow_catalog() -> tuple[
             "engine": OrchestrationFlowVersion.Engine.PREFECT,
             "deployment_name": "rpsd-contract-processing/default",
             "artifact_identifier": "git:rpsd-flows@contract-processing-001",
-            "invocation_contract": transport_message_invocation_contract(),
         },
     )
     if orchestration.status == OrchestrationFlowVersion.Status.DRAFT:

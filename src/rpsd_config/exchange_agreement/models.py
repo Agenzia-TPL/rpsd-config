@@ -24,8 +24,6 @@ from django.utils.translation import gettext_lazy as _
 from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
     ENGINE_PREFECT,
     validate_flow_executable_references,
-    validate_input_compatibility,
-    validate_invocation_contract,
 )
 from rpsd_config.exchange_agreement.services.fragment_registry import (
     LOCATOR_TABLE,
@@ -1467,7 +1465,6 @@ class FlowCatalogVersionBase(TimeStampedModel):
     )
     deployment_name = models.CharField(max_length=255, blank=True)
     artifact_identifier = models.CharField(max_length=512, blank=True)
-    invocation_contract = models.JSONField(default=dict, blank=True)
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
@@ -1498,7 +1495,6 @@ class FlowCatalogVersionBase(TimeStampedModel):
             "engine",
             "deployment_name",
             "artifact_identifier",
-            "invocation_contract",
         )
 
     def clean(self):
@@ -1516,13 +1512,6 @@ class FlowCatalogVersionBase(TimeStampedModel):
         ):
             if not getattr(self, field_name):
                 errors[field_name] = message
-        try:
-            self.invocation_contract = validate_invocation_contract(
-                self.invocation_contract,
-                allow_empty=self.status == self.Status.DRAFT,
-            )
-        except ValidationError as exc:
-            errors["invocation_contract"] = exc.messages
         try:
             (
                 self.deployment_name,
@@ -1579,8 +1568,6 @@ class InputFlowVersion(FlowCatalogVersionBase):
         on_delete=models.PROTECT,
         related_name="input_flow_versions",
     )
-    compatibility = models.JSONField(default=dict, blank=True)
-
     class Meta:
         verbose_name = "Input flow version"
         verbose_name_plural = "Input flow versions"
@@ -1599,23 +1586,7 @@ class InputFlowVersion(FlowCatalogVersionBase):
         ]
 
     def semantic_field_names(self) -> tuple[str, ...]:
-        return super().semantic_field_names() + (
-            "dataset_specification_id",
-            "compatibility",
-        )
-
-    def clean(self):
-        super().clean()
-        if not self.dataset_specification_id:
-            return
-        try:
-            self.compatibility = validate_input_compatibility(
-                self.compatibility,
-                expected_what=self.dataset_specification.dataset.code,
-                allow_empty=self.status == self.Status.DRAFT,
-            )
-        except ValidationError as exc:
-            raise ValidationError({"compatibility": exc.messages}) from exc
+        return super().semantic_field_names() + ("dataset_specification_id",)
 
 
 class OrchestrationFlowVersion(FlowCatalogVersionBase):

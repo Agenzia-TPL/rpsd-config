@@ -35,9 +35,6 @@ from rpsd_config.exchange_agreement.services.contract_revisions import (
 from rpsd_config.exchange_agreement.services.flow_catalog import (
     publish_input_flow_version,
 )
-from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
-    transport_message_invocation_contract,
-)
 from rpsd_config.exchange_agreement.services.processing_profiles import (
     publish_processing_profile,
 )
@@ -381,8 +378,6 @@ class M2MApiV1ContractTests(TestCase):
                 description="Replacement NeTEx ingest",
                 deployment_name="netex-import/netex-ita-v002",
                 artifact_identifier="git:rpsd-flows@netex-golden-002",
-                invocation_contract=transport_message_invocation_contract(),
-                compatibility={"schema_version": 1, "what": "netex"},
             ),
             actor=self.configuration_admin,
         )

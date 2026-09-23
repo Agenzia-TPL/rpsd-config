@@ -101,7 +101,7 @@
             <tbody>
               {% for row in revision_rows %}
                 <tr>
-                  <td><code>{{ row.revision.code }}</code></td>
+                  <td><a href="{% url 'exchange_agreement:contract-revision-detail' contract.contract_code row.revision.id %}"><code>{{ row.revision.code }}</code></a></td>
                   <td>{{ row.revision.processing_profile_version.name }} <span class="text-body-secondary">{{ row.revision.processing_profile_version.version }}</span></td>
                   <td>{{ row.revision.valid_from|date:"d/m/Y" }}</td>
                   <td>{% if row.effective_to %}{{ row.effective_to|date:"d/m/Y" }}{% else %}<span class="text-body-secondary">-</span>{% endif %}</td>
@@ -137,7 +137,7 @@
               <div class="col-12">
                 <label class="form-label" for="change_reason">Motivazione</label>
                 <input class="form-control" id="change_reason" name="change_reason" type="text" maxlength="255">
-                <div class="form-text">Input e indicatori compatibili vengono proposti automaticamente dal profilo.</div>
+                <div class="form-text">Gli indicatori predefiniti vengono proposti dal profilo; potrai modificarli nella bozza.</div>
               </div>
             </div>
             <button class="btn btn-primary btn-sm mt-3" {% if not available_processing_profiles %}disabled{% endif %}>Crea bozza</button>
