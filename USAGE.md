@@ -178,3 +178,18 @@ in the Dockerfile) and served from `/app/staticfiles/`.
 
 For production, configure a reverse proxy (nginx, Traefik) to serve `/static/` directly
 from that directory.
+
+## Date dei contratti e revisioni in bozza
+
+Nella pagina del contratto, un amministratore dell'agenzia o del contratto
+(o un superuser) può modificare le date se il contratto è in bozza, non è
+stato pubblicato e tutte le sue revisioni sono ancora in bozza. Le nuove date
+rispettano i vincoli sul lotto e devono includere le decorrenze delle bozze
+esistenti. Se una bozza cade fuori dal nuovo periodo, eliminarla e ricrearla
+con la decorrenza corretta. Le revisioni approvate o ritirate bloccano questa
+modifica delle date.
+
+Nella pagina di una revisione in bozza, chi può preparare la configurazione
+può usare **Elimina bozza**, selezionando la conferma prima di inviare il
+modulo. Vengono eliminate la revisione e le sue selezioni; il contratto rimane.
+Le revisioni approvate o ritirate non sono eliminabili con questa azione.

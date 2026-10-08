@@ -72,6 +72,10 @@ from .services.configuration_assets import (
     load_configuration_asset_content,
     store_configuration_asset,
 )
+from .services.contract_drafts import (
+    delete_revision_draft,
+    update_draft_contract_dates,
+)
 from .services.contract_revision_permissions import (
     ContractRevisionPermissionError,
     can_approve_contract_revision,
@@ -1348,6 +1352,20 @@ def _revision_indicator_configs_from_post(request, revision):
     ]
 
 
+def _contract_back_url(request, contract):
+    agency_scope = resolve_user_agency_scope(request.user)
+    if _can_view_agency(
+        user=request.user, agency=contract.client_agency, agency_scope=agency_scope
+    ):
+        return reverse(
+            "exchange_agreement:agency-contract-detail",
+            args=[contract.client_agency.agency_key, contract.contract_code],
+        )
+    return reverse(
+        "exchange_agreement:user-contract-detail", args=[contract.contract_code]
+    )
+
+
 def _handle_revision_draft_action(
     request: HttpRequest,
     *,
@@ -1355,6 +1373,29 @@ def _handle_revision_draft_action(
     result_context: dict,
 ) -> bool:
     action = (request.POST.get("action") or "").strip()
+    if action == "update-contract-dates":
+        if not can_approve_contract_revision(user=request.user, contract=contract):
+            raise PermissionDenied("Non puoi modificare le date di questo contratto.")
+        try:
+            update_draft_contract_dates(
+                contract,
+                start_date=date.fromisoformat(request.POST.get("start_date", "")),
+                end_date=date.fromisoformat(request.POST.get("end_date", "")),
+                actor=request.user,
+            )
+        except (ValueError, ValidationError, IntegrityError) as exc:
+            result_context["error_message"] = " ".join(
+                getattr(
+                    exc,
+                    "messages",
+                    ["Verifica le date e i periodi degli altri contratti del lotto."],
+                )
+            )
+        except ContractRevisionPermissionError as exc:
+            raise PermissionDenied(str(exc)) from exc
+        else:
+            result_context["success_message"] = "Date del contratto aggiornate."
+        return True
     if action != "create-contract-revision":
         return False
     if not can_prepare_contract_revision(user=request.user, contract=contract):
@@ -1424,6 +1465,14 @@ def _render_contract_detail(
             "contract": contract,
             "revision_rows": _contract_revision_rows(contract),
             "can_prepare_revision": can_prepare_revision,
+            "can_edit_contract_dates": (
+                can_approve_contract_revision(user=request.user, contract=contract)
+                and contract.status == Contract.ContractStatus.DRAFT
+                and not contract.configuration_revisions.exclude(
+                    status=ContractConfigurationRevision.Status.DRAFT
+                ).exists()
+                and not contract.publications.exists()
+            ),
             "available_processing_profiles": profiles,
             "contract_m2m_exchange_info": contract_m2m_exchange_info,
             "can_manage_contract_m2m": can_manage_contract_m2m,
@@ -2306,16 +2355,22 @@ def contract_revision_detail_page(
 
     can_prepare = can_prepare_contract_revision(user=request.user, contract=contract)
     can_approve = can_approve_contract_revision(user=request.user, contract=contract)
-    can_withdraw = can_withdraw_contract_revision(
-        user=request.user, contract=contract
-    )
+    can_withdraw = can_withdraw_contract_revision(user=request.user, contract=contract)
     error_message = ""
     success_message = ""
 
     if request.method == "POST":
         action = (request.POST.get("action") or "").strip()
         try:
-            if action == "save-revision-composition":
+            if action == "delete-revision-draft":
+                if not can_prepare:
+                    raise PermissionDenied("Non puoi eliminare questa bozza.")
+                if request.POST.get("confirm_delete") != "yes":
+                    raise ValidationError("Conferma l'eliminazione della bozza.")
+                delete_revision_draft(revision, actor=request.user)
+                messages.success(request, "Revisione in bozza eliminata.")
+                return redirect(_contract_back_url(request, contract))
+            elif action == "save-revision-composition":
                 if not can_prepare:
                     raise PermissionDenied("Non puoi modificare questa revisione.")
                 optional_ids = [
@@ -2401,21 +2456,7 @@ def contract_revision_detail_page(
         and revision.valid_from is not None
         and revision.valid_from > timezone.localdate()
     )
-    agency_scope = resolve_user_agency_scope(request.user)
-    if _can_view_agency(
-        user=request.user,
-        agency=contract.client_agency,
-        agency_scope=agency_scope,
-    ):
-        contract_back_url = reverse(
-            "exchange_agreement:agency-contract-detail",
-            args=[contract.client_agency.agency_key, contract.contract_code],
-        )
-    else:
-        contract_back_url = reverse(
-            "exchange_agreement:user-contract-detail",
-            args=[contract.contract_code],
-        )
+    contract_back_url = _contract_back_url(request, contract)
 
     return render(
         request,

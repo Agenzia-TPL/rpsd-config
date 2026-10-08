@@ -75,6 +75,30 @@
       </div>
     </section>
 
+    {% if can_edit_contract_dates %}
+      <form method="post" class="card border-0 shadow-sm mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update-contract-dates">
+        <div class="card-body">
+          <h2 class="h5">Modifica date del contratto in bozza</h2>
+          <p class="small text-body-secondary">Le decorrenze delle revisioni in bozza devono rimanere nel periodo del contratto.</p>
+          <div class="row g-3 mb-3">
+            <div class="col-sm-6">
+              <label for="contract_start_date" class="form-label">Data di avvio</label>
+              <input type="date" class="form-control" id="contract_start_date" name="start_date" value="{{ contract.start_date|date:'Y-m-d' }}" required>
+            </div>
+            <div class="col-sm-6">
+              <label for="contract_end_date" class="form-label">Data di termine</label>
+              <input type="date" class="form-control" id="contract_end_date" name="end_date" value="{{ contract.end_date|date:'Y-m-d' }}" required>
+            </div>
+          </div>
+          <button class="btn btn-outline-primary">Salva date</button>
+        </div>
+      </form>
+    {% elif contract.status == "draft" %}
+      <p class="text-body-secondary small">Le date sono modificabili da un amministratore finché non ci sono revisioni approvate o ritirate né pubblicazioni.</p>
+    {% endif %}
+
     <section class="card border-0 shadow-sm mb-3" aria-label="Revisioni configurazione">
       <div class="card-body">
         <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">

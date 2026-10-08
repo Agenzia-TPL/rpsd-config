@@ -86,7 +86,9 @@
           <ul class="mb-0">
             {% for issue in issues %}<li>{{ issue.message }}</li>{% endfor %}
           </ul>
-        {% else %}<p class="text-success mb-0">La revisione è pronta per l'approvazione.</p>{% endif %}
+        {% elif revision.status == "draft" %}<p class="text-success mb-0">La revisione è pronta per l'approvazione.</p>
+        {% elif revision.status == "approved" %}<p class="text-success mb-0">La revisione è già approvata, con decorrenza dal {{ revision.valid_from|date:"d/m/Y" }}.</p>
+        {% else %}<p class="text-body-secondary mb-0">La revisione è stata ritirata.</p>{% endif %}
       </div>
     </section>
 
@@ -98,6 +100,22 @@
           <h2 class="h5">Approvazione</h2>
           <p class="small">Confermi la configurazione completa, che diventerà applicabile dal {{ revision.valid_from|date:"d/m/Y" }}.</p>
           <button class="btn btn-primary" {% if issues %}disabled{% endif %}>Approva revisione</button>
+        </div>
+      </form>
+    {% endif %}
+
+    {% if revision.status == "draft" and can_prepare_revision %}
+      <form method="post" class="card border-danger shadow-sm mb-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="delete-revision-draft">
+        <div class="card-body">
+          <h2 class="h5">Elimina revisione in bozza</h2>
+          <p class="small">La bozza e le sue selezioni di configurazione saranno eliminate. Il contratto rimarrà disponibile.</p>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="confirm_delete" name="confirm_delete" value="yes" required>
+            <label class="form-check-label" for="confirm_delete">Confermo l'eliminazione definitiva di questa bozza</label>
+          </div>
+          <button class="btn btn-outline-danger">Elimina bozza</button>
         </div>
       </form>
     {% endif %}
