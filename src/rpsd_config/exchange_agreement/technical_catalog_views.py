@@ -14,9 +14,17 @@ from rpsd_config.exchange_agreement.services.validation_bindings import (
     save_dataset_rule,
 )
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    delete_validation_rule_version,
     save_validation_rule,
     save_validation_rule_version,
     transition_validation_rule,
+)
+from rpsd_config.exchange_agreement.services.validation_presentation import (
+    catalog_validation_preview,
+)
+from rpsd_config.exchange_agreement.validation_forms import (
+    DatasetRuleForm,
+    IndicatorRuleForm,
 )
 
 from .models import (
@@ -189,6 +197,12 @@ IndicatorVersionForm = modelform_factory(
         "artifact_identifier",
     ),
 )
+IndicatorVersionForm.base_fields["input_schema"].label = "Schema input"
+IndicatorVersionForm.base_fields["output_schema"].label = "Schema output"
+IndicatorVersionForm.base_fields[
+    "execution_reference"
+].label = "Processo di calcolo Prefect"
+
 InputFlowVersionForm = modelform_factory(
     InputFlowVersion,
     fields=(
@@ -226,52 +240,8 @@ ProcessingProfileVersionForm = modelform_factory(
 )
 
 
-class IndicatorRuleCatalogForm(forms.ModelForm):
-    dimensions = forms.ModelMultipleChoiceField(
-        queryset=IndicatorDimension.objects.all(),
-        required=False,
-        label="Dimensioni interessate",
-        help_text=(
-            "Obbligatorie per dimension; vietate per calculation. Il KO "
-            "non rifiuta il file salvo reject_import."
-        ),
-    )
-
-    class Meta:
-        model = IndicatorVersionRule
-        fields = ("indicator_version", "dataset_version_rule", "impact", "dimensions")
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance.pk:
-            self.fields["dimensions"].initial = self.instance.affected_dimensions.all()
-
-    def clean(self):
-        values = super().clean()
-        if bool(values.get("dimensions")) != (values.get("impact") == "dimension"):
-            raise ValidationError(
-                "dimension richiede dimensioni; calculation non ne ammette."
-            )
-        return values
-
-    def save(self, commit=True):
-        from django.db import transaction
-
-        from rpsd_config.exchange_agreement.models import IndicatorVersionRuleDimension
-
-        if not commit:
-            return super().save(commit=False)
-        with transaction.atomic():
-            binding = super().save(commit=False)
-            if binding.pk:
-                binding.dimension_links.all().delete()
-            binding.save()
-            for dimension in self.cleaned_data["dimensions"]:
-                IndicatorVersionRuleDimension.objects.create(
-                    binding=binding, dimension=dimension
-                )
-            binding.validate_complete()
-            return binding
+class IndicatorRuleCatalogForm(IndicatorRuleForm):
+    """Shared form for impact and dimension editing."""
 
 
 CATALOGS = {
@@ -395,10 +365,7 @@ CATALOGS.update(
         "dataset-rule-bindings": {
             "label": "Regole delle versioni dataset",
             "model": DatasetVersionRule,
-            "form": modelform_factory(
-                DatasetVersionRule,
-                fields=("dataset_specification", "rule_version", "import_policy"),
-            ),
+            "form": DatasetRuleForm,
             "description": (
                 "reject_import rifiuta il trasferimento; warn avvisa; "
                 "indicator_only vale solo per gli indicatori scelti."
@@ -456,6 +423,10 @@ CATALOGS.update(
     }
 )
 
+
+CATALOGS["validation-rule-versions"]["form"].base_fields[
+    "execution_reference"
+].label = "Processo di validazione Prefect"
 
 COMPOSITION_ACTIONS = {
     "add-asset",
@@ -536,6 +507,7 @@ def _detail_context(slug: str, instance) -> dict:
 
         try:
             context["indicator_closure"] = resolve_indicator_closure([instance])
+            context.update(catalog_validation_preview([instance]))
         except ValidationError as exc:
             context["closure_error"] = "; ".join(exc.messages)
         context["indicator_bindings"] = instance.rule_bindings.select_related(
@@ -564,6 +536,18 @@ def _detail_context(slug: str, instance) -> dict:
         context["available_indicator_versions"] = IndicatorVersion.objects.filter(
             status=IndicatorVersion.Status.PUBLISHED
         ).select_related("indicator")
+        try:
+            context.update(
+                catalog_validation_preview(
+                    [link.indicator_version for link in context["profile_indicators"]],
+                    specifications=[
+                        link.input_flow_version.dataset_specification
+                        for link in context["profile_inputs"]
+                    ],
+                )
+            )
+        except ValidationError as exc:
+            context["closure_error"] = "; ".join(exc.messages)
     return context
 
 
@@ -733,7 +717,37 @@ def technical_catalog_detail_page(
     if request.method == "POST":
         action = request.POST.get("action", "")
         try:
-            if action == "save":
+            if catalog_slug == "validation-rule-versions" and action == "delete-draft":
+                if request.POST.get("confirm_delete") != "yes":
+                    raise ValidationError("Conferma l'eliminazione della bozza.")
+                delete_validation_rule_version(instance, actor=request.user)
+                return redirect(
+                    "exchange_agreement:technical-catalog-list",
+                    catalog_slug=catalog_slug,
+                )
+            elif catalog_slug == "validation-rule-versions" and action == "new-version":
+                fields = (
+                    "rule",
+                    "name",
+                    "description",
+                    "validation_type",
+                    "definition",
+                    "language_version",
+                    "options",
+                    "result_contract",
+                    "execution_reference",
+                )
+                clone = ValidationRuleVersion(
+                    **{field: getattr(instance, field) for field in fields},
+                    version=request.POST.get("version", ""),
+                )
+                clone = save_validation_rule_version(clone, actor=request.user)
+                return redirect(
+                    "exchange_agreement:technical-catalog-detail",
+                    catalog_slug=catalog_slug,
+                    object_id=clone.pk,
+                )
+            elif action == "save":
                 if not _is_editable(instance):
                     raise ValidationError(
                         "L'oggetto pubblicato e' immutabile: crea una nuova versione."

@@ -62,6 +62,25 @@
     {% endif %}
 
 
+    {% if effective_indicator_rows or closure_error %}
+    <section class="card mb-3"><div class="card-body">
+      <h2 class="h5">Anteprima degli indicatori e dei controlli ereditati</h2>
+      <p>Questa configurazione descrive i controlli; non è un esito sui file.</p>
+      {% if closure_error %}<p class="text-danger" role="alert">{{ closure_error }}</p>{% endif %}
+      <ul>{% for row in effective_indicator_rows %}<li><code>{{ row.code }}</code> · {{ row.role }}<ul>{% for path in row.paths %}<li>{{ path }}</li>{% endfor %}</ul></li>{% endfor %}</ul>
+      {% for input in validation_preview_inputs %}<h3 class="h6">{{ input.specification_code }}</h3>
+        {% for entry in input.rules %}<details class="mb-2"><summary>{{ entry.rule.rule_code }} · {{ entry.rule.rule_version }} · {{ entry.import_policy }}</summary><pre class="text-wrap">{{ entry.rule.definition }}</pre>
+        <ul>{% for consumer in entry.consumers %}<li>{{ consumer.indicator_version_code }} · {{ consumer.impact }}{% for dimension in consumer.affected_dimensions %} · {{ dimension }}{% endfor %}</li>{% endfor %}</ul></details>{% empty %}<p>Nessuna regola configurata per questo input.</p>{% endfor %}
+      {% endfor %}
+    </div></section>
+    {% endif %}
+    {% if catalog_slug == "validation-rule-versions" %}
+    <section class="card mb-3"><div class="card-body"><h2 class="h5">Nuova versione</h2>
+      <p>Crea una bozza dalla definizione corrente; la versione originale rimane disponibile.</p>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="new-version"><label class="form-label" for="new_rule_version">Identificatore della nuova versione</label><input class="form-control mb-2" id="new_rule_version" name="version" required><button class="btn btn-outline-primary">Crea nuova versione</button></form>
+      {% if is_editable %}<form method="post" class="mt-3">{% csrf_token %}<input type="hidden" name="action" value="delete-draft"><label><input type="checkbox" name="confirm_delete" value="yes" required> Confermo l’eliminazione della versione in bozza</label><button class="btn btn-outline-danger ms-2">Elimina bozza</button></form>{% endif %}
+    </div></section>
+    {% endif %}
     {% if rule_definition %}<section class="card mb-3"><div class="card-body"><h2 class="h5">Definizione completa</h2><pre class="text-wrap">{{ rule_definition }}</pre><p>Questo è il controllo configurato. L’esito sarà prodotto dal validator esterno sul file trasferito.</p></div></section>{% endif %}
     {% if catalog_slug == "indicator-versions" %}
     <section class="card mb-3"><div class="card-body"><h2 class="h5">Regole e input dichiarati</h2>

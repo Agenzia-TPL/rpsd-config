@@ -9,7 +9,9 @@ from django.utils import timezone
 from django.utils.formats import date_format
 
 from rpsd_config import admin_hidden  # noqa: F401
-from rpsd_config.admin_dataset_exchange.validation_admin import register_validation_admin
+from rpsd_config.admin_dataset_exchange.validation_admin import (
+    register_validation_admin,
+)
 from rpsd_config.exchange_agreement.models import (
     DatasetSpecificationAsset,
     FragmentValidationRule,
@@ -408,6 +410,18 @@ class IndicatorVersionAdmin(
     )
     actions = ("publish_selected", "deprecate_selected", "withdraw_selected")
 
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        labels = {
+            "input_schema": "Schema input",
+            "output_schema": "Schema output",
+            "execution_reference": "Processo di calcolo Prefect",
+        }
+        for name, label in labels.items():
+            if name in form.base_fields:
+                form.base_fields[name].label = label
+        return form
+
     def get_readonly_fields(self, request, obj=None):
         fields = list(super().get_readonly_fields(request, obj))
         if obj is not None and obj.status != obj.Status.DRAFT:
@@ -420,6 +434,7 @@ class IndicatorVersionAdmin(
                     "formula_description",
                     "input_schema",
                     "output_schema",
+                    "parameter_schema",
                     "execution_engine",
                     "execution_reference",
                     "artifact_identifier",

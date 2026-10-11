@@ -412,6 +412,43 @@ motore e limiti runtime. Non si eseguono formule, macro o controlli in Config.
 `application_state` resta non supportato finché fonte e fase EA sono definite.
 
 
+## Cataloghi e revisioni nell’interfaccia (025)
+
+Il catalogo tecnico permette di consultare la definizione completa di una regola,
+modificare le bozze e pubblicarle. Dal dettaglio di una versione pubblicata,
+«Nuova versione» copia la definizione in una nuova bozza: la versione pubblicata
+rimane immutabile. Per eliminare una bozza è richiesta la conferma nel form.
+Queste operazioni sono riservate agli amministratori di piattaforma.
+
+Nei collegamenti al dataset, «Blocco dell’import» (`reject_import`) e «Avviso
+dataset» (`warn`) indicano controlli da applicare a ogni trasferimento di quel
+dataset. «Compatibilità» (`indicator_only`) indica controlli richiesti dagli
+indicatori effettivi. Nei collegamenti agli indicatori, `calculation` significa
+che le entità non conformi non contribuiscono al calcolo; `dimension` indica
+la perdita delle disaggregazioni selezionate. L’impatto sull’indicatore non
+modifica la politica di import del dataset.
+
+Il dettaglio del profilo mostra indicatori selezionati, dipendenze implicite,
+percorsi di provenienza e controlli per input. È un’anteprima della
+configurazione: Config non esegue le regole e non produce esiti sui file.
+«Schema input», «Schema output», «Processo di validazione Prefect» e «Processo
+di calcolo Prefect» distinguono i rispettivi campi tecnici.
+
+Nella revisione in bozza, gli editor autorizzati possono salvare parametri,
+soglie, aggregazioni e penalità di ciascun indicatore selezionato o implicito.
+I valori sono propri della revisione e non sono ereditati dall’indicatore padre.
+Cambiare gli indicatori selezionati rimuove i valori delle dipendenze non più
+necessarie. L’admin globale espone i valori delle dipendenze in sola lettura;
+le modifiche passano dal flusso contrattuale autorizzato.
+
+La revisione approvata distingue decorrenza futura, attuale o conclusa e mostra
+valori e controlli dallo snapshot congelato, separando regole dataset e
+compatibilità degli indicatori. Uno snapshot incoerente produce un messaggio
+diagnostico. Lo storico v1 resta consultabile come JSON; gli editor dei frammenti
+legacy restano disponibili fino alla migrazione e al cutover delle 026/027.
+Il permesso di amministrare i cataloghi non attribuisce l’approvazione dei
+contratti: questa richiede il ruolo business nel relativo perimetro.
+
 ## Piano di validazione congelato (022)
 
 La revisione approvata conserva uno snapshot `canonical-json-v2` quando usa il

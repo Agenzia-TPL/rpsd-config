@@ -8,9 +8,6 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from rpsd_config.admin_dataset_exchange import proxies
-from rpsd_config.exchange_agreement.models import (
-    IndicatorVersionRuleDimension,
-)
 from rpsd_config.exchange_agreement.services.validation_bindings import (
     save_dataset_rule,
 )
@@ -19,6 +16,10 @@ from rpsd_config.exchange_agreement.services.validation_catalog import (
     save_validation_rule,
     save_validation_rule_version,
     transition_validation_rule,
+)
+from rpsd_config.exchange_agreement.validation_forms import (
+    DatasetRuleForm,
+    IndicatorRuleForm,
 )
 from rpsd_config.exchange_agreement.validation_models import FrozenComposition
 
@@ -76,44 +77,46 @@ class FrozenCompositionAdmin(admin.ModelAdmin):
         return actions
 
 
+class DatasetRuleAdminForm(DatasetRuleForm, CompositionAdminForm):
+    """Policy explanation with admin composition freeze validation."""
+
+
 class DatasetRuleAdmin(FrozenCompositionAdmin):
     """Record the authenticated creator of append-only dataset applicability."""
 
+    form = DatasetRuleAdminForm
     readonly_fields = ("created_by", "created_at")
 
     def save_model(self, request, obj, form, change):
         save_dataset_rule(obj, actor=request.user)
 
 
-class IndicatorRuleAdminForm(CompositionAdminForm):
-    dimensions = forms.ModelMultipleChoiceField(
-        queryset=proxies.IndicatorDimensionAdminProxy.objects.all(),
-        required=False,
-        help_text=(
-            "Dimension impact requires dimensions; "
-            "calculation impact cannot specify them."
-        ),
-    )
-
-    class Meta:
-        model = proxies.IndicatorVersionRuleAdminProxy
-        fields = ("indicator_version", "dataset_version_rule", "impact", "dimensions")
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance.pk:
-            self.fields["dimensions"].initial = self.instance.affected_dimensions.all()
-
-    def clean(self):
-        data = super().clean()
-        if bool(data.get("dimensions")) != (data.get("impact") == "dimension"):
-            raise ValidationError(
-                "Dimension impact requires dimensions; calculation impact forbids them."
-            )
-        return data
+class IndicatorRuleAdminForm(IndicatorRuleForm):
+    """Use the same replacement semantics as the web catalog."""
 
 
 class RuleVersionAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ("Identità e versione", {"fields": ("rule", "version", "name", "description")}),
+        (
+            "Tipo di validazione",
+            {"fields": ("validation_type", "language_version", "result_contract")},
+        ),
+        ("Definizione completa", {"fields": ("definition", "options")}),
+        ("Processo di validazione Prefect", {"fields": ("execution_reference",)}),
+        (
+            "Stato e audit",
+            {
+                "fields": (
+                    "status",
+                    "published_by",
+                    "published_at",
+                    "created_at",
+                    "updated_at",
+                )
+            },
+        ),
+    )
     list_display = (
         "rule",
         "version",
@@ -124,6 +127,14 @@ class RuleVersionAdmin(admin.ModelAdmin):
     list_filter = ("status", "validation_type")
     search_fields = ("rule__code", "name", "definition")
     actions = ("publish_rules", "deprecate_rules", "withdraw_rules")
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        if "execution_reference" in form.base_fields:
+            form.base_fields[
+                "execution_reference"
+            ].label = "Processo di validazione Prefect"
+        return form
 
     def get_readonly_fields(self, request, obj=None):
         base = ("status", "published_by", "published_at", "created_at", "updated_at")
@@ -178,16 +189,28 @@ class IndicatorRuleAdmin(FrozenCompositionAdmin):
     form = IndicatorRuleAdminForm
     list_display = ("indicator_version", "dataset_version_rule", "impact")
 
-    @transaction.atomic
+    def save_model(self, request, obj, form, change):
+        obj.check_editable()
+        if obj.pk:
+            obj.dimension_links.all().delete()
+        obj.save()
+
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
-        binding = form.instance
-        binding.dimension_links.all().delete()
-        for dimension in form.cleaned_data["dimensions"]:
-            IndicatorVersionRuleDimension.objects.create(
-                binding=binding, dimension=dimension
-            )
-        binding.validate_complete()
+        form.save_dimensions()
+
+
+class ReadOnlyContractValuesAdmin(admin.ModelAdmin):
+    """Contract values are edited through the scoped revision workflow."""
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class ReadOnlyRuleAuditAdmin(admin.ModelAdmin):
@@ -217,6 +240,7 @@ def register_validation_admin(permission_mixin) -> None:
         "ValidationRuleStatusEvent": ReadOnlyRuleAuditAdmin,
         "IndicatorVersionRule": IndicatorRuleAdmin,
         "DatasetVersionRule": DatasetRuleAdmin,
+        "ContractDependencyConfiguration": ReadOnlyContractValuesAdmin,
     }
     for name in (
         "ValidationRule",

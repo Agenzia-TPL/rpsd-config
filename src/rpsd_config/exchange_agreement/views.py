@@ -20,8 +20,13 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from rpsd_config.exchange_agreement.services.revision_indicator_values import save_revision_indicator_values
-
+from rpsd_config.exchange_agreement.services.revision_indicator_values import (
+    save_revision_indicator_values,
+)
+from rpsd_config.exchange_agreement.services.validation_presentation import (
+    frozen_indicator_value_rows,
+    frozen_validation_rows,
+)
 from rpsd_config.server.keycloak_admin import (
     KeycloakAdminAPIError,
     KeycloakAdminConfigError,
@@ -2440,38 +2445,40 @@ def contract_revision_detail_page(
             error_message = _revision_error_message(exc, technical=False)
         revision.refresh_from_db()
 
-    profile = revision.processing_profile_version
-    indicator_links = list(
-        profile.indicator_version_links.select_related(
-            "indicator_version__indicator"
-        ).order_by("indicator_version__indicator__code")
-    )
-    selected_indicator_ids = set(
-        revision.indicator_configurations.values_list(
-            "processing_profile_indicator_version_id", flat=True
+    indicator_rows, optional_rows, mandatory_rows = [], [], []
+    if revision.status == ContractConfigurationRevision.Status.DRAFT:
+        profile = revision.processing_profile_version
+        indicator_links = list(
+            profile.indicator_version_links.select_related(
+                "indicator_version__indicator"
+            ).order_by("indicator_version__indicator__code")
         )
-    )
-    selected_input_ids = set(
-        revision.input_selections.values_list(
-            "processing_profile_input_flow_id", flat=True
+        selected_indicator_ids = set(
+            revision.indicator_configurations.values_list(
+                "processing_profile_indicator_version_id", flat=True
+            )
         )
-    )
-    selected_indicator_links = [
-        link for link in indicator_links if link.pk in selected_indicator_ids
-    ]
-    resolution = resolve_revision_inputs(profile, selected_indicator_links)
-    optional_rows = [
-        {"link": item, "selected": item.pk in selected_input_ids}
-        for item in resolution.optional_inputs
-    ]
-    indicator_rows = [
-        {"link": link, "selected": link.pk in selected_indicator_ids}
-        for link in indicator_links
-    ]
-    mandatory_rows = [
-        {"link": item, "selected": item.pk in selected_input_ids}
-        for item in resolution.mandatory_inputs
-    ]
+        selected_input_ids = set(
+            revision.input_selections.values_list(
+                "processing_profile_input_flow_id", flat=True
+            )
+        )
+        selected_indicator_links = [
+            link for link in indicator_links if link.pk in selected_indicator_ids
+        ]
+        resolution = resolve_revision_inputs(profile, selected_indicator_links)
+        optional_rows = [
+            {"link": item, "selected": item.pk in selected_input_ids}
+            for item in resolution.optional_inputs
+        ]
+        indicator_rows = [
+            {"link": link, "selected": link.pk in selected_indicator_ids}
+            for link in indicator_links
+        ]
+        mandatory_rows = [
+            {"link": item, "selected": item.pk in selected_input_ids}
+            for item in resolution.mandatory_inputs
+        ]
     issues = (
         validate_revision_for_approval(revision)
         if revision.status == ContractConfigurationRevision.Status.DRAFT
@@ -2488,9 +2495,31 @@ def contract_revision_detail_page(
         revision_indicator_value_rows,
     )
 
-    value_rows = (
-        revision_indicator_value_rows(revision) if revision.status == "draft" else []
-    )
+    snapshot_rows = []
+    value_rows = []
+    if revision.status == "draft":
+        value_rows = revision_indicator_value_rows(revision)
+    else:
+        from rpsd_config.exchange_agreement.services.contract_revisions import (
+            canonical_snapshot_checksum,
+        )
+        from rpsd_config.exchange_agreement.services.ingest_resolution import (
+            IngestResolutionError,
+        )
+
+        try:
+            if (
+                canonical_snapshot_checksum(revision.configuration_snapshot)
+                != revision.snapshot_checksum
+            ):
+                raise ValidationError("Snapshot checksum mismatch.")
+            snapshot_rows = frozen_validation_rows(revision.configuration_snapshot)
+            value_rows = frozen_indicator_value_rows(revision.configuration_snapshot)
+        except (ValidationError, IngestResolutionError, ContractRevisionError):
+            error_message = (
+                "Lo snapshot approvato è incoerente: "
+                "i controlli non possono essere mostrati."
+            )
     readable_snapshot = (
         json.dumps(
             revision.configuration_snapshot,
@@ -2512,9 +2541,18 @@ def contract_revision_detail_page(
             "mandatory_input_rows": mandatory_rows,
             "indicator_value_rows": value_rows,
             "readable_snapshot": readable_snapshot,
+            "revision_temporal_label": {
+                "draft": "Bozza",
+                "scheduled": "Approvata, futura",
+                "active": "Approvata, attuale",
+                "expired": "Approvata, conclusa",
+                "withdrawn": "Ritirata",
+            }[revision_temporal_state(revision)],
+            "snapshot_input_rows": snapshot_rows,
             "optional_input_rows": optional_rows,
             "issues": issues,
             "can_prepare_revision": can_prepare,
+            "can_edit_indicator_values": can_prepare and revision.status == "draft",
             "can_approve_revision": can_approve,
             "can_withdraw_revision": may_withdraw_now,
             "contract_back_url": contract_back_url,

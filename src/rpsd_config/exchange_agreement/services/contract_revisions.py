@@ -948,6 +948,19 @@ def replace_draft_configuration(
             penalties=item["penalties"],
             parameters=item["parameters"],
         )
+    # Selection changes remove configurations for dependencies no longer in
+    # the effective graph. Applicable values remain owned by this draft.
+    from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+        resolve_indicator_closure,
+    )
+
+    closure = resolve_indicator_closure(
+        [link.indicator_version for link in selected_profile_indicators]
+    )
+    implicit_ids = {v.pk for v in closure["versions"]} - closure["root_ids"]
+    locked.dependency_configurations.exclude(
+        indicator_version_id__in=implicit_ids
+    ).delete()
     return locked
 
 

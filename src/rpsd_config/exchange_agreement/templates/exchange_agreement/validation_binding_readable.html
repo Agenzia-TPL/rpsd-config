@@ -1,0 +1,9 @@
+<details class="mb-3">
+  <summary>{{ binding.rule_code }} · versione {{ binding.rule_version }} · {{ binding.import_policy }}</summary>
+  {% if binding.import_policy == "reject_import" %}<p>Se fallisce, il trasferimento deve essere rifiutato.</p>{% elif binding.import_policy == "warn" %}<p>Se fallisce, il trasferimento può essere accettato con un avviso.</p>{% else %}<p>Questa regola valuta la compatibilità con gli indicatori; da sola non rifiuta il trasferimento.</p>{% endif %}
+  <pre class="text-wrap">{{ binding.definition }}</pre>
+  <ul>{% for consumer in binding.consumers %}<li><code>{{ consumer.indicator_version_code }}</code>
+    {% if consumer.impact == "calculation" %} · Se fallisce, queste entità non contribuiscono al calcolo dell’indicatore.{% else %} · Il totale può essere calcolato, ma le dimensioni indicate non sono disponibili per queste entità: {% for dimension in consumer.affected_dimensions %}{{ dimension }}{% if not forloop.last %}, {% endif %}{% endfor %}.{% endif %}
+    <ul>{% for path in consumer.dependency_paths %}<li>{% for code in path %}{{ code }}{% if not forloop.last %} → {% endif %}{% endfor %}</li>{% endfor %}</ul>
+  </li>{% empty %}<li>Nessun consumatore indicatore associato.</li>{% endfor %}</ul>
+</details>
