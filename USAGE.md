@@ -193,3 +193,152 @@ Nella pagina di una revisione in bozza, chi può preparare la configurazione
 può usare **Elimina bozza**, selezionando la conferma prima di inviare il
 modulo. Vengono eliminate la revisione e le sue selezioni; il contratto rimane.
 Le revisioni approvate o ritirate non sono eliminabili con questa azione.
+
+## Catalogo versionato delle regole di validazione (feature 019)
+
+Django conserva le regole e ne gestisce la pubblicazione. Non esegue la
+validazione dei file e non contatta Prefect durante salvataggio o pubblicazione.
+
+Un platform admin (gruppo Keycloak `/rpsd/admin`) o un superuser può aprire
+**Configurazione piattaforma → Cataloghi tecnici → Regole di validazione**,
+creare un'identità e poi una voce in **Versioni delle regole**. Il codice
+identifica stabilmente la regola e non è modificabile dopo la creazione.
+Gli operatori delle agenzie non possono scrivere nel catalogo globale.
+Le stesse restrizioni valgono nel Django admin.
+
+Una versione nasce in `draft` e può essere incompleta. Prima di pubblicarla
+compilare definizione, tipo, versione del linguaggio, opzioni, convenzione del
+risultato e `execution_reference`, nel formato `flow/deployment`.
+Il riferimento è una configurazione del futuro esecutore: la pubblicazione
+non ne attesta l'esistenza su Prefect. Il processo di validazione è distinto
+dal processo di calcolo dell'indicatore.
+
+Per esempio, una regola XPath può contenere:
+
+```text
+//n:DayTypeAssignment/n:OperatingPeriodRef[not(@ref = //n:operatingPeriods/*/@id)]
+```
+
+Con `validation_type=xpath`, `language_version=1.0`,
+`options={"namespaces":{"n":"http://www.netex.org.uk/netex"}}` e
+`result_contract=violating_entities`. Il futuro validator deve interpretare
+una sequenza vuota come successo e i nodi restituiti come violazioni.
+Config verifica la struttura della configurazione e i namespace dichiarati;
+non compila né esegue l'espressione XPath. Le vecchie regole `exists` restano
+nel catalogo legacy e non vengono convertite implicitamente.
+
+Le versioni `published`, `deprecated` e `withdrawn` sono immutabili e non
+eliminabili. Per cambiare una definizione creare una nuova versione.
+Le transizioni registrano attore, data e motivazione; deprecazione e ritiro
+richiedono una motivazione. Lo storico nel Django admin è in sola lettura.
+Solo `published` compare nel manifest per i nuovi requisiti di esecuzione:
+
+```bash
+uv run manage validation_execution_manifest > validation-execution-manifest.json
+```
+
+Il manifest contiene identità codice/versione, definizioni e capability locali,
+senza primary key del database. Serve come input alla futura verifica del
+runtime; non certifica la disponibilità dei deployment. I tipi elencati
+nel registro sono contratti di configurazione, non esecutori installati.
+Un tipo ignoto o opzioni incompatibili bloccano la pubblicazione.
+
+## Applicabilità delle regole e impatto sugli indicatori (feature 020)
+
+Una regola si associa a una **versione di dataset**, non al dataset logico.
+La stessa versione di regola può essere riusata su più specifiche, se il suo
+interprete supporta il formato dichiarato dalla specifica (`metadata.format`).
+Per NeTEx e SIRI VM/ET il formato XML è riconosciuto anche senza tale metadato.
+
+Ogni associazione dataset/regola ha una politica:
+
+| Politica | Controlli da includere | Conseguenza prevista di una violazione |
+|---|---|---|
+| `reject_import` | Sempre per quel dataset | Il futuro validator deve rifiutare il trasferimento. |
+| `warn` | Sempre per quel dataset | Il trasferimento può essere accettato con un warning. |
+| `indicator_only` | Se richiesta dagli indicatori effettivi | Il giudizio riguarda gli indicatori che consumano la regola. |
+
+Il collegamento a una versione di indicatore specifica la conseguenza distinta:
+`calculation` esclude le entità non conformi dal calcolo;
+`dimension` conserva la possibilità del totale ma perde le disaggregazioni
+indicate. Per `dimension` occorre almeno una dimensione; `calculation` non
+ammette dimensioni. Non esiste un secondo campo `mandatory`.
+Una politica dataset `reject_import` mantiene il proprio effetto anche se un
+indicatore usa la stessa regola soltanto per una dimensione.
+
+Gli **Input richiesti degli indicatori** dichiarano anche i dataset che servono
+al calcolo senza avere controlli associati. Prima di pubblicare un profilo,
+Django richiede l'esatta versione di ogni input: non sceglie automaticamente
+l'ultima versione e non considera facoltativo un dataset privo di regole.
+Il superamento dei controlli di un trasferimento non attesta la disponibilità
+degli altri input necessari al calcolo.
+
+Le regole base si modificano solo mentre la specifica è in bozza. Su una
+specifica pubblicata si possono aggiungere nuove applicazioni `indicator_only`
+con regole pubblicate; le righe già pubblicate restano congelate. Questa
+aggiunta non altera gli snapshot dei contratti già approvati. I collegamenti,
+gli impatti e le dimensioni di un indicatore si modificano solo in bozza.
+L'autore e la data di creazione delle applicazioni sono conservati; i codici
+delle dimensioni restano stabili.
+
+I controlli condivisi mantengono un elenco di consumatori separati: indicatore,
+impatto, dimensioni e percorsi di dipendenza. Config prepara questa
+configurazione; esecuzione, persistenza degli esiti e decisioni effettive sul
+trasferimento appartengono al futuro validator/ingest.
+
+
+## Dipendenze degli indicatori e valori contrattuali (021)
+
+Una versione di indicatore può dipendere da zero o più versioni esatte di altri
+indicatori. Tutti i prerequisiti sono necessari (AND). Django rifiuta dipendenze
+da sé stesso, duplicati, cicli e due versioni dello stesso indicatore nella
+chiusura di un profilo. Le modifiche e la pubblicazione serializzano il grafo
+tramite un lock transazionale PostgreSQL; i prerequisiti devono essere pubblicati.
+Dipendenze e dimensioni richieste si modificano solo nella bozza del dipendente.
+
+Il profilo include anche input e regole dei prerequisiti. Il piano conserva
+indicatori selezionati e impliciti, tutti i percorsi e `indicator_execution_order`
+con i prerequisiti prima dei dipendenti. Una dipendenza condivisa compare una
+volta nell'ordine di calcolo, mantenendo i diversi percorsi che la richiedono.
+
+La pubblicazione in Django verifica un descrittore di calcolo con
+`execution_engine=prefect` e `execution_reference`, oltre alla provenienza
+richiesta dal catalogo. Non contatta Prefect e non richiede che sia disponibile:
+il riferimento serve al servizio esterno che effettuerà il calcolo. Le bozze
+possono essere prive del riferimento. Non si inventano deployment per dati legacy.
+
+`input_schema` e `output_schema` descrivono il formato tecnico del calcolo:
+la migrazione 0043 rinomina le colonne conservando il JSON. Il serializer e
+l'API del catalogo espongono anche `input_contract` e `output_contract` come
+alias di compatibilità; gli snapshot storici conservano nomi e checksum originali.
+
+`parameter_schema` descrive i parametri propri della versione indicatore.
+Il formato supportato è un contratto locale, non l'intero standard JSON Schema:
+
+```json
+{
+  "schema_version": 1,
+  "properties": {"window_days": {"type": "integer", "minimum": 1}},
+  "required": ["window_days"],
+  "allow_extra": false
+}
+```
+
+I tipi sono `string`, `boolean`, `integer`, `number`, con enum, limiti numerici
+opzionali e descrizione. Ogni revisione conserva separatamente parametri,
+soglie, aggregazione e penali per ciascun indicatore effettivo. Gli indicatori
+selezionati usano la configurazione esistente; quelli impliciti usano
+`ContractDependencyConfiguration`, unica per revisione/versione. Nessun valore
+viene copiato dal padre. La pagina della revisione permette di modificare i
+valori in bozza; dopo l'approvazione mostra i valori congelati nello snapshot.
+I parametri obbligatori mancanti impediscono l'approvazione e l'errore riporta
+indicatore e percorsi di dipendenza. Lo schema vuoto non impone parametri.
+
+Il contratto di propagazione distingue perdita del calcolo e perdita delle
+sole dimensioni richieste. Un insieme vuoto di dimensioni indica uso del totale.
+Il futuro validator applicherà questi criteri alle entità mappate; se il mapping
+manca, il risultato resta sconosciuto. Config non produce esiti o percentuali.
+
+Il comando di sola lettura `uv run manage indicator_artifact_inventory` elenca
+separatamente i riferimenti di provenienza delle versioni e i file YAML legacy.
+Non elimina file o riferimenti: la dismissione operativa resta nella 026.

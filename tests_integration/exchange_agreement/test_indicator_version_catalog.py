@@ -106,6 +106,9 @@ class IndicatorVersionCatalogTests(TestCase):
             "version": version,
             "description": "Commercial speed technical definition.",
             "formula_description": "Distance divided by elapsed travel time.",
+            "execution_engine": "prefect",
+            "execution_reference": "indicators/test-fixture",
+            "artifact_identifier": "git:rpsd-flows@test-fixture",
         }
         values.update(kwargs)
         return IndicatorVersion.objects.create(**values)
@@ -147,10 +150,13 @@ class IndicatorVersionCatalogTests(TestCase):
                 },
             )
 
-    def test_execution_reference_is_optional_but_complete_when_published(self):
-        external = self._version()
-        published = publish_indicator_version(external, actor=self.user)
-        self.assertEqual(published.execution_engine, "")
+    def test_execution_reference_is_required_for_publication_but_not_draft(self):
+        external = self._version(
+            execution_engine="", execution_reference="", artifact_identifier=""
+        )
+        with self.assertRaises(ValidationError):
+            publish_indicator_version(external, actor=self.user)
+        self.assertEqual(external.status, "draft")
 
         incomplete = self._version(
             code="commercial-speed_002",
@@ -164,7 +170,9 @@ class IndicatorVersionCatalogTests(TestCase):
             self._version(
                 code="commercial-speed_003",
                 version="003",
+                execution_engine="",
                 execution_reference="dbt/model",
+                artifact_identifier="",
             )
         with self.assertRaises(ValidationError):
             self._version(
@@ -211,7 +219,7 @@ class IndicatorVersionCatalogTests(TestCase):
 
     def test_lifecycle_is_audited_and_published_version_is_immutable(self):
         version = self._version(
-            execution_engine=IndicatorVersion.ExecutionEngine.DBT,
+            execution_engine=IndicatorVersion.ExecutionEngine.PREFECT,
             execution_reference="rpsd-monitoring/commercial-speed",
             artifact_identifier="dbt:rpsd-monitoring/commercial_speed@sha256:abc123",
         )

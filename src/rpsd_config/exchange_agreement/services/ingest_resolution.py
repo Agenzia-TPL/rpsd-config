@@ -100,7 +100,7 @@ def resolve_current_contract_configuration(
     )
     if (
         revision.snapshot_schema_version
-        != ContractConfigurationRevision.SNAPSHOT_SCHEMA_VERSION
+        not in {"canonical-json-v1", "canonical-json-v2"}
         or snapshot.get("snapshot_schema_version") != revision.snapshot_schema_version
         or not revision.snapshot_checksum
         or canonical_snapshot_checksum(snapshot) != revision.snapshot_checksum

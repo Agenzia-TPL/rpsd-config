@@ -371,6 +371,7 @@ class AppSettings(BaseSettings):
     CONFIG_ASSETS_STORAGE_S3_AWS_ACCESS_KEY_ID: str = Field(default="")
     CONFIG_ASSETS_STORAGE_S3_AWS_SECRET_ACCESS_KEY: str = Field(default="")
     CONFIG_ASSETS_STORAGE_S3_AWS_SESSION_TOKEN: str = Field(default="")
+    VALIDATION_M2M_ALLOWED_CLIENT_IDS: str = Field(default="")
     CONFIG_ASSETS_M2M_ALLOWED_CLIENT_IDS: str = Field(
         default="rpsd-validator,rpsd-config-admin-api"
     )

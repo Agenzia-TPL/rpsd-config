@@ -182,6 +182,9 @@ class _ContractRevisionFixtureMixin:
             version="001",
             description="Commercial speed definition.",
             formula_description="Distance divided by elapsed time.",
+            execution_engine="prefect",
+            execution_reference="indicators/test-fixture",
+            artifact_identifier="git:rpsd-flows@test-fixture",
         )
         indicator_version.required_fragments.add(fragment, siri_fragment)
         indicator_version = publish_indicator_version(

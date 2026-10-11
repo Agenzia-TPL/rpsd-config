@@ -3,12 +3,19 @@
 from rpsd_config.exchange_agreement.models import (
     ConfigurationAsset,
     ConfigurationAssetEvent,
+    ContractDependencyConfiguration,
     Dataset,
     DatasetSpecification,
     DatasetSpecificationStatusEvent,
+    DatasetVersionRule,
+    DependencyRequiredDimension,
     Indicator,
+    IndicatorDimension,
     IndicatorProfile,
     IndicatorVersion,
+    IndicatorVersionDependency,
+    IndicatorVersionInput,
+    IndicatorVersionRule,
     IndicatorVersionStatusEvent,
     InputFlowVersion,
     InputFlowVersionStatusEvent,
@@ -20,6 +27,9 @@ from rpsd_config.exchange_agreement.models import (
     RequirementFragment,
     RequirementFragmentStatusEvent,
     SiriValidationProfile,
+    ValidationRule,
+    ValidationRuleStatusEvent,
+    ValidationRuleVersion,
 )
 
 
@@ -177,3 +187,73 @@ class ConfigurationAssetEventAdminProxy(ConfigurationAssetEvent):
         app_label = "admin_dataset_exchange"
         verbose_name = "Configuration asset event"
         verbose_name_plural = "Configuration asset events"
+
+
+class ValidationRuleAdminProxy(ValidationRule):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "ValidationRule"
+
+
+class ValidationRuleVersionAdminProxy(ValidationRuleVersion):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "ValidationRuleVersion"
+
+
+class ValidationRuleStatusEventAdminProxy(ValidationRuleStatusEvent):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "ValidationRuleStatusEvent"
+
+
+class DatasetVersionRuleAdminProxy(DatasetVersionRule):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "DatasetVersionRule"
+
+
+class IndicatorDimensionAdminProxy(IndicatorDimension):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "IndicatorDimension"
+
+
+class IndicatorVersionRuleAdminProxy(IndicatorVersionRule):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "IndicatorVersionRule"
+
+
+class IndicatorVersionInputAdminProxy(IndicatorVersionInput):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "IndicatorVersionInput"
+
+
+class IndicatorVersionDependencyAdminProxy(IndicatorVersionDependency):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "IndicatorVersionDependency"
+
+
+class DependencyRequiredDimensionAdminProxy(DependencyRequiredDimension):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "DependencyRequiredDimension"
+
+
+class ContractDependencyConfigurationAdminProxy(ContractDependencyConfiguration):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "ContractDependencyConfiguration"

@@ -4,7 +4,8 @@
 
 import json
 
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
 from django.utils import timezone
 
 from rpsd_config.exchange_agreement.models import (
@@ -46,12 +47,33 @@ ALLOWED_TRANSITIONS = {
 def _validate_for_publication(version: IndicatorVersion) -> None:
     if version.indicator.status != Indicator.Status.ACTIVE:
         raise IndicatorVersionTransitionError("The logical indicator is not active.")
+    if version.execution_engine != "prefect":
+        raise ValidationError(
+            "Published indicators require a Prefect calculation flow.",
+            code="missing_calculation_reference",
+        )
+    from rpsd_config.exchange_agreement.services.validation_registry import (
+        validate_prefect_reference,
+    )
+
+    try:
+        validate_prefect_reference(version.execution_reference)
+    except ValidationError as exc:
+        raise ValidationError(
+            "A Prefect calculation reference is required.",
+            code="missing_calculation_reference",
+        ) from exc
     validate_execution_reference_fields(
         engine=version.execution_engine,
         execution_reference=version.execution_reference,
         artifact_identifier=version.artifact_identifier,
         require_complete=True,
     )
+    from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+        resolve_indicator_closure,
+    )
+
+    resolve_indicator_closure([version])
     fragments = version.required_fragments.prefetch_related("validation_rules")
     for fragment in fragments:
         if fragment.status != RequirementFragment.Status.PUBLISHED:
@@ -79,6 +101,11 @@ def transition_indicator_version(
     target_status: str,
     actor=None,
 ) -> IndicatorVersion:
+    from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+        lock_indicator_graph,
+    )
+
+    lock_indicator_graph()
     locked = (
         IndicatorVersion.objects.select_for_update()
         .select_related("indicator")
@@ -101,7 +128,9 @@ def transition_indicator_version(
             }
         )
 
-    IndicatorVersion.objects.filter(pk=locked.pk).update(**update_fields)
+    models.QuerySet.update(
+        IndicatorVersion.objects.filter(pk=locked.pk), **update_fields
+    )
     IndicatorVersionStatusEvent.objects.create(
         indicator_version=locked,
         from_status=source_status,
@@ -154,8 +183,11 @@ def serialize_indicator_version(version: IndicatorVersion) -> dict:
         "version": version.version,
         "description": version.description,
         "formula_description": version.formula_description,
-        "input_contract": version.input_contract,
-        "output_contract": version.output_contract,
+        "input_schema": version.input_schema,
+        "input_contract": version.input_schema,
+        "output_schema": version.output_schema,
+        "output_contract": version.output_schema,
+        "parameter_schema": version.parameter_schema,
         "execution_engine": version.execution_engine,
         "execution_reference": version.execution_reference,
         "artifact_identifier": version.artifact_identifier,

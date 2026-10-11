@@ -211,7 +211,16 @@ def store_configuration_asset(
     if not content:
         raise ValidationError("Il file asset e' vuoto.")
 
-    content_type = getattr(uploaded_file, "content_type", "") or "application/octet-stream"
+    from rpsd_config.exchange_agreement.services.schema_bundles import (
+        inspect_schema_bundle,
+    )
+
+    bundle_manifest = (
+        inspect_schema_bundle(content) if filename.lower().endswith(".zip") else {}
+    )
+    content_type = (
+        getattr(uploaded_file, "content_type", "") or "application/octet-stream"
+    )
     checksum = hashlib.sha256(content).hexdigest()
     provider = _storage_provider()
 
@@ -246,7 +255,10 @@ def store_configuration_asset(
             content_type=content_type,
             checksum_sha256=checksum,
             size_bytes=len(content),
-            uploaded_by=uploaded_by if getattr(uploaded_by, "is_authenticated", False) else None,
+            bundle_manifest=bundle_manifest,
+            uploaded_by=uploaded_by
+            if getattr(uploaded_by, "is_authenticated", False)
+            else None,
             uploaded_at=timezone.now(),
             activated_by=uploaded_by
             if activate and getattr(uploaded_by, "is_authenticated", False)
@@ -294,7 +306,9 @@ def activate_configuration_asset(
         )
         asset.is_active = True
         asset.status = ConfigurationAsset.Status.ACTIVE
-        asset.activated_by = actor if getattr(actor, "is_authenticated", False) else None
+        asset.activated_by = (
+            actor if getattr(actor, "is_authenticated", False) else None
+        )
         asset.activated_at = timezone.now()
         asset.save()
         event = create_asset_event(asset=asset, event_type="config_asset.activated")

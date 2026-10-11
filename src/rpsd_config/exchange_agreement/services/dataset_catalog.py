@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Lifecycle operations for the versioned dataset catalog."""
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -14,6 +15,10 @@ from rpsd_config.exchange_agreement.models import (
 
 class DatasetSpecificationTransitionError(ValueError):
     """Raised when a dataset specification transition is not allowed."""
+
+    def __init__(self, message: str, *, code: str = "invalid_dataset_specification"):
+        super().__init__(message)
+        self.code = code
 
 
 ALLOWED_TRANSITIONS = {
@@ -74,6 +79,18 @@ def transition_dataset_specification(
     }
     if target_status == DatasetSpecification.Status.PUBLISHED:
         _validate_assets_for_publication(locked)
+        try:
+            for binding in locked.rule_bindings.all():
+                binding.full_clean()
+        except ValidationError as exc:
+            errors = getattr(exc, "error_dict", {}).values()
+            code = next(
+                (error.code for group in errors for error in group if error.code),
+                getattr(exc, "code", "invalid_dataset_rules"),
+            )
+            raise DatasetSpecificationTransitionError(
+                " ".join(exc.messages), code=code
+            ) from exc
         update_fields.update(
             {
                 "published_at": timezone.now(),

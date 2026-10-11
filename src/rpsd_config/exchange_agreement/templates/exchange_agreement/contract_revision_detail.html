@@ -36,6 +36,14 @@
       </div>
     </section>
 
+
+    {% for row in indicator_value_rows %}
+    <section class="card mb-3"><div class="card-body"><h2 class="h5">{{ row.code }} · {{ row.role }}</h2><p>Parametri, soglie, aggregazioni e penalità appartengono a questa revisione. Le dipendenze hanno valori propri.</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="save-indicator-values"><input type="hidden" name="indicator_version_code" value="{{ row.code }}">
+    {% for value in row.values %}<label class="form-label d-block" for="{{ row.code }}_{{ value.name }}">{{ value.name }}</label><textarea id="{{ row.code }}_{{ value.name }}" name="{{ value.name }}" class="form-control mb-2" {% if not can_prepare_revision %}readonly{% endif %}>{{ value.json }}</textarea>{% endfor %}
+    {% if can_prepare_revision %}<button class="btn btn-outline-primary">Salva valori dell’indicatore</button>{% endif %}</form></div></section>
+    {% endfor %}
+    {% if readable_snapshot %}<section class="card mb-3"><div class="card-body"><h2 class="h5">Snapshot approvato</h2><p>Configurazione congelata; gli esiti dei file sono prodotti e conservati dai servizi esterni.</p><pre class="text-wrap">{{ readable_snapshot }}</pre></div></section>{% endif %}
     {% if revision.status == "draft" and can_prepare_revision %}
       <form method="post" class="card border-0 shadow-sm mb-3">
         {% csrf_token %}
@@ -86,7 +94,7 @@
           <ul class="mb-0">
             {% for issue in issues %}<li>{{ issue.message }}</li>{% endfor %}
           </ul>
-        {% elif revision.status == "draft" %}<p class="text-success mb-0">La revisione è pronta per l'approvazione.</p>
+        {% elif revision.status == "draft" %}<p class="text-success mb-0">{% if revision.status == "approved" %}Revisione approvata; valida dal {{ revision.valid_from|date:"d/m/Y" }}.{% else %}La revisione è pronta per l'approvazione.{% endif %}</p>
         {% elif revision.status == "approved" %}<p class="text-success mb-0">La revisione è già approvata, con decorrenza dal {{ revision.valid_from|date:"d/m/Y" }}.</p>
         {% else %}<p class="text-body-secondary mb-0">La revisione è stata ritirata.</p>{% endif %}
       </div>

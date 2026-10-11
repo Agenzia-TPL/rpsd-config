@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.utils.formats import date_format
 
 from rpsd_config import admin_hidden  # noqa: F401
+from rpsd_config.admin_dataset_exchange.validation_admin import register_validation_admin
 from rpsd_config.exchange_agreement.models import (
     DatasetSpecificationAsset,
     FragmentValidationRule,
@@ -417,8 +418,8 @@ class IndicatorVersionAdmin(
                     "version",
                     "description",
                     "formula_description",
-                    "input_contract",
-                    "output_contract",
+                    "input_schema",
+                    "output_schema",
                     "execution_engine",
                     "execution_reference",
                     "artifact_identifier",
@@ -845,3 +846,8 @@ class ConfigurationAssetEventAdmin(_HumanReadableTimestampsMixin, admin.ModelAdm
     list_filter = ("event_type", "status")
     search_fields = ("routing_key", "last_error")
     readonly_fields = ("created_at_human", "updated_at_human", "payload")
+
+
+# Additive target catalog; legacy admin remains available during migration.
+
+register_validation_admin(_PlatformCatalogAdminMixin)

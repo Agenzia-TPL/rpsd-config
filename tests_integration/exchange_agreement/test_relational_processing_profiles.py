@@ -79,6 +79,9 @@ class RelationalProcessingProfileTests(TestCase):
             version="002",
             description="Commercial speed from planned and observed movements.",
             formula_description="Distance divided by elapsed time.",
+            execution_engine="prefect",
+            execution_reference="indicators/test-fixture",
+            artifact_identifier="git:rpsd-flows@test-fixture",
         )
         self.indicator_version.required_fragments.add(
             self.netex_fragment, self.siri_fragment
@@ -218,6 +221,9 @@ class RelationalProcessingProfileTests(TestCase):
             version="003",
             description="Alternative technical version.",
             formula_description="Alternative formula.",
+            execution_engine="prefect",
+            execution_reference="indicators/test-fixture",
+            artifact_identifier="git:rpsd-flows@test-fixture",
         )
         second.required_fragments.add(self.netex_fragment, self.siri_fragment)
         second = publish_indicator_version(second, actor=self.user)

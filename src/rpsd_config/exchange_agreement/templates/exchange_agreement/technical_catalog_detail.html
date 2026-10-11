@@ -61,9 +61,20 @@
       </div></section>
     {% endif %}
 
+
+    {% if rule_definition %}<section class="card mb-3"><div class="card-body"><h2 class="h5">Definizione completa</h2><pre class="text-wrap">{{ rule_definition }}</pre><p>Questo è il controllo configurato. L’esito sarà prodotto dal validator esterno sul file trasferito.</p></div></section>{% endif %}
+    {% if catalog_slug == "indicator-versions" %}
+    <section class="card mb-3"><div class="card-body"><h2 class="h5">Regole e input dichiarati</h2>
+    <ul>{% for binding in indicator_bindings %}<li>{{ binding.dataset_version_rule.rule_version }} · {{ binding.dataset_version_rule.dataset_specification.code }} · {{ binding.get_impact_display }}{% for dimension in binding.affected_dimensions.all %} · {{ dimension.name }}{% endfor %}</li>{% empty %}<li>Nessuna regola diretta.</li>{% endfor %}</ul>
+    <ul>{% for input in declared_inputs %}<li>{{ input.dataset_specification.code }}</li>{% endfor %}</ul>
+    <p><a href="{% url 'exchange_agreement:technical-catalog-list' 'indicator-rule-bindings' %}">Gestisci i requisiti</a> · <a href="{% url 'exchange_agreement:technical-catalog-list' 'indicator-inputs' %}">Gestisci gli input</a> · <a href="{% url 'exchange_agreement:technical-catalog-list' 'indicator-dependencies' %}">Gestisci le dipendenze</a></p>
+    <h3 class="h6">Indicatori effettivi e dipendenze</h3>{% if closure_error %}<p class="text-danger">{{ closure_error }}</p>{% endif %}<ul>{% for version in indicator_closure.versions %}<li>{{ version.code }}</li>{% endfor %}</ul>
+    <ul>{% for edge in indicator_closure.edges %}<li>{{ edge.dependent.code }} → {{ edge.prerequisite.code }}{% for dimension in edge.required_dimensions.all %} · {{ dimension.name }}{% empty %} · totale{% endfor %}</li>{% endfor %}</ul>
+    </div></section>
+    {% endif %}
     {% if catalog_slug == "indicator-versions" %}
       <section class="card border-0 shadow-sm mb-3"><div class="card-body">
-        <h2 class="h5">Frammenti richiesti</h2><ul>{% for fragment in required_fragments %}<li>{{ fragment }}{% if is_editable %}<form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="remove-fragment"><input type="hidden" name="fragment_id" value="{{ fragment.id }}"><button class="btn btn-link text-danger btn-sm">Rimuovi</button></form>{% endif %}</li>{% empty %}<li class="text-body-secondary">Nessun frammento richiesto.</li>{% endfor %}</ul>
+        <h2 class="h5">Frammenti legacy (da migrare)</h2><ul>{% for fragment in required_fragments %}<li>{{ fragment }}{% if is_editable %}<form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="remove-fragment"><input type="hidden" name="fragment_id" value="{{ fragment.id }}"><button class="btn btn-link text-danger btn-sm">Rimuovi</button></form>{% endif %}</li>{% empty %}<li class="text-body-secondary">Nessun frammento richiesto.</li>{% endfor %}</ul>
         {% if is_editable %}<form method="post" class="d-flex gap-2">{% csrf_token %}<input type="hidden" name="action" value="add-fragment"><select class="form-select" name="fragment_id">{% for fragment in available_fragments %}<option value="{{ fragment.id }}">{{ fragment }}</option>{% endfor %}</select><button class="btn btn-primary btn-sm">Aggiungi</button></form>{% endif %}
       </div></section>
     {% endif %}
@@ -75,7 +86,7 @@
   </div>
 
   <div class="col-12 col-xl-5">
-    {% if catalog.transitions %}<section class="card border-0 shadow-sm"><div class="card-body"><h2 class="h5">Lifecycle</h2><p class="small text-body-secondary">Pubblica quando composizione e riferimenti sono completi. Gli oggetti pubblicati diventano immutabili.</p><div class="d-flex flex-wrap gap-2">{% if object.status == "draft" %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="publish"><button class="btn btn-primary">Pubblica</button></form>{% endif %}{% if object.status == "published" %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="deprecate"><button class="btn btn-outline-warning">Depreca</button></form>{% endif %}{% if object.status != "withdrawn" %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="withdraw"><button class="btn btn-outline-danger">Ritira</button></form>{% endif %}</div></div></section>{% endif %}
+    {% if catalog.transitions %}<section class="card border-0 shadow-sm"><div class="card-body"><h2 class="h5">Lifecycle</h2><p class="small text-body-secondary">Pubblica quando composizione e riferimenti sono completi. Gli oggetti pubblicati diventano immutabili.</p><div class="d-flex flex-wrap gap-2">{% if object.status == "draft" %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="publish"><button class="btn btn-primary">Pubblica</button></form>{% endif %}{% if object.status == "published" %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="deprecate">{% if catalog_slug == "validation-rule-versions" %}<label>Motivazione <input name="reason" required></label>{% endif %}<button class="btn btn-outline-warning">Depreca</button></form>{% endif %}{% if object.status != "withdrawn" %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="withdraw">{% if catalog_slug == "validation-rule-versions" %}<label>Motivazione <input name="reason" required></label>{% endif %}<button class="btn btn-outline-danger">Ritira</button></form>{% endif %}</div></div></section>{% endif %}
     {% if status_events %}<section class="card border-0 shadow-sm mt-3"><div class="card-body"><h2 class="h5">Audit stato</h2><ul class="list-unstyled mb-0">{% for event in status_events %}<li class="border-bottom py-2"><strong>{{ event.from_status|default:"creazione" }} → {{ event.to_status }}</strong><br><small class="text-body-secondary">{{ event.changed_at|date:"d/m/Y H:i" }} · {{ event.changed_by|default:"sistema" }}</small></li>{% endfor %}</ul></div></section>{% endif %}
   </div>
 </div>

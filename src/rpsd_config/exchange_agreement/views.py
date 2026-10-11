@@ -20,6 +20,8 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from rpsd_config.exchange_agreement.services.revision_indicator_values import save_revision_indicator_values
+
 from rpsd_config.server.keycloak_admin import (
     KeycloakAdminAPIError,
     KeycloakAdminConfigError,
@@ -2370,6 +2372,31 @@ def contract_revision_detail_page(
                 delete_revision_draft(revision, actor=request.user)
                 messages.success(request, "Revisione in bozza eliminata.")
                 return redirect(_contract_back_url(request, contract))
+            elif action == "save-indicator-values":
+                if not can_prepare:
+                    raise PermissionDenied("Non puoi modificare questa revisione.")
+
+                try:
+                    values = {
+                        field: json.loads(request.POST.get(field, "{}"))
+                        for field in (
+                            "parameters",
+                            "thresholds",
+                            "aggregation",
+                            "penalties",
+                        )
+                    }
+                except (ValueError, TypeError) as exc:
+                    raise ValidationError(
+                        "I valori devono essere oggetti JSON validi."
+                    ) from exc
+                save_revision_indicator_values(
+                    revision,
+                    version_code=request.POST.get("indicator_version_code", ""),
+                    values=values,
+                    actor=request.user,
+                )
+                success_message = "Valori contrattuali dell’indicatore aggiornati."
             elif action == "save-revision-composition":
                 if not can_prepare:
                     raise PermissionDenied("Non puoi modificare questa revisione.")
@@ -2457,6 +2484,23 @@ def contract_revision_detail_page(
         and revision.valid_from > timezone.localdate()
     )
     contract_back_url = _contract_back_url(request, contract)
+    from rpsd_config.exchange_agreement.services.revision_indicator_values import (
+        revision_indicator_value_rows,
+    )
+
+    value_rows = (
+        revision_indicator_value_rows(revision) if revision.status == "draft" else []
+    )
+    readable_snapshot = (
+        json.dumps(
+            revision.configuration_snapshot,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        if revision.configuration_snapshot
+        else ""
+    )
 
     return render(
         request,
@@ -2466,6 +2510,8 @@ def contract_revision_detail_page(
             "revision": revision,
             "indicator_rows": indicator_rows,
             "mandatory_input_rows": mandatory_rows,
+            "indicator_value_rows": value_rows,
+            "readable_snapshot": readable_snapshot,
             "optional_input_rows": optional_rows,
             "issues": issues,
             "can_prepare_revision": can_prepare,

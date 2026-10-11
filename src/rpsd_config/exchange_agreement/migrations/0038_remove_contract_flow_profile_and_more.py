@@ -6,6 +6,8 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
+        # Remove proxy bases only after their admin proxies have been removed.
+        ("admin_dataset_exchange", "0009_delete_indicatordefadminproxy_and_more"),
         ("exchange_agreement", "0037_contract_publication_revision_snapshot"),
     ]
 

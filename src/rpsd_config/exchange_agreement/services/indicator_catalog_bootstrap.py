@@ -114,17 +114,17 @@ def ensure_commercial_speed_example() -> IndicatorVersion:
             "version": "002",
             "description": "Commercial speed based on scheduled and observed data.",
             "formula_description": "Travelled distance divided by travel time.",
-            "input_contract": {
+            "input_schema": {
                 "schema_version": 1,
                 "identifier": "commercial-speed-input-v2",
                 "description": "Normalized scheduled and observed journeys.",
             },
-            "output_contract": {
+            "output_schema": {
                 "schema_version": 1,
                 "identifier": "commercial-speed-output-v2",
                 "description": "Commercial speed in kilometres per hour.",
             },
-            "execution_engine": IndicatorVersion.ExecutionEngine.DBT,
+            "execution_engine": IndicatorVersion.ExecutionEngine.PREFECT,
             "execution_reference": "rpsd-monitoring/commercial-speed",
             "artifact_identifier": (
                 "dbt:rpsd-monitoring/commercial_speed@sha256:example002"

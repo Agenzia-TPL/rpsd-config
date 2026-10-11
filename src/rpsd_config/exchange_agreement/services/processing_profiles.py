@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Lifecycle, compatibility checks and projections for processing profiles."""
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -22,6 +23,10 @@ from rpsd_config.exchange_agreement.models import (
 
 class ProcessingProfileTransitionError(ValueError):
     """Raised when a processing profile transition or composition is invalid."""
+
+    def __init__(self, message: str, *, code: str = "invalid_processing_profile"):
+        super().__init__(message)
+        self.code = code
 
 
 ALLOWED_TRANSITIONS = {
@@ -135,6 +140,31 @@ def validate_processing_profile_for_publication(
                     f"from uncovered specification "
                     f"{fragment.dataset_specification.code}."
                 )
+
+    from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+        resolve_indicator_closure,
+    )
+    from rpsd_config.exchange_agreement.services.validation_bindings import (
+        validate_profile_input_coverage,
+    )
+
+    try:
+        closure = resolve_indicator_closure(
+            [link.indicator_version for link in indicator_links]
+        )
+    except ValidationError as exc:
+        raise ProcessingProfileTransitionError(
+            " ".join(exc.messages),
+            code=getattr(exc, "code", "invalid_processing_profile"),
+        ) from exc
+
+    try:
+        validate_profile_input_coverage(profile, closure["versions"])
+    except ValidationError as exc:
+        raise ProcessingProfileTransitionError(
+            " ".join(exc.messages),
+            code=getattr(exc, "code", "invalid_processing_profile"),
+        ) from exc
 
 
 @transaction.atomic

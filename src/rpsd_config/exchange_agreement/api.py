@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
+import hashlib
 import re
 import uuid
 from datetime import date
@@ -200,8 +201,11 @@ class IndicatorVersionCatalogSchema(Schema):
     version: str
     description: str
     formula_description: str
+    input_schema: dict
+    output_schema: dict
     input_contract: dict
     output_contract: dict
+    parameter_schema: dict
     execution_engine: str
     execution_reference: str
     artifact_identifier: str
@@ -513,6 +517,8 @@ class ConfigurationAssetSchema(Schema):
 
 
 class ConfigAssetM2MTokenAuth(HttpBearer):
+    allowed_client_setting = "CONFIG_ASSETS_M2M_ALLOWED_CLIENT_IDS"
+
     def authenticate(self, request, token):
         try:
             claims = validate_m2m_token(token)
@@ -525,7 +531,7 @@ class ConfigAssetM2MTokenAuth(HttpBearer):
             item.strip()
             for item in getattr(
                 settings,
-                "CONFIG_ASSETS_M2M_ALLOWED_CLIENT_IDS",
+                self.allowed_client_setting,
                 "",
             ).split(",")
             if item.strip()
@@ -536,6 +542,18 @@ class ConfigAssetM2MTokenAuth(HttpBearer):
         request.integration_client_id = client_id
         request.integration_claims = claims
         return client_id
+
+
+class ValidationServiceTokenAuth(ConfigAssetM2MTokenAuth):
+    """Explicit platform service allowlist; independent from company grants."""
+
+    allowed_client_setting = "VALIDATION_M2M_ALLOWED_CLIENT_IDS"
+
+    def authenticate(self, request, token):
+        result = super().authenticate(request, token)
+        if result is not None:
+            request.validation_service_client_id = result
+        return result
 
 
 api = NinjaAPI(
@@ -567,8 +585,8 @@ def _m2m_correlation_id(request) -> str:
 def _m2m_v2_error(request, *, status: int, code: str, message: str):
     correlation_id = _m2m_correlation_id(request)
     record_api_usage(
-        version="v2",
-        endpoint="ingest-resolution",
+        version="v3" if "/v3/" in request.path else "v2",
+        endpoint="validation-plan" if "/v3/" in request.path else "ingest-resolution",
         outcome=code,
         correlation_id=correlation_id,
     )
@@ -583,7 +601,7 @@ def _m2m_v2_error(request, *, status: int, code: str, message: str):
 
 @m2m_api.exception_handler(AuthenticationError)
 def m2m_authentication_error(request, exc):
-    if "/v2/" not in request.path:
+    if "/v2/" not in request.path and "/v3/" not in request.path:
         return m2m_api.create_response(
             request,
             {"detail": str(exc)},
@@ -1470,6 +1488,139 @@ def m2m_contract_ingest_resolution_v2(
         snapshot_schema_version=resolution.snapshot_schema_version,
         snapshot_checksum=resolution.snapshot_checksum,
     )
+
+
+@m2m_api.get(
+    "/v3/contracts/{contract_code}/validation-plan",
+    auth=[M2MClientTokenAuth(), ValidationServiceTokenAuth()],
+    response={
+        200: dict,
+        401: M2MErrorEnvelopeSchema,
+        403: M2MErrorEnvelopeSchema,
+        404: M2MErrorEnvelopeSchema,
+        409: M2MErrorEnvelopeSchema,
+        422: M2MErrorEnvelopeSchema,
+        503: M2MErrorEnvelopeSchema,
+    },
+)
+def m2m_contract_validation_plan_v3(
+    request,
+    contract_code: str,
+    data_category: str | None = None,
+):
+    unexpected = set(request.GET) - {"data_category"}
+    category_values = request.GET.getlist("data_category")
+    category = (data_category or "").strip().lower()
+    if (
+        unexpected
+        or len(category_values) != 1
+        or not DATA_CATEGORY_PATTERN.fullmatch(category)
+    ):
+        return _m2m_v2_error(
+            request,
+            status=422,
+            code="invalid_request",
+            message="The request must contain only one valid data_category",
+        )
+
+    try:
+        service_client = getattr(request, "validation_service_client_id", None)
+        principal = None if service_client else require_m2m_principal(request)
+        contracts = Contract.objects.select_related("contractor_company").filter(
+            contract_code=contract_code
+        )
+        if principal is not None:
+            contracts = contracts.filter(contractor_company=principal.company)
+        contract = contracts.first()
+        if contract is None:
+            return _m2m_v2_error(
+                request,
+                status=404,
+                code="contract_not_found",
+                message="Contract not found",
+            )
+
+        today = timezone.localdate()
+        if (
+            contract.status != Contract.ContractStatus.ACTIVE
+            or contract.start_date > today
+            or (contract.end_date is not None and contract.end_date < today)
+        ):
+            return _m2m_v2_error(
+                request,
+                status=409,
+                code="contract_not_effective",
+                message="Contract is not effective today",
+            )
+
+        if principal is not None:
+            checked_at = timezone.now()
+            grant = (
+                IntegrationGrant.objects.filter(
+                    principal=principal,
+                    contract=contract,
+                    action=IntegrationGrant.Action.INGEST_WRITE,
+                    status=IntegrationGrant.Status.ACTIVE,
+                )
+                .filter(Q(data_category__isnull=True) | Q(data_category=category))
+                .filter(
+                    Q(valid_from__isnull=True) | Q(valid_from__lte=checked_at),
+                    Q(valid_to__isnull=True) | Q(valid_to__gte=checked_at),
+                )
+                .order_by("-data_category", "id")
+                .first()
+            )
+            if grant is None:
+                return _m2m_v2_error(
+                    request,
+                    status=403,
+                    code="ingest_not_authorized",
+                    message="Ingest is not authorized for this contract and category",
+                )
+
+        resolution = resolve_current_ingest_configuration(contract, category)
+        from rpsd_config.exchange_agreement.services.validation_plans import (
+            validation_plan_from_resolution,
+        )
+
+        plan = validation_plan_from_resolution(resolution)
+    except IngestResolutionError as exc:
+        return _m2m_v2_error(
+            request,
+            status=409,
+            code=exc.code,
+            message=exc.public_message,
+        )
+    except DatabaseError:
+        return _m2m_v2_error(
+            request,
+            status=503,
+            code="configuration_service_unavailable",
+            message="Configuration service is temporarily unavailable",
+        )
+
+    correlation_id = _m2m_correlation_id(request)
+    audit_m2m_event(
+        "api.validation_plan",
+        endpoint_version="v3",
+        outcome="allowed",
+        correlation_id=correlation_id,
+        principal_id=principal.pk if principal else None,
+        company_id=principal.company_id if principal else None,
+        contract_code=contract.contract_code,
+        data_category=category,
+        revision_code=resolution.revision.code,
+    )
+    record_api_usage(
+        version="v3",
+        endpoint="validation-plan",
+        outcome="success",
+        correlation_id=correlation_id,
+        contract_code=contract.contract_code,
+        data_category=category,
+        revision_code=resolution.revision.code,
+    )
+    return plan
 
 
 @m2m_api.get("/v1/me", response=M2MMeSchema)
@@ -2485,3 +2636,30 @@ def start_onboarding(request, token: str):
         invitation_type="contract" if contract_invitation else "agency",
         message="Invitation accepted for onboarding. Continue with OIDC login.",
     )
+
+
+@m2m_api.get(
+    "/v3/validation-assets/{asset_type}/{dataset_code}/{version}/download",
+    auth=[config_asset_m2m_auth, ValidationServiceTokenAuth()],
+)
+def m2m_validation_asset_download(
+    request, asset_type: str, dataset_code: str, version: int
+):
+    """Resolve a frozen, stable asset identity for the external validator."""
+    asset = ConfigurationAsset.objects.filter(
+        asset_type=asset_type, what=dataset_code, version=version
+    ).first()
+    if asset is None:
+        return m2m_api.create_response(
+            request, {"detail": "Asset not found"}, status=404
+        )
+    content = load_configuration_asset_content(asset)
+    if hashlib.sha256(content).hexdigest() != asset.checksum_sha256:
+        return m2m_api.create_response(
+            request, {"detail": "Asset checksum mismatch"}, status=409
+        )
+    response = HttpResponse(
+        content, content_type=asset.content_type or "application/octet-stream"
+    )
+    response["X-RPSD-Checksum-SHA256"] = asset.checksum_sha256
+    return response

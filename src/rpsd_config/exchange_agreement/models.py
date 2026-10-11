@@ -217,8 +217,8 @@ class ConfigurationAsset(TimeStampedModel):
         ARCHIVED = "archived", _("Archived")
 
     ASSET_TYPE_EXTENSIONS = {
-        AssetType.NETEX_XSD: {"xsd"},
-        AssetType.SIRI_PROFILE: {"xsd", "xml"},
+        AssetType.NETEX_XSD: {"xsd", "zip"},
+        AssetType.SIRI_PROFILE: {"xsd", "xml", "zip"},
         AssetType.INDICATOR_YAML: {"yml", "yaml"},
     }
 
@@ -244,6 +244,7 @@ class ConfigurationAsset(TimeStampedModel):
     content_type = models.CharField(max_length=128, blank=True, default="")
     checksum_sha256 = models.CharField(max_length=64, db_index=True)
     size_bytes = models.PositiveBigIntegerField(default=0)
+    bundle_manifest = models.JSONField(default=dict, blank=True)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -309,8 +310,13 @@ class ConfigurationAsset(TimeStampedModel):
             raise ValidationError(_("Asset filename extension is not supported."))
 
         what = cls.normalize_what_from_filename(name)
-        if asset_type == cls.AssetType.NETEX_XSD and name.lower() != "netex.xsd":
-            raise ValidationError(_("NeTEx validation asset must be named netex.xsd."))
+        if asset_type == cls.AssetType.NETEX_XSD and name.lower() not in {
+            "netex.xsd",
+            "netex.zip",
+        }:
+            raise ValidationError(
+                _("NeTEx validation asset must be named netex.xsd or netex.zip.")
+            )
         if asset_type == cls.AssetType.SIRI_PROFILE and what not in {
             item for item in CANONICAL_VALIDATION_WHATS if item.startswith("siri-")
         }:
@@ -1214,6 +1220,29 @@ class Indicator(TimeStampedModel):
         return super().save(*args, **kwargs)
 
 
+class IndicatorVersionQuerySet(models.QuerySet):
+    """Prevent bulk writes from bypassing validation and lifecycle locks."""
+
+    def update(self, **kwargs):
+        raise ValidationError(
+            "Use the indicator lifecycle service.", code="immutable_version"
+        )
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError("Bulk indicator updates are not supported.")
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValidationError("Create indicator versions through validated saves.")
+
+    @transaction.atomic
+    def delete(self):
+        if any(version.status != "draft" for version in self.select_for_update()):
+            raise ValidationError(
+                "Only draft indicators can be deleted.", code="immutable_version"
+            )
+        return super().delete()
+
+
 class IndicatorVersion(TimeStampedModel):
     """Immutable published technical definition of an indicator."""
 
@@ -1238,8 +1267,10 @@ class IndicatorVersion(TimeStampedModel):
     version = models.CharField(max_length=32)
     description = models.TextField()
     formula_description = models.TextField()
-    input_contract = models.JSONField(default=dict, blank=True)
-    output_contract = models.JSONField(default=dict, blank=True)
+    input_schema = models.JSONField(default=dict, blank=True)
+    output_schema = models.JSONField(default=dict, blank=True)
+    parameter_schema = models.JSONField(default=dict, blank=True)
+    objects = IndicatorVersionQuerySet.as_manager()
     execution_engine = models.CharField(
         max_length=16,
         choices=ExecutionEngine.choices,
@@ -1288,6 +1319,24 @@ class IndicatorVersion(TimeStampedModel):
     def __str__(self) -> str:
         return f"{self.code} ({self.status})"
 
+    @property
+    def input_contract(self):
+        """Temporary compatibility alias for older Python callers."""
+        return self.input_schema
+
+    @input_contract.setter
+    def input_contract(self, value):
+        self.input_schema = value
+
+    @property
+    def output_contract(self):
+        """Temporary compatibility alias for older Python callers."""
+        return self.output_schema
+
+    @output_contract.setter
+    def output_contract(self, value):
+        self.output_schema = value
+
     def clean(self):
         super().clean()
         self.code = (self.code or "").strip()
@@ -1303,7 +1352,15 @@ class IndicatorVersion(TimeStampedModel):
             errors["description"] = _("Indicator version description is required.")
         if not self.formula_description:
             errors["formula_description"] = _("Formula description is required.")
-        for field_name in ("input_contract", "output_contract"):
+        from rpsd_config.exchange_agreement.services.parameter_schema import (
+            validate_parameter_schema,
+        )
+
+        try:
+            validate_parameter_schema(self.parameter_schema)
+        except ValidationError as exc:
+            errors["parameter_schema"] = exc.messages
+        for field_name in ("input_schema", "output_schema"):
             try:
                 setattr(
                     self,
@@ -1328,7 +1385,11 @@ class IndicatorVersion(TimeStampedModel):
         except ValidationError as exc:
             errors["execution_engine"] = exc.messages
 
-        if not self.pk and self.status != self.Status.DRAFT:
+        if not self.pk and (
+            self.status != self.Status.DRAFT
+            or self.published_at is not None
+            or self.published_by_id is not None
+        ):
             errors["status"] = _(
                 "New indicator versions must start as draft and use the "
                 "lifecycle service."
@@ -1336,7 +1397,11 @@ class IndicatorVersion(TimeStampedModel):
         if self.pk:
             original = type(self).objects.filter(pk=self.pk).first()
             if original is not None:
-                if self.status != original.status:
+                if (
+                    self.status != original.status
+                    or self.published_at != original.published_at
+                    or self.published_by_id != original.published_by_id
+                ):
                     errors["status"] = _(
                         "Use the indicator version lifecycle service to change status."
                     )
@@ -1347,8 +1412,9 @@ class IndicatorVersion(TimeStampedModel):
                         "version",
                         "description",
                         "formula_description",
-                        "input_contract",
-                        "output_contract",
+                        "input_schema",
+                        "output_schema",
+                        "parameter_schema",
                         "execution_engine",
                         "execution_reference",
                         "artifact_identifier",
@@ -1364,15 +1430,22 @@ class IndicatorVersion(TimeStampedModel):
         if errors:
             raise ValidationError(errors)
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        if self.pk:
+            type(self).objects.select_for_update().get(pk=self.pk)
         self.full_clean()
         return super().save(*args, **kwargs)
 
+    @transaction.atomic
     def delete(self, *args, **kwargs):
         current_status = self.status
         if self.pk:
             current_status = (
-                type(self).objects.values_list("status", flat=True).get(pk=self.pk)
+                type(self)
+                .objects.select_for_update()
+                .values_list("status", flat=True)
+                .get(pk=self.pk)
             )
         if current_status != self.Status.DRAFT:
             raise ValidationError(_("Only draft indicator versions can be deleted."))
@@ -1568,6 +1641,7 @@ class InputFlowVersion(FlowCatalogVersionBase):
         on_delete=models.PROTECT,
         related_name="input_flow_versions",
     )
+
     class Meta:
         verbose_name = "Input flow version"
         verbose_name_plural = "Input flow versions"
@@ -2639,7 +2713,10 @@ class ContractConfigurationRevision(TimeStampedModel):
                 errors["snapshot_checksum"] = _(
                     "Approved revisions require a snapshot checksum."
                 )
-            if self.snapshot_schema_version != self.SNAPSHOT_SCHEMA_VERSION:
+            if self.snapshot_schema_version not in {
+                "canonical-json-v1",
+                "canonical-json-v2",
+            }:
                 errors["snapshot_schema_version"] = _(
                     "Unsupported revision snapshot schema version."
                 )
@@ -3618,3 +3695,20 @@ class ContractInvitation(TimeStampedModel):
     def __str__(self) -> str:
         target = self.email or "open-invite"
         return f"{self.contract.contract_code} -> {target} ({self.role_to_assign})"
+
+
+# Rule models are loaded after the historical domain to keep additive migrations.
+from rpsd_config.exchange_agreement.validation_models import (  # noqa: E402, F401
+    ContractDependencyConfiguration,
+    DatasetVersionRule,
+    DependencyRequiredDimension,
+    IndicatorDimension,
+    IndicatorVersionDependency,
+    IndicatorVersionInput,
+    IndicatorVersionRule,
+    IndicatorVersionRuleDimension,
+    LegacyValidationRuleMapping,
+    ValidationRule,
+    ValidationRuleStatusEvent,
+    ValidationRuleVersion,
+)

@@ -10,20 +10,37 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
+from rpsd_config.exchange_agreement.services.validation_bindings import (
+    save_dataset_rule,
+)
+from rpsd_config.exchange_agreement.services.validation_catalog import (
+    save_validation_rule,
+    save_validation_rule_version,
+    transition_validation_rule,
+)
+
 from .models import (
     ConfigurationAsset,
     Dataset,
     DatasetSpecification,
     DatasetSpecificationAsset,
+    DatasetVersionRule,
+    DependencyRequiredDimension,
     FragmentValidationRule,
     Indicator,
+    IndicatorDimension,
     IndicatorVersion,
+    IndicatorVersionDependency,
+    IndicatorVersionInput,
+    IndicatorVersionRule,
     InputFlowVersion,
     OrchestrationFlowVersion,
     ProcessingProfileIndicatorVersion,
     ProcessingProfileInputFlow,
     ProcessingProfileVersion,
     RequirementFragment,
+    ValidationRule,
+    ValidationRuleVersion,
 )
 from .rbac import resolve_user_agency_scope
 from .services.dataset_catalog import (
@@ -164,6 +181,9 @@ IndicatorVersionForm = modelform_factory(
         "version",
         "description",
         "formula_description",
+        "input_schema",
+        "output_schema",
+        "parameter_schema",
         "execution_engine",
         "execution_reference",
         "artifact_identifier",
@@ -204,6 +224,54 @@ ProcessingProfileVersionForm = modelform_factory(
         "orchestration_flow_version",
     ),
 )
+
+
+class IndicatorRuleCatalogForm(forms.ModelForm):
+    dimensions = forms.ModelMultipleChoiceField(
+        queryset=IndicatorDimension.objects.all(),
+        required=False,
+        label="Dimensioni interessate",
+        help_text=(
+            "Obbligatorie per dimension; vietate per calculation. Il KO "
+            "non rifiuta il file salvo reject_import."
+        ),
+    )
+
+    class Meta:
+        model = IndicatorVersionRule
+        fields = ("indicator_version", "dataset_version_rule", "impact", "dimensions")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields["dimensions"].initial = self.instance.affected_dimensions.all()
+
+    def clean(self):
+        values = super().clean()
+        if bool(values.get("dimensions")) != (values.get("impact") == "dimension"):
+            raise ValidationError(
+                "dimension richiede dimensioni; calculation non ne ammette."
+            )
+        return values
+
+    def save(self, commit=True):
+        from django.db import transaction
+
+        from rpsd_config.exchange_agreement.models import IndicatorVersionRuleDimension
+
+        if not commit:
+            return super().save(commit=False)
+        with transaction.atomic():
+            binding = super().save(commit=False)
+            if binding.pk:
+                binding.dimension_links.all().delete()
+            binding.save()
+            for dimension in self.cleaned_data["dimensions"]:
+                IndicatorVersionRuleDimension.objects.create(
+                    binding=binding, dimension=dimension
+                )
+            binding.validate_complete()
+            return binding
 
 
 CATALOGS = {
@@ -287,6 +355,108 @@ CATALOGS = {
     },
 }
 
+CATALOGS.update(
+    {
+        "validation-rules": {
+            "label": "Regole di validazione",
+            "model": ValidationRule,
+            "form": modelform_factory(
+                ValidationRule, fields=("code", "name", "description")
+            ),
+            "description": (
+                "Identità riusabili delle regole; le definizioni "
+                "appartengono alle versioni."
+            ),
+        },
+        "validation-rule-versions": {
+            "label": "Versioni delle regole",
+            "model": ValidationRuleVersion,
+            "form": modelform_factory(
+                ValidationRuleVersion,
+                fields=(
+                    "rule",
+                    "version",
+                    "name",
+                    "description",
+                    "validation_type",
+                    "definition",
+                    "language_version",
+                    "options",
+                    "result_contract",
+                    "execution_reference",
+                ),
+            ),
+            "description": (
+                "Definizione completa, interprete e deployment Prefect "
+                "della validazione."
+            ),
+            "transitions": {"publish": None, "deprecate": None, "withdraw": None},
+        },
+        "dataset-rule-bindings": {
+            "label": "Regole delle versioni dataset",
+            "model": DatasetVersionRule,
+            "form": modelform_factory(
+                DatasetVersionRule,
+                fields=("dataset_specification", "rule_version", "import_policy"),
+            ),
+            "description": (
+                "reject_import rifiuta il trasferimento; warn avvisa; "
+                "indicator_only vale solo per gli indicatori scelti."
+            ),
+        },
+        "indicator-rule-bindings": {
+            "label": "Requisiti degli indicatori",
+            "model": IndicatorVersionRule,
+            "form": IndicatorRuleCatalogForm,
+            "description": (
+                "calculation impedisce il calcolo sulle entità coinvolte; "
+                "dimension perde la sola disaggregazione."
+            ),
+        },
+        "indicator-dimensions": {
+            "label": "Dimensioni degli indicatori",
+            "model": IndicatorDimension,
+            "form": modelform_factory(
+                IndicatorDimension, fields=("code", "name", "description")
+            ),
+            "description": "Capacità di disaggregazione, ad esempio Linea e Contratto.",
+        },
+        "indicator-inputs": {
+            "label": "Input delle versioni indicatore",
+            "model": IndicatorVersionInput,
+            "form": modelform_factory(
+                IndicatorVersionInput,
+                fields=("indicator_version", "dataset_specification"),
+            ),
+            "description": (
+                "Input necessari anche quando non hanno regole di validazione."
+            ),
+        },
+        "indicator-dependencies": {
+            "label": "Dipendenze degli indicatori",
+            "model": IndicatorVersionDependency,
+            "form": modelform_factory(
+                IndicatorVersionDependency, fields=("dependent", "prerequisite")
+            ),
+            "description": (
+                "Prerequisiti necessari, a versione esplicita. Nessun ciclo "
+                "o autoriferimento."
+            ),
+        },
+        "dependency-dimensions": {
+            "label": "Dimensioni richieste dai dipendenti",
+            "model": DependencyRequiredDimension,
+            "form": modelform_factory(
+                DependencyRequiredDimension, fields=("dependency", "dimension")
+            ),
+            "description": (
+                "Senza righe, il dipendente usa il totale; non tutte le dimensioni."
+            ),
+        },
+    }
+)
+
+
 COMPOSITION_ACTIONS = {
     "add-asset",
     "remove-asset",
@@ -326,6 +496,14 @@ def _style_form(form):
 
 
 def _is_editable(instance) -> bool:
+    if hasattr(instance, "check_editable"):
+        from django.db import transaction
+
+        try:
+            with transaction.atomic():
+                instance.check_editable()
+        except ValidationError:
+            return False
     status = getattr(instance, "status", None)
     draft = getattr(getattr(instance, "Status", None), "DRAFT", None)
     return draft is None or status == draft
@@ -349,7 +527,24 @@ def _detail_context(slug: str, instance) -> dict:
         context["validation_rules"] = instance.validation_rules.all()
         context["rule_types"] = FragmentValidationRule.RuleType.choices
         context["rule_severities"] = FragmentValidationRule.Severity.choices
+    elif slug == "validation-rule-versions":
+        context["rule_definition"] = instance.definition
     elif slug == "indicator-versions":
+        from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+            resolve_indicator_closure,
+        )
+
+        try:
+            context["indicator_closure"] = resolve_indicator_closure([instance])
+        except ValidationError as exc:
+            context["closure_error"] = "; ".join(exc.messages)
+        context["indicator_bindings"] = instance.rule_bindings.select_related(
+            "dataset_version_rule__rule_version__rule",
+            "dataset_version_rule__dataset_specification",
+        ).prefetch_related("affected_dimensions")
+        context["declared_inputs"] = instance.dataset_inputs.select_related(
+            "dataset_specification"
+        )
         context["required_fragments"] = instance.required_fragments.select_related(
             "dataset_specification"
         )
@@ -491,12 +686,24 @@ def technical_catalog_list_page(
     config = _catalog(catalog_slug)
     form = _style_form(config["form"](request.POST or None))
     if request.method == "POST" and form.is_valid():
-        instance = form.save()
-        return redirect(
-            "exchange_agreement:technical-catalog-detail",
-            catalog_slug=catalog_slug,
-            object_id=instance.pk,
-        )
+        try:
+            instance = form.save(commit=False)
+            if isinstance(instance, ValidationRuleVersion):
+                instance = save_validation_rule_version(instance, actor=request.user)
+            elif isinstance(instance, ValidationRule):
+                instance = save_validation_rule(instance, actor=request.user)
+            elif isinstance(instance, DatasetVersionRule):
+                instance = save_dataset_rule(instance, actor=request.user)
+            else:
+                instance = form.save()
+        except ValidationError as exc:
+            form.add_error(None, exc)
+        else:
+            return redirect(
+                "exchange_agreement:technical-catalog-detail",
+                catalog_slug=catalog_slug,
+                object_id=instance.pk,
+            )
     return render(
         request,
         "exchange_agreement/technical_catalog_list.html",
@@ -533,10 +740,37 @@ def technical_catalog_detail_page(
                     )
                 form = _style_form(config["form"](request.POST, instance=instance))
                 if form.is_valid():
-                    instance = form.save()
+                    if catalog_slug == "validation-rule-versions":
+                        instance = save_validation_rule_version(
+                            form.save(commit=False), actor=request.user
+                        )
+                    elif catalog_slug == "validation-rules":
+                        instance = save_validation_rule(
+                            form.save(commit=False), actor=request.user
+                        )
+                    elif catalog_slug == "dataset-rule-bindings":
+                        instance = save_dataset_rule(
+                            form.save(commit=False), actor=request.user
+                        )
+                    else:
+                        instance = form.save()
                     success_message = "Modifiche salvate."
                 else:
                     error_message = "Correggi i campi evidenziati."
+            elif catalog_slug == "validation-rule-versions" and action in config.get(
+                "transitions", {}
+            ):
+                instance = transition_validation_rule(
+                    instance,
+                    target_status={
+                        "publish": "published",
+                        "deprecate": "deprecated",
+                        "withdraw": "withdrawn",
+                    }[action],
+                    actor=request.user,
+                    reason=request.POST.get("reason", ""),
+                )
+                success_message = "Stato aggiornato correttamente."
             elif action in config.get("transitions", {}):
                 instance = config["transitions"][action](instance, actor=request.user)
                 success_message = "Stato aggiornato correttamente."

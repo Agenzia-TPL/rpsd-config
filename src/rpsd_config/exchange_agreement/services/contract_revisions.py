@@ -125,11 +125,12 @@ def resolve_revision_inputs(
             )
             continue
         logical_indicator_ids.add(version.indicator_id)
-        required_specification_ids.update(
-            version.required_fragments.values_list(
-                "dataset_specification_id", flat=True
-            )
+        from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+            resolve_indicator_closure,
         )
+
+        closure = resolve_indicator_closure([version])
+        required_specification_ids.update(spec.pk for spec in closure["specifications"])
 
     profile_inputs = list(
         profile.input_flow_links.select_related(
@@ -287,7 +288,7 @@ def _fragment_snapshot(fragment: RequirementFragment) -> dict:
     }
 
 
-def build_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
+def _build_legacy_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
     """Resolve the draft relations into a complete PK-independent snapshot."""
 
     profile = revision.processing_profile_version
@@ -394,6 +395,17 @@ def build_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
         "inputs": inputs,
         "indicators": indicators,
     }
+
+
+def build_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
+    """Preserve legacy snapshots or produce a complete target validation snapshot."""
+    from rpsd_config.exchange_agreement.services.validation_plans import (
+        build_validation_snapshot,
+    )
+
+    return build_validation_snapshot(
+        revision, _build_legacy_revision_snapshot(revision)
+    )
 
 
 def validate_revision_for_approval(
@@ -647,6 +659,17 @@ def validate_revision_for_approval(
                     )
                 )
 
+    if not issues:
+        try:
+            build_revision_snapshot(revision)
+        except ValidationError as exc:
+            issues.append(
+                RevisionValidationIssue(
+                    code=getattr(exc, "code", "invalid_validation_configuration"),
+                    message="; ".join(exc.messages),
+                    details=getattr(exc, "params", None) or {},
+                )
+            )
     return tuple(issues)
 
 
@@ -1020,7 +1043,7 @@ def approve_contract_revision(
     now = timezone.now()
     ContractConfigurationRevision.objects.filter(pk=locked.pk).update(
         status=ContractConfigurationRevision.Status.APPROVED,
-        snapshot_schema_version=locked.SNAPSHOT_SCHEMA_VERSION,
+        snapshot_schema_version=snapshot["snapshot_schema_version"],
         configuration_snapshot=_canonical_value(snapshot),
         snapshot_checksum=checksum,
         approved_by_id=actor.pk if getattr(actor, "pk", None) else None,
