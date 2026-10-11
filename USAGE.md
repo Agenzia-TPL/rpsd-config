@@ -477,6 +477,69 @@ tra colonne delle fixture e definizioni; non certificano esiti di esecuzione.
 Bundle XSD e capability XPath/CSV/Excel/TXT sono verificati nei rispettivi test;
 restano da integrare il corpus CORSE_PDE completo e gli smoke del runtime esterno.
 
+## Corpus CORSE_PDE (026)
+
+La trascrizione versionata delle 15 righe dell’Excel del collega è in
+`src/rpsd_config/exchange_agreement/data/corse_pde.json`, con SHA-256 della
+fonte, classificazioni, ambiti, dimensioni e versioni XPath originali.
+Il catalogo eseguibile sul file comprende NX-000 (XSD) e NX-001–013 (XPath).
+WF-001 resta esclusa: fonte e fase dell’approvazione EA non sono definite.
+Il profilo è una fixture dei requisiti del file, non una certificazione
+completa del processo CORSE_PDE né un’implementazione del suo calcolo.
+
+Il bundle e l’esempio 5T sono in
+`tests_integration/exchange_agreement/fixtures/corse_pde/upstream/`.
+Provengono dal checkout locale `5Tsrl/netex-italian-profile`, commit
+`cecb0cde1820650af1d7b829107bef1ee8635ed7`; i contenuti originali conservano
+le proprie note di copyright. Il bundle contiene i sette XSD della chiusura
+include/import e `manifest.json` con entrypoint `NeTEx_publication_Lev5.xsd`.
+Gli hash dei file e dello ZIP sono nel corpus. Non si scaricano XSD remoti.
+
+Per caricare il catalogo su un target scelto:
+
+1. Nell’interfaccia asset caricare lo ZIP come `netex.zip`, tipo NeTEx XSD,
+   e attivarlo esplicitamente. Annotare l’ID dell’asset.
+2. Eseguire con un amministratore di piattaforma:
+
+```bash
+uv run manage seed_corse_pde_catalog --actor NOME_UTENTE --schema-asset-id ID_ASSET
+```
+
+Il comando crea `netex-corse-pde_001`, l’indicatore fixture
+`corse-pde-file-checks_001` e il profilo `corse-pde-file-demo_001`; non crea
+contratti, utenti, deployment o risultati. Il seed richiede il bundle attivo
+con il checksum esatto. Un asset diverso, una versione ritirata o una
+composizione pubblicata incompleta/differente producono un errore, senza
+completamenti silenziosi. La seconda esecuzione conserva le versioni pubblicate.
+
+NX-000 usa `reject_import`; gli XPath usano `indicator_only`. «Bloccante» nel
+foglio significa impatto `calculation` sull’indicatore, non rifiuto del dataset.
+Le altre regole hanno impatto `dimension`, con tutte le dimensioni della riga.
+NX-006 dichiara anche il namespace `xs`; le versioni 1.0/2.0/3.1 sono conservate.
+NX-005 mantiene il target originale `operatingPeriods/*`: il predicato non
+restringe il tipo al solo UicOperatingPeriod. Gli XPath sono trascritti come
+fixture del collega, senza certificazione aggiuntiva della semantica business.
+
+La directory fixture include un XML positivo per i 13 XPath, 13 casi negativi,
+un file con radice XSD errata e `cases.json` con gli esiti attesi. Il caso
+NX-008 viola anche NX-010: gli esiti non vengono forzati a una sola regola.
+Gli XML sintetici testano gli XPath; non sono esempi di documenti validi Lev5.
+Per il positivo XSD si usa l’esempio originale 5T con checksum congelato.
+
+Per ripetere il controllo delle fixture con dipendenze temporanee isolate:
+
+```bash
+uv run --no-project --with saxonche==12.9.0 --with lxml==6.0.2 \
+  python scripts/verify_corse_pde_corpus.py
+```
+
+La verifica conferma: esempio 5T valido XSD, NX-004 con 1 violazione e NX-013
+con 4; caso XPath positivo e tutti i casi negativi conformi agli attesi.
+Il report indica lo scope «isolated engines; no Prefect or ingestion».
+Il controllo usa SaxonC-HE 12.9 per tutti gli XPath e lxml 6.0.2 per l’XSD;
+non attesta la compatibilità degli XPath 1.0 con altri motori. Le dipendenze
+non sono aggiunte al servizio Django. [API Saxonica](https://www.saxonica.com/saxon-c/doc12/python/xpath_processor.html).
+
 ## Cataloghi e revisioni nell’interfaccia (025)
 
 Il catalogo tecnico permette di consultare la definizione completa di una regola,

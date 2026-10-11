@@ -1,0 +1,71 @@
+<?xml version='1.0' encoding='utf-8'?>
+<n:PublicationDelivery xmlns:n="http://www.netex.org.uk/netex">
+  <n:dataObjects>
+    <n:TimetableFrame>
+      <n:vehicleJourneys>
+        <n:ServiceJourney id="SJ1">
+          <n:dayTypes>
+            <n:DayTypeRef ref="DT1" />
+          </n:dayTypes>
+          <n:LineRef ref="L1" />
+          <n:ServiceJourneyPatternRef ref="P1" />
+          <n:DepartureTime>08:00:00</n:DepartureTime>
+          <n:passingTimes>
+            <n:TimetabledPassingTime>
+              <n:DepartureTime>08:00:00</n:DepartureTime>
+            </n:TimetabledPassingTime>
+            <n:TimetabledPassingTime>
+              <n:DepartureTime>08:10:00</n:DepartureTime>
+            </n:TimetabledPassingTime>
+          </n:passingTimes>
+        </n:ServiceJourney>
+      </n:vehicleJourneys>
+    </n:TimetableFrame>
+    <n:ServiceCalendarFrame>
+      <n:dayTypes>
+        <n:DayType id="DT1" />
+      </n:dayTypes>
+      <n:dayTypeAssignments>
+        <n:DayTypeAssignment id="A1">
+          <n:DayTypeRef ref="DT1" />
+          <n:OperatingPeriodRef ref="OP1" />
+        </n:DayTypeAssignment>
+      </n:dayTypeAssignments>
+      <n:operatingPeriods>
+        <n:UicOperatingPeriod id="OP1">
+          <n:FromDate>2026-04-20T00:00:00</n:FromDate>
+          <n:ToDate>2026-04-21T00:00:00</n:ToDate>
+          <n:ValidDayBits>11</n:ValidDayBits>
+        </n:UicOperatingPeriod>
+      </n:operatingPeriods>
+    </n:ServiceCalendarFrame>
+    <n:ServiceFrame>
+      <n:ServiceJourneyPattern id="P1">
+        <n:RouteView>
+          <n:LineRef ref="L1" />
+        </n:RouteView>
+        <n:RouteRef ref="R1" />
+        <n:pointsInSequence>
+          <n:StopPointInJourneyPattern>
+            <n:ScheduledStopPointRef ref="S1" />
+          </n:StopPointInJourneyPattern>
+          <n:StopPointInJourneyPattern>
+            <n:ScheduledStopPointRef ref="S2" />
+          </n:StopPointInJourneyPattern>
+        </n:pointsInSequence>
+      </n:ServiceJourneyPattern>
+      <n:Route id="R1">
+        <n:LineRef ref="L1" />
+      </n:Route>
+      <n:Line id="L1" />
+    </n:ServiceFrame>
+    <n:GeneralFrame>
+      <n:members>
+        <n:JourneyAccounting id="JA1">
+          <n:AccountedObjectRef ref="SJ1" />
+        </n:JourneyAccounting>
+        <n:VehicleType id="V1" />
+      </n:members>
+    </n:GeneralFrame>
+  </n:dataObjects>
+</n:PublicationDelivery>

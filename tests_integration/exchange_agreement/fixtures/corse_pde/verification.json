@@ -1,0 +1,55 @@
+{
+  "schema_valid_5t": true,
+  "schema_invalid_fixture_rejected": true,
+  "verification_scope": "isolated engines; no Prefect or ingestion",
+  "cases": {
+    "xpath_valid.xml": {},
+    "nx-001_invalid.xml": {
+      "NX-001": 1
+    },
+    "nx-002_invalid.xml": {
+      "NX-002": 1
+    },
+    "nx-003_invalid.xml": {
+      "NX-003": 1
+    },
+    "nx-004_invalid.xml": {
+      "NX-004": 1
+    },
+    "nx-005_invalid.xml": {
+      "NX-005": 1
+    },
+    "nx-006_invalid.xml": {
+      "NX-006": 1
+    },
+    "nx-007_invalid.xml": {
+      "NX-007": 1
+    },
+    "nx-008_invalid.xml": {
+      "NX-008": 1,
+      "NX-010": 1
+    },
+    "nx-009_invalid.xml": {
+      "NX-009": 1
+    },
+    "nx-010_invalid.xml": {
+      "NX-010": 1
+    },
+    "nx-011_invalid.xml": {
+      "NX-011": 1
+    },
+    "nx-012_invalid.xml": {
+      "NX-012": 1
+    },
+    "nx-013_invalid.xml": {
+      "NX-013": 1
+    },
+    "example_5t.xml": {
+      "NX-004": 1,
+      "NX-013": 4
+    }
+  },
+  "engine": "SaxonC-HE 12.9 from Saxonica",
+  "lxml_version": "6.0.2",
+  "prefect_runtime_verified": false
+}

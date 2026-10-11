@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "prefect_runtime_verified": false,
+  "cases": [
+    {
+      "file": "xpath_valid.xml",
+      "expected_failed_xpath_rules": [],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-001_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-001"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-002_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-002"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-003_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-003"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-004_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-004"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-005_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-005"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-006_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-006"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-007_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-007"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-008_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-008",
+        "NX-010"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-009_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-009"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-010_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-010"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-011_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-011"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-012_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-012"
+      ],
+      "schema_validity": "not_asserted"
+    },
+    {
+      "file": "nx-013_invalid.xml",
+      "expected_failed_xpath_rules": [
+        "NX-013"
+      ],
+      "schema_validity": "not_asserted"
+    }
+  ]
+}
