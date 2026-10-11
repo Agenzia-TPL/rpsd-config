@@ -141,7 +141,18 @@ def validate_rule_definition(
             raise ValidationError(
                 "Invalid bundle descriptor values.", code="invalid_definition_options"
             )
-        if not re.fullmatch(r"[a-f0-9]{64}", descriptor["bundle_sha256"]):
+        from rpsd_config.exchange_agreement.services.schema_bundles import (
+            validate_bundle_path,
+        )
+
+        validate_bundle_path(descriptor["entrypoint"])
+        if (
+            not descriptor["entrypoint"].endswith(".xsd")
+            or len(descriptor["asset_version"]) > 10
+            or not re.fullmatch(r"[1-9][0-9]*", descriptor["asset_version"])
+            or int(descriptor["asset_version"]) > 2147483647
+            or not re.fullmatch(r"[a-f0-9]{64}", descriptor["bundle_sha256"])
+        ):
             raise ValidationError(
                 "Invalid bundle digest.", code="invalid_definition_options"
             )
@@ -151,6 +162,11 @@ def validate_rule_definition(
         "spreadsheet_expression",
         "text_expression",
     }:
+        if set(options) != set(capability.option_keys):
+            raise ValidationError(
+                "Explicit format options are required.",
+                code="invalid_definition_options",
+            )
         try:
             descriptor = json.loads(definition)
         except (ValueError, TypeError) as exc:
@@ -224,8 +240,12 @@ def capability_manifest() -> list[dict]:
     """Return deterministic capability metadata for operational checks."""
     return [
         {
-            name: list(value) if isinstance(value, tuple) else value
-            for name, value in asdict(CAPABILITIES[key]).items()
+            **{
+                name: list(value) if isinstance(value, tuple) else value
+                for name, value in asdict(CAPABILITIES[key]).items()
+            },
+            "definition_contract_version": "1",
+            "runtime_status": "external_not_verified",
         }
         for key in sorted(CAPABILITIES)
     ]

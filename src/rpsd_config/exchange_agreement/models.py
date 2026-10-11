@@ -205,7 +205,50 @@ def indicator_profile_upload_path(instance, filename):
     return _platform_initialization_file_path(category="indicators", filename=filename)
 
 
+BUNDLE_IDENTITY_FIELDS = {
+    "asset_type",
+    "what",
+    "version",
+    "original_filename",
+    "checksum_sha256",
+    "size_bytes",
+    "bundle_manifest",
+    "storage_url",
+    "storage_provider",
+    "storage_key",
+}
+
+
+class ConfigurationAssetQuerySet(models.QuerySet):
+    """Preserve bundle identity while allowing activation and event updates."""
+
+    def update(self, **kwargs):
+        if BUNDLE_IDENTITY_FIELDS.intersection(kwargs) and (
+            self.exclude(bundle_manifest={}).exists() or kwargs.get("bundle_manifest")
+        ):
+            raise ValidationError(
+                "Schema bundle identity is immutable.", code="immutable_schema_bundle"
+            )
+        return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if BUNDLE_IDENTITY_FIELDS.intersection(fields):
+            raise ValidationError(
+                "Bulk bundle metadata updates are unsupported.",
+                code="immutable_schema_bundle",
+            )
+        return super().bulk_update(objs, fields, batch_size=batch_size)
+
+    def bulk_create(self, objs, **kwargs):
+        objs = list(objs)
+        if any(obj.bundle_manifest for obj in objs):
+            raise ValidationError("Store schema bundles through the upload service.")
+        return super().bulk_create(objs, **kwargs)
+
+
 class ConfigurationAsset(TimeStampedModel):
+    objects = ConfigurationAssetQuerySet.as_manager()
+
     class AssetType(models.TextChoices):
         NETEX_XSD = "netex_xsd", _("NeTEx XSD")
         SIRI_PROFILE = "siri_profile", _("SIRI profile")
@@ -341,6 +384,25 @@ class ConfigurationAsset(TimeStampedModel):
         except ValidationError as exc:
             errors["original_filename"] = exc.messages
 
+        if self.bundle_manifest:
+            from rpsd_config.exchange_agreement.services.schema_bundles import (
+                validate_bundle_manifest,
+            )
+
+            try:
+                validate_bundle_manifest(self.bundle_manifest)
+                if self.bundle_manifest["bundle_sha256"] != self.checksum_sha256:
+                    raise ValidationError("Bundle digest differs from asset checksum.")
+            except ValidationError as exc:
+                errors["bundle_manifest"] = exc.messages
+        if self.pk:
+            original = type(self).objects.get(pk=self.pk)
+            if original.bundle_manifest and any(
+                getattr(self, field) != getattr(original, field)
+                for field in BUNDLE_IDENTITY_FIELDS
+            ):
+                errors["bundle_manifest"] = _("Schema bundle identity is immutable.")
+
         if self.is_active:
             self.status = self.Status.ACTIVE
             if self.activated_at is None:
@@ -355,7 +417,10 @@ class ConfigurationAsset(TimeStampedModel):
         if errors:
             raise ValidationError(errors)
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        if self.pk:
+            type(self).objects.select_for_update().get(pk=self.pk)
         self.full_clean()
         return super().save(*args, **kwargs)
 

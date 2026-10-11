@@ -342,3 +342,71 @@ manca, il risultato resta sconosciuto. Config non produce esiti o percentuali.
 Il comando di sola lettura `uv run manage indicator_artifact_inventory` elenca
 separatamente i riferimenti di provenienza delle versioni e i file YAML legacy.
 Non elimina file o riferimenti: la dismissione operativa resta nella 026.
+
+
+## Bundle XSD e descrittori di validazione (023)
+
+Gli asset NeTEx e SIRI accettano ZIP contenenti la cartella degli XSD. Con un
+solo XSD l'entrypoint è individuato automaticamente; con più XSD aggiungere
+`manifest.json` all'archivio:
+
+```json
+{"entrypoint": "schemas/root.xsd"}
+```
+
+All'upload Config genera un manifest versione 1 con entrypoint, SHA-256 dello
+ZIP e, per ciascun file, percorso, dimensione e SHA-256. Gli XSD devono essere
+UTF-8 (BOM consentito). Include, import e redefine devono avere una
+schemaLocation risolvibile nel bundle; sono ammessi riferimenti `../` fra
+cartelle interne, senza uscire dal bundle. Gli import senza posizione esplicita
+sono respinti. Config ispeziona il bundle; non compila l'XSD né valida dataset.
+
+Limiti: 4096 elementi ZIP, 128 MiB per archivio e contenuto totale non compresso,
+8 MiB per file. Sono respinti percorsi assoluti/non canonici, duplicati, symlink,
+file speciali, file cifrati, DTD, entità XML e dipendenze remote. Il bundle non
+viene estratto sul filesystem. Metadati e posizione storage di un bundle
+memorizzato non si modificano: per cambiarlo caricare una nuova versione.
+Attivazione, archiviazione e label restano disponibili.
+
+Collegare il bundle alla versione dataset con ruolo `validation_schema`.
+Una regola `xsd_bundle`, lingua `1.0`, risultato `structured_report`, opzioni
+vuote, usa questa definizione JSON (digest sostituito con quello dell'upload):
+
+```json
+{
+  "asset_code": "netex",
+  "asset_version": "1",
+  "entrypoint": "schemas/root.xsd",
+  "bundle_sha256": "<64 caratteri esadecimali minuscoli>"
+}
+```
+
+L'associazione regola/dataset richiede un bundle collegato con versione,
+entrypoint e digest coincidenti. Al download Config verifica nuovamente ZIP,
+file e manifest. L'endpoint v3 restituisce 409 per integrità non valida e 404
+per contenuto assente, con un codice di errore esplicito. Il piano della 022
+congelerà queste identità; i checksum degli snapshot storici restano invariati.
+
+Il registro locale descrive contratti di definizione, non interpreti installati.
+`uv run manage validation_execution_manifest` espone
+`definition_contract_version=1` e `runtime_status=external_not_verified`.
+XPath accetta lingua 1.0/2.0/3.1, namespace espliciti e risultato
+`violating_entities`; Config non verifica la compilazione XPath sul motore
+esterno. Non trasforma espressioni relazionali in semplici controlli di presenza.
+Per NX-005 conserva il target e il matching esatti dell'espressione fornita:
+non sostituisce `operatingPeriods/*` con UicOperatingPeriod né aggiunge @version.
+
+I contratti non XML iniziali sono limitati alle seguenti definizioni JSON nella
+stringa `definition`; lingua `1`, risultato `violating_entities`:
+
+| Tipo | Definizione | Opzioni esplicite richieste |
+|---|---|---|
+| `csv_expression` | `{"predicate":"required_columns","columns":["id","line"]}` | `{"delimiter":";","encoding":"utf-8","header":true}` |
+| `spreadsheet_expression` | `{"predicate":"required_columns","columns":["id"]}` | `{"sheet":"Journeys","header_row":1}` |
+| `text_expression` | `{"predicate":"matches","pattern":"^[0-9]+$","scope":"line"}` | `{"encoding":"utf-8"}` |
+
+Sono validate struttura, colonne uniche, opzioni e sintassi regex locale.
+Questi contratti non certificano esiti su CSV/Excel/TXT: il futuro validator
+stabilirà lettura dati, trattamento celle vuote/tipi/formule, versione del
+motore e limiti runtime. Non si eseguono formule, macro o controlli in Config.
+`application_state` resta non supportato finché fonte e fase EA sono definite.

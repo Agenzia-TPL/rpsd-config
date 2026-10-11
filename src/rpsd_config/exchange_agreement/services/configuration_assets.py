@@ -346,6 +346,12 @@ def load_configuration_asset_content(asset: ConfigurationAsset) -> bytes:
     checksum = hashlib.sha256(content).hexdigest()
     if checksum != asset.checksum_sha256:
         raise ValidationError("Configuration asset checksum mismatch.")
+    if asset.bundle_manifest:
+        from rpsd_config.exchange_agreement.services.schema_bundles import (
+            verify_schema_bundle,
+        )
+
+        verify_schema_bundle(content, asset.bundle_manifest)
     return content
 
 

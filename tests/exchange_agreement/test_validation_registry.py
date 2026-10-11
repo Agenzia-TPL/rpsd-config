@@ -117,3 +117,43 @@ class ValidationRegistryTests(SimpleTestCase):
             ):
                 validate_rule_definition(**self.values(**values))
             self.assertEqual(error.exception.code, code)
+
+    def test_non_xml_definition_contracts_and_explicit_options(self):
+        for kind, definition, options in (
+            (
+                "csv_expression",
+                {"predicate": "required_columns", "columns": ["id", "line"]},
+                {"delimiter": ";", "encoding": "utf-8", "header": True},
+            ),
+            (
+                "spreadsheet_expression",
+                {"predicate": "required_columns", "columns": ["id"]},
+                {"sheet": "Journeys", "header_row": 1},
+            ),
+            (
+                "text_expression",
+                {"predicate": "matches", "pattern": "^[0-9]+$", "scope": "line"},
+                {"encoding": "utf-8"},
+            ),
+        ):
+            values = self.values(
+                validation_type=kind,
+                definition=json.dumps(definition),
+                language_version="1",
+                options=options,
+            )
+            validate_rule_definition(**values)
+            with self.subTest(kind=kind), self.assertRaises(ValidationError):
+                validate_rule_definition(**(values | {"options": {}}))
+        for capability in capability_manifest():
+            self.assertEqual(capability["runtime_status"], "external_not_verified")
+
+    def test_nx005_is_kept_as_a_relational_expression(self):
+        expression = (
+            "//n:DayTypeAssignment/n:OperatingPeriodRef"
+            "[not(@ref = //n:operatingPeriods/*/@id)]"
+        )
+        validate_rule_definition(**self.values(definition=expression))
+        # Config stores the exact supplied expression, without narrowing targets
+        # or adding a version join not present in the source requirement.
+        self.assertIn("operatingPeriods/*/@id", expression)

@@ -10,7 +10,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Q
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from ninja import NinjaAPI, Schema
@@ -2653,7 +2653,23 @@ def m2m_validation_asset_download(
         return m2m_api.create_response(
             request, {"detail": "Asset not found"}, status=404
         )
-    content = load_configuration_asset_content(asset)
+    try:
+        content = load_configuration_asset_content(asset)
+    except ValidationError as exc:
+        return m2m_api.create_response(
+            request,
+            {
+                "code": getattr(exc, "code", "invalid_schema_bundle"),
+                "detail": "Validation asset integrity check failed",
+            },
+            status=409,
+        )
+    except Http404:
+        return m2m_api.create_response(
+            request,
+            {"code": "missing_asset", "detail": "Asset content not found"},
+            status=404,
+        )
     if hashlib.sha256(content).hexdigest() != asset.checksum_sha256:
         return m2m_api.create_response(
             request, {"detail": "Asset checksum mismatch"}, status=409

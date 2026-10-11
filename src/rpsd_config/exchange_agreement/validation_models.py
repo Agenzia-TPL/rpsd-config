@@ -436,6 +436,13 @@ class DatasetVersionRule(FrozenComposition):
                 code="unsupported_rule_format",
             )
 
+        if rule.validation_type == "xsd_bundle":
+            from rpsd_config.exchange_agreement.services.schema_bundles import (
+                validate_bundle_rule_asset,
+            )
+
+            validate_bundle_rule_asset(spec, rule)
+
 
 class DimensionIdentityQuerySet(models.QuerySet):
     """Protect codes referenced by published bindings and frozen snapshots."""
