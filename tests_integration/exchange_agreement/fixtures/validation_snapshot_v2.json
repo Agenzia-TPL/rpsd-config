@@ -1,0 +1,219 @@
+{
+  "contract": {
+    "code": "VALIDATION-PLAN-001"
+  },
+  "dependency_edges": [
+    {
+      "calculation_failure": "propagate_for_mapped_entities",
+      "dependent": "demo-composed-performance_001",
+      "dimension_failure": "propagate_only_required_dimensions",
+      "missing_entity_mapping": "unknown",
+      "prerequisite": "demo-journey-count_001",
+      "required_dimensions": []
+    }
+  ],
+  "effective_indicators": [
+    {
+      "artifact_identifier": "git:rpsd-flows@validation-demo",
+      "code": "demo-composed-performance_001",
+      "execution_reference": "indicators/demo-composed-performance",
+      "indicator_code": "demo-composed-performance",
+      "input_schema": {},
+      "output_schema": {},
+      "parameter_schema": {},
+      "role": "selected",
+      "version": "001"
+    },
+    {
+      "artifact_identifier": "git:rpsd-flows@validation-demo",
+      "code": "demo-journey-count_001",
+      "execution_reference": "indicators/demo-journey-count",
+      "indicator_code": "demo-journey-count",
+      "input_schema": {},
+      "output_schema": {},
+      "parameter_schema": {},
+      "role": "dependency",
+      "version": "001"
+    }
+  ],
+  "indicator_configurations": [
+    {
+      "aggregation": {},
+      "indicator_version_code": "demo-composed-performance_001",
+      "parameters": {},
+      "penalties": {},
+      "thresholds": {}
+    },
+    {
+      "aggregation": {},
+      "indicator_version_code": "demo-journey-count_001",
+      "parameters": {},
+      "penalties": {},
+      "thresholds": {}
+    }
+  ],
+  "indicator_execution_order": [
+    "demo-journey-count_001",
+    "demo-composed-performance_001"
+  ],
+  "indicators": [
+    {
+      "aggregation": {},
+      "fragments": [],
+      "indicator_code": "demo-composed-performance",
+      "indicator_version": {
+        "artifact_identifier": "git:rpsd-flows@validation-demo",
+        "code": "demo-composed-performance_001",
+        "execution_engine": "prefect",
+        "execution_reference": "indicators/demo-composed-performance",
+        "version": "001"
+      },
+      "parameters": {},
+      "penalties": {},
+      "thresholds": {}
+    }
+  ],
+  "inputs": [
+    {
+      "assets": [],
+      "dataset_code": "netex",
+      "dataset_description": "",
+      "dataset_name": "netex",
+      "dataset_specification": {
+        "code": "netex-validation-demo_001",
+        "version": "validation-demo-001"
+      },
+      "input_flow": {
+        "artifact_identifier": "git:rpsd-flows@validation-demo",
+        "code": "validation-demo-netex_001",
+        "deployment_name": "validators/netex-demo",
+        "engine": "prefect",
+        "version": "001"
+      },
+      "rule_bindings": [
+        {
+          "consumers": [
+            {
+              "affected_dimensions": [
+                "line"
+              ],
+              "dependency_paths": [
+                [
+                  "demo-composed-performance_001",
+                  "demo-journey-count_001"
+                ]
+              ],
+              "impact": "dimension",
+              "indicator_version_code": "demo-journey-count_001"
+            }
+          ],
+          "import_policy": "indicator_only",
+          "rule_code": "netex-demo-line",
+          "rule_version": "001"
+        },
+        {
+          "consumers": [],
+          "import_policy": "reject_import",
+          "rule_code": "netex-demo-presence",
+          "rule_version": "001"
+        }
+      ]
+    },
+    {
+      "assets": [],
+      "dataset_code": "siri-vm",
+      "dataset_description": "",
+      "dataset_name": "siri-vm",
+      "dataset_specification": {
+        "code": "siri-vm-validation-demo_001",
+        "version": "validation-demo-001"
+      },
+      "input_flow": {
+        "artifact_identifier": "git:rpsd-flows@validation-demo",
+        "code": "validation-demo-siri-vm_001",
+        "deployment_name": "validators/siri-vm-demo",
+        "engine": "prefect",
+        "version": "001"
+      },
+      "rule_bindings": [
+        {
+          "consumers": [],
+          "import_policy": "reject_import",
+          "rule_code": "siri-vm-demo-presence",
+          "rule_version": "001"
+        }
+      ]
+    }
+  ],
+  "orchestration_flow": {
+    "artifact_identifier": "git:rpsd-flows@validation-demo",
+    "code": "validation-demo-processing_001",
+    "deployment_name": "contracts/validation-demo",
+    "engine": "prefect",
+    "version": "001"
+  },
+  "processing_profile": {
+    "code": "validation-demo_001",
+    "description": "Two async inputs; root inherits a shared prerequisite",
+    "name": "Target validation demo",
+    "version": "001"
+  },
+  "revision": {
+    "code": "VALIDATION-PLAN-001-r001",
+    "valid_from": "2026-10-11"
+  },
+  "selected_indicators": [
+    "demo-composed-performance_001"
+  ],
+  "snapshot_schema_version": "canonical-json-v2",
+  "validation_rules": [
+    {
+      "definition": "//n:ServiceJourney[not(n:LineRef)]",
+      "description": "",
+      "execution_reference": "validators/netex-demo",
+      "language_version": "1.0",
+      "name": "Line dimension",
+      "options": {
+        "namespaces": {
+          "n": "http://www.netex.org.uk/netex"
+        }
+      },
+      "result_contract": "violating_entities",
+      "rule_code": "netex-demo-line",
+      "rule_version": "001",
+      "validation_type": "xpath"
+    },
+    {
+      "definition": "/*[not(//n:ServiceJourney)]",
+      "description": "",
+      "execution_reference": "validators/netex-demo",
+      "language_version": "1.0",
+      "name": "Required netex entities",
+      "options": {
+        "namespaces": {
+          "n": "http://www.netex.org.uk/netex"
+        }
+      },
+      "result_contract": "violating_entities",
+      "rule_code": "netex-demo-presence",
+      "rule_version": "001",
+      "validation_type": "xpath"
+    },
+    {
+      "definition": "/*[not(//n:VehicleActivity)]",
+      "description": "",
+      "execution_reference": "validators/siri-vm-demo",
+      "language_version": "1.0",
+      "name": "Required siri-vm entities",
+      "options": {
+        "namespaces": {
+          "n": "http://www.siri.org.uk/siri"
+        }
+      },
+      "result_contract": "violating_entities",
+      "rule_code": "siri-vm-demo-presence",
+      "rule_version": "001",
+      "validation_type": "xpath"
+    }
+  ]
+}

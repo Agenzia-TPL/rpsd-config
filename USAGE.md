@@ -410,3 +410,57 @@ Questi contratti non certificano esiti su CSV/Excel/TXT: il futuro validator
 stabilirà lettura dati, trattamento celle vuote/tipi/formule, versione del
 motore e limiti runtime. Non si eseguono formule, macro o controlli in Config.
 `application_state` resta non supportato finché fonte e fase EA sono definite.
+
+
+## Piano di validazione congelato (022)
+
+La revisione approvata conserva uno snapshot `canonical-json-v2` quando usa il
+modello di validazione target. Include input e asset, catalogo deduplicato delle
+regole, politiche di import, consumatori, dipendenze, ordine di calcolo e valori
+contrattuali separati. L'approvazione ricontrolla configurazione e parametri e
+calcola il checksum nella stessa transazione. Gli snapshot legacy rimangono v1:
+non vengono riscritti o arricchiti leggendo il catalogo corrente.
+
+Il consumer interroga:
+
+```text
+GET /exchange_agreement/api/m2m/v3/contracts/{contract_code}/validation-plan?data_category=netex
+Authorization: Bearer <token>
+```
+
+È ammesso un solo parametro `data_category`; categorie non configurate non
+producono un piano vuoto. La data è quella del server. L'autorizzazione M2M
+richiede azienda titolare e grant ingest valido per contratto/categoria; il
+servizio validator può usare un client esplicitamente autorizzato tramite
+VALIDATION_M2M_ALLOWED_CLIENT_IDS. Un token valido da solo non concede accesso.
+
+La risposta `validation-plan-v1` contiene il solo input richiesto e le sue
+regole, con consumatori e provenienza, oltre alla chiusura degli indicatori e
+alle configurazioni congelate. `scope=transfer` indica che descrive il
+contributo di quel file; non attesta disponibilità degli altri input o
+calcolabilità globale. Config non esegue le regole.
+
+`configuration_revision_code`, `snapshot_schema_version` e `snapshot_checksum`
+identificano lo snapshot completo. `plan_digest` è il SHA-256 del JSON canonico
+del piano senza il proprio campo digest; non è il checksum dello snapshot
+completo. Il consumer deve verificare questo digest e conservare contenuto e
+identità del piano all'ammissione. I retry riusano quel contenuto: richiamare
+l'endpoint current-only potrebbe restituire una revisione successiva. Config
+non conserva job/transfer e non certifica la persistenza dei retry in ingest.
+
+La serializzazione conserva le convenzioni v1: chiavi ordinate, UTF-8/Unicode,
+null e liste vuote, interi e booleani; Decimal è una stringa decimale. I float
+non sono ammessi nel JSON canonico. Il reader rifiuta strutture incomplete,
+regole duplicate o mancanti, consumatori incoerenti, configurazioni incomplete
+e ordine di calcolo non coerente. La lettura del piano non interroga cataloghi
+live di indicatori/regole. Anche i metadati contratto/revisione sono verificati.
+
+Gli errori usano l'envelope `error` con code, message e correlation_id:
+401 authentication_failed, 403 ingest_not_authorized, 404 contract_not_found,
+422 invalid_request, 503 configuration_service_unavailable e 409 per contratto
+non efficace, configurazione non pronta/incoerente o categoria non configurata.
+Per snapshot v1 il piano target restituisce `validation_plan_not_available`:
+serve una nuova revisione target. Non deduce policy dalla severity legacy.
+Gli endpoint v1/v2 conservano i contratti precedenti, verificati con fixture
+storiche. Audit del piano include revisione, categoria, schema e checksum senza
+registrare token, definizioni di regole o contenuto dei dataset.

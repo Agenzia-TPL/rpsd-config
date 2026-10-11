@@ -2,11 +2,16 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Config-only target plan, API authorization and immutable revision evidence."""
 
+import json
+from copy import deepcopy
+from dataclasses import replace
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db import OperationalError
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -16,6 +21,8 @@ from rpsd_config.exchange_agreement.models import (
     Contract,
     ContractDependencyConfiguration,
     IndicatorVersion,
+    IntegrationGrant,
+    IntegrationPrincipal,
     Lot,
     ValidationRuleVersion,
 )
@@ -25,6 +32,7 @@ from rpsd_config.exchange_agreement.services.contract_revisions import (
     create_revision_draft,
 )
 from rpsd_config.exchange_agreement.services.ingest_resolution import (
+    IngestResolutionError,
     resolve_current_ingest_configuration,
 )
 from rpsd_config.exchange_agreement.services.revision_indicator_values import (
@@ -280,11 +288,150 @@ class ValidationPlanTests(TestCase):
             ContractDependencyConfiguration,
         )
 
-        root = (
-            self.revision.indicator_configurations.get()
-            .processing_profile_indicator_version.indicator_version
-        )
+        configuration = self.revision.indicator_configurations.get()
+        link = configuration.processing_profile_indicator_version
+        root = link.indicator_version
         with self.assertRaises(ValidationError):
             ContractDependencyConfiguration.objects.create(
                 revision=self.revision, indicator_version=root
+            )
+
+    def test_reader_rejects_corrupt_frozen_structures_without_live_queries(self):
+        self.approve()
+        resolution = resolve_current_ingest_configuration(self.contract, "netex")
+        for mutation in (
+            lambda s: s["validation_rules"].append(deepcopy(s["validation_rules"][0])),
+            lambda s: s["effective_indicators"].clear(),
+            lambda s: s["indicator_configurations"].clear(),
+            lambda s: s["indicator_execution_order"].reverse(),
+            lambda s: s["inputs"][0].update(rule_bindings=[None]),
+            lambda s: s["inputs"][0]["rule_bindings"][0].update(rule_code="missing"),
+        ):
+            snapshot = deepcopy(resolution.snapshot)
+            mutation(snapshot)
+            with self.subTest(mutation=mutation), self.assertNumQueries(0):
+                with self.assertRaises(IngestResolutionError) as error:
+                    validation_plan_from_resolution(
+                        replace(resolution, snapshot=snapshot)
+                    )
+                self.assertEqual(
+                    error.exception.code, "configuration_invariant_violation"
+                )
+
+    def test_legacy_plan_is_not_synthesized(self):
+        self.approve()
+        resolution = resolve_current_ingest_configuration(self.contract, "netex")
+        with (
+            self.assertNumQueries(0),
+            self.assertRaises(IngestResolutionError) as error,
+        ):
+            validation_plan_from_resolution(
+                replace(resolution, snapshot_schema_version="canonical-json-v1")
+            )
+        self.assertEqual(error.exception.code, "validation_plan_not_available")
+
+    def test_acquired_plan_remains_pinned_after_new_revision(self):
+        self.approve()
+        resolution = resolve_current_ingest_configuration(self.contract, "netex")
+        old_plan = validation_plan_from_resolution(resolution)
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        new_revision = create_revision_draft(
+            self.contract,
+            self.profile,
+            tomorrow,
+            self.admin,
+            change_reason="Next revision",
+        )
+        approve_revision(new_revision, self.admin)
+        with patch(
+            "rpsd_config.exchange_agreement.services.ingest_resolution.timezone.localdate",
+            return_value=tomorrow,
+        ):
+            current = resolve_current_ingest_configuration(self.contract, "netex")
+        new_plan = validation_plan_from_resolution(current)
+        self.assertNotEqual(old_plan["plan_digest"], new_plan["plan_digest"])
+        with self.assertNumQueries(0):
+            self.assertEqual(validation_plan_from_resolution(resolution), old_plan)
+        # Consumers persist this content/digest; Config does not create ingest jobs.
+
+    def test_invalid_query_and_unavailable_database_have_stable_envelopes(self):
+        self.approve()
+        for query in (
+            "",
+            "?data_category=netex&data_category=siri-vm",
+            "?data_category=netex&extra=1",
+        ):
+            response = self.get_api(query=query)
+            self.assertEqual(response.status_code, 422)
+        with patch(
+            "rpsd_config.exchange_agreement.api.resolve_current_ingest_configuration",
+            side_effect=OperationalError("Unavailable"),
+        ):
+            response = self.get_api()
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("configuration_service_unavailable", response.content.decode())
+
+    def test_complete_snapshot_matches_golden_fixture(self):
+        self.approve()
+        actual = deepcopy(self.revision.configuration_snapshot)
+        actual["revision"]["valid_from"] = "2026-10-11"
+        expected = json.loads(
+            (
+                Path(__file__).parent / "fixtures" / "validation_snapshot_v2.json"
+            ).read_text()
+        )
+        self.assertEqual(actual, expected)
+        self.assertEqual(
+            canonical_snapshot_checksum(actual), canonical_snapshot_checksum(expected)
+        )
+        # Golden contains stable catalog codes, never local IDs or storage secrets.
+        self.assertNotIn('"pk":', json.dumps(actual))
+
+    def test_company_grant_and_tenant_scope_for_v3(self):
+        from rpsd_config.server.m2m_auth import M2MAuthContext
+
+        self.approve()
+        principal = IntegrationPrincipal.objects.create(
+            company=self.contract.contractor_company,
+            name="Company client",
+            environment="prod",
+            keycloak_client_id="plan-company-client",
+            keycloak_client_uuid="plan-company-uuid",
+        )
+        path = (
+            "/exchange_agreement/api/m2m/v3/contracts/"
+            f"{self.contract.contract_code}/validation-plan?data_category=netex"
+        )
+        context = M2MAuthContext(
+            principal=principal,
+            client_id=principal.keycloak_client_id,
+            claims={"azp": principal.keycloak_client_id},
+        )
+        with patch(
+            "rpsd_config.server.m2m_auth.authenticate_m2m_token", return_value=context
+        ):
+            denied = self.client.get(path, HTTP_AUTHORIZATION="Bearer company-token")
+            self.assertEqual(denied.status_code, 403)
+            grant = IntegrationGrant.objects.create(
+                principal=principal,
+                contract=self.contract,
+                action=IntegrationGrant.Action.INGEST_WRITE,
+            )
+            allowed = self.client.get(path, HTTP_AUTHORIZATION="Bearer company-token")
+            self.assertEqual(allowed.status_code, 200, allowed.content)
+            grant.data_category = "siri-vm"
+            grant.save()
+            self.assertEqual(
+                self.client.get(
+                    path, HTTP_AUTHORIZATION="Bearer company-token"
+                ).status_code,
+                403,
+            )
+            principal.company = Company.objects.create(name="Another company")
+            principal.save()
+            self.assertEqual(
+                self.client.get(
+                    path, HTTP_AUTHORIZATION="Bearer company-token"
+                ).status_code,
+                404,
             )

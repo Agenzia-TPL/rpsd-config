@@ -1610,6 +1610,8 @@ def m2m_contract_validation_plan_v3(
         contract_code=contract.contract_code,
         data_category=category,
         revision_code=resolution.revision.code,
+        snapshot_schema_version=resolution.snapshot_schema_version,
+        snapshot_checksum=resolution.snapshot_checksum,
     )
     record_api_usage(
         version="v3",
@@ -1619,6 +1621,7 @@ def m2m_contract_validation_plan_v3(
         contract_code=contract.contract_code,
         data_category=category,
         revision_code=resolution.revision.code,
+
     )
     return plan
 

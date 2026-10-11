@@ -5,6 +5,9 @@
 from dataclasses import dataclass
 from unittest.mock import patch
 
+from django.db import models
+from django.utils import timezone
+
 from rpsd_config.exchange_agreement.models import (
     ContractConfigurationRevision,
     ContractIndicator,
@@ -30,9 +33,6 @@ from rpsd_config.exchange_agreement.services.dataset_catalog import (
 from rpsd_config.exchange_agreement.services.flow_catalog import (
     publish_input_flow_version,
     publish_orchestration_flow_version,
-)
-from rpsd_config.exchange_agreement.services.indicator_catalog import (
-    publish_indicator_version,
 )
 from rpsd_config.exchange_agreement.services.processing_profiles import (
     publish_processing_profile,
@@ -132,7 +132,16 @@ def install_approved_runtime_configuration(
         formula_description="Fixture formula.",
     )
     indicator_version.required_fragments.add(*required_fragments)
-    indicator_version = publish_indicator_version(indicator_version, actor=actor)
+    # Recreate an already-published pre-021 indicator. Historical snapshots
+    # without a calculation reference remain readable; new publication now
+    # requires Prefect. This bypass is confined to a legacy compatibility fixture.
+    models.QuerySet.update(
+        IndicatorVersion.objects.filter(pk=indicator_version.pk),
+        status="published",
+        published_at=timezone.now(),
+        published_by_id=actor.pk,
+    )
+    indicator_version.refresh_from_db()
 
     orchestration = publish_orchestration_flow_version(
         OrchestrationFlowVersion.objects.create(

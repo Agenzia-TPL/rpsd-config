@@ -169,6 +169,133 @@ def build_validation_snapshot(revision, base: dict) -> dict:
     return result
 
 
+def validate_frozen_validation_snapshot(snapshot: dict) -> None:
+    """Reject incomplete v2 plans using frozen data only, without catalog queries."""
+    from rpsd_config.exchange_agreement.services.ingest_resolution import (
+        IngestResolutionError,
+    )
+
+    def fail():
+        raise IngestResolutionError(
+            "configuration_invariant_violation",
+            "The validation snapshot is inconsistent",
+        )
+
+    def rows(name):
+        value = snapshot.get(name)
+        if not isinstance(value, list) or any(not isinstance(x, dict) for x in value):
+            fail()
+        return value
+
+    try:
+        indicators = rows("effective_indicators")
+        codes = [v["code"] for v in indicators]
+        if any(not isinstance(c, str) or not c for c in codes) or len(
+            set(codes)
+        ) != len(codes):
+            fail()
+        selected = snapshot["selected_indicators"]
+        order = snapshot["indicator_execution_order"]
+        if (
+            not isinstance(selected, list)
+            or not isinstance(order, list)
+            or len(set(selected)) != len(selected)
+            or len(set(order)) != len(order)
+            or set(order) != set(codes)
+            or set(selected)
+            != {v["code"] for v in indicators if v["role"] == "selected"}
+            or any(v["role"] not in {"selected", "dependency"} for v in indicators)
+        ):
+            fail()
+        configs = rows("indicator_configurations")
+        if (
+            {c["indicator_version_code"] for c in configs} != set(codes)
+            or len(configs) != len(codes)
+            or any(
+                not isinstance(c.get(f), dict)
+                for c in configs
+                for f in ("parameters", "thresholds", "aggregation", "penalties")
+            )
+        ):
+            fail()
+        for edge in rows("dependency_edges"):
+            if (
+                edge["dependent"] not in codes
+                or edge["prerequisite"] not in codes
+                or order.index(edge["prerequisite"]) >= order.index(edge["dependent"])
+                or not isinstance(edge["required_dimensions"], list)
+            ):
+                fail()
+        rules = rows("validation_rules")
+        keys = [(r["rule_code"], r["rule_version"]) for r in rules]
+        if len(set(keys)) != len(keys):
+            fail()
+        for rule in rules:
+            if any(
+                not isinstance(rule.get(k), str) or not rule[k]
+                for k in (
+                    "rule_code",
+                    "rule_version",
+                    "validation_type",
+                    "definition",
+                    "language_version",
+                    "result_contract",
+                    "execution_reference",
+                )
+            ):
+                fail()
+            if not isinstance(rule.get("options"), dict):
+                fail()
+        inputs = rows("inputs")
+        categories = [i["dataset_code"] for i in inputs]
+        if len(set(categories)) != len(categories):
+            fail()
+        for item in inputs:
+            bindings = item["rule_bindings"]
+            if not isinstance(bindings, list):
+                fail()
+            bound = set()
+            for binding in bindings:
+                key = (binding["rule_code"], binding["rule_version"])
+                if (
+                    key not in keys
+                    or key in bound
+                    or binding["import_policy"]
+                    not in {"reject_import", "warn", "indicator_only"}
+                    or not isinstance(binding["consumers"], list)
+                ):
+                    fail()
+                bound.add(key)
+                for consumer in binding["consumers"]:
+                    if (
+                        consumer["indicator_version_code"] not in codes
+                        or consumer["impact"] not in {"calculation", "dimension"}
+                        or not isinstance(consumer["affected_dimensions"], list)
+                        or not isinstance(consumer["dependency_paths"], list)
+                    ):
+                        fail()
+                    dimensions = consumer["affected_dimensions"]
+                    paths = consumer["dependency_paths"]
+                    if (
+                        any(not isinstance(d, str) or not d for d in dimensions)
+                        or (consumer["impact"] == "dimension" and not dimensions)
+                        or (consumer["impact"] == "calculation" and dimensions)
+                        or not paths
+                    ):
+                        fail()
+                    for path in paths:
+                        if (
+                            not isinstance(path, list)
+                            or not path
+                            or path[0] not in selected
+                            or path[-1] != consumer["indicator_version_code"]
+                            or any(c not in codes for c in path)
+                        ):
+                            fail()
+    except (KeyError, TypeError, ValueError, AttributeError):
+        fail()
+
+
 def validation_plan_from_resolution(resolution) -> dict:
     """Project a dataset subset from the approved snapshot, never from live rules."""
     from rpsd_config.exchange_agreement.services.contract_revisions import (
@@ -184,9 +311,20 @@ def validation_plan_from_resolution(resolution) -> dict:
             "Adopt a target revision before requesting validation rules",
         )
     snapshot = resolution.snapshot
+    validate_frozen_validation_snapshot(snapshot)
     item = next(
-        i for i in snapshot["inputs"] if i["dataset_code"] == resolution.data_category
+        (
+            i
+            for i in snapshot["inputs"]
+            if i["dataset_code"] == resolution.data_category
+        ),
+        None,
     )
+    if item is None:
+        raise IngestResolutionError(
+            "configuration_invariant_violation",
+            "The selected input is missing from the snapshot",
+        )
     if not isinstance(item.get("rule_bindings"), list) or not isinstance(
         snapshot.get("validation_rules"), list
     ):

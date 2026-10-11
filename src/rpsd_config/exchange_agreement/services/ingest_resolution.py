@@ -11,6 +11,7 @@ from rpsd_config.exchange_agreement.models import (
     ContractConfigurationRevision,
 )
 from rpsd_config.exchange_agreement.services.contract_revisions import (
+    ContractRevisionError,
     canonical_snapshot_checksum,
 )
 
@@ -98,18 +99,33 @@ def resolve_current_contract_configuration(
         revision.configuration_snapshot,
         label="snapshot",
     )
+    try:
+        digest = canonical_snapshot_checksum(snapshot)
+    except ContractRevisionError as exc:
+        raise IngestResolutionError(
+            "configuration_invariant_violation",
+            "Current configuration cannot be serialized",
+        ) from exc
     if (
         revision.snapshot_schema_version
         not in {"canonical-json-v1", "canonical-json-v2"}
         or snapshot.get("snapshot_schema_version") != revision.snapshot_schema_version
         or not revision.snapshot_checksum
-        or canonical_snapshot_checksum(snapshot) != revision.snapshot_checksum
+        or digest != revision.snapshot_checksum
     ):
         raise IngestResolutionError(
             "configuration_invariant_violation",
             "Current contract configuration failed integrity checks",
         )
 
+    contract_snapshot = _require_mapping(
+        snapshot.get("contract"), label="contract metadata"
+    )
+    if contract_snapshot.get("code") != contract.contract_code:
+        raise IngestResolutionError(
+            "configuration_invariant_violation",
+            "The snapshot belongs to a different contract",
+        )
     revision_snapshot = _require_mapping(
         snapshot.get("revision"),
         label="revision metadata",
@@ -144,6 +160,11 @@ def resolve_current_ingest_configuration(
         raise IngestResolutionError(
             "configuration_invariant_violation",
             "Current contract configuration has invalid inputs",
+        )
+    if any(not isinstance(item, dict) for item in inputs):
+        raise IngestResolutionError(
+            "configuration_invariant_violation",
+            "Current configuration has invalid input entries",
         )
     matches = [item for item in inputs if item.get("dataset_code") == category]
     if not matches:
