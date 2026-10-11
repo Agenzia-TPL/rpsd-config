@@ -90,6 +90,9 @@
         "engine": "prefect",
         "version": "001"
       },
+      "required_by_indicator_versions": [
+        "demo-journey-count_001"
+      ],
       "rule_bindings": [
         {
           "consumers": [
@@ -135,6 +138,9 @@
         "engine": "prefect",
         "version": "001"
       },
+      "required_by_indicator_versions": [
+        "demo-composed-performance_001"
+      ],
       "rule_bindings": [
         {
           "consumers": [],

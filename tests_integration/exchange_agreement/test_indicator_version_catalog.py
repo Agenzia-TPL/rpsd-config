@@ -4,36 +4,24 @@ from allauth.socialaccount.models import SocialAccount
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.db import transaction
-from django.db.models.deletion import ProtectedError
 from django.test import RequestFactory, TestCase, override_settings
 
 from rpsd_config.admin_dataset_exchange.proxies import IndicatorVersionAdminProxy
 from rpsd_config.exchange_agreement.models import (
     Dataset,
     DatasetSpecification,
-    FragmentValidationRule,
     Indicator,
     IndicatorVersion,
+    IndicatorVersionInput,
     IndicatorVersionStatusEvent,
-    RequirementFragment,
 )
 from rpsd_config.exchange_agreement.services.dataset_catalog import (
     publish_dataset_specification,
 )
 from rpsd_config.exchange_agreement.services.indicator_catalog import (
-    IndicatorVersionTransitionError,
-    canonical_indicator_version_json,
     deprecate_indicator_version,
     publish_indicator_version,
-    serialize_indicator_version,
     withdraw_indicator_version,
-)
-from rpsd_config.exchange_agreement.services.indicator_catalog_bootstrap import (
-    ensure_commercial_speed_example,
-)
-from rpsd_config.exchange_agreement.services.requirement_fragments import (
-    publish_requirement_fragment,
 )
 
 
@@ -52,18 +40,8 @@ class IndicatorVersionCatalogTests(TestCase):
             dataset_code="siri-vm",
             specification_code="siri-vm_v001",
         )
-        self.netex_fragment = self._published_fragment(
-            self.netex,
-            code="scheduled-journey-movement",
-            prefix="netex",
-            namespace="http://www.netex.org.uk/netex",
-        )
-        self.siri_fragment = self._published_fragment(
-            self.siri,
-            code="observed-journey-movement",
-            prefix="siri",
-            namespace="http://www.siri.org.uk/siri",
-        )
+        self.netex_input = self.netex
+        self.siri_input = self.siri
         self.indicator = Indicator.objects.create(
             code="commercial-speed",
             name="Commercial speed",
@@ -79,25 +57,6 @@ class IndicatorVersionCatalogTests(TestCase):
             description=f"{dataset_code} specification",
         )
         return publish_dataset_specification(specification, actor=self.user)
-
-    def _published_fragment(self, specification, *, code, prefix, namespace):
-        fragment = RequirementFragment.objects.create(
-            dataset_specification=specification,
-            code=code,
-            name=code.replace("-", " ").title(),
-            description=f"Required {code} data.",
-            locator_type=RequirementFragment.LocatorType.XPATH,
-            result_kind=RequirementFragment.ResultKind.PRESENCE,
-            locator_definition={
-                "path": f"//{prefix}:{code.replace('-', '')}",
-                "namespaces": {prefix: namespace},
-            },
-        )
-        FragmentValidationRule.objects.create(
-            requirement_fragment=fragment,
-            rule_type=FragmentValidationRule.RuleType.EXISTS,
-        )
-        return publish_requirement_fragment(fragment, actor=self.user)
 
     def _version(self, *, code="commercial-speed_001", version="001", **kwargs):
         values = {
@@ -183,47 +142,16 @@ class IndicatorVersionCatalogTests(TestCase):
                 artifact_identifier="not-an-artifact",
             )
 
-    def test_publication_requires_published_fragments_and_freezes_m2m(self):
-        version = self._version()
-        draft_fragment = RequirementFragment.objects.create(
-            dataset_specification=self.netex,
-            code="draft-fragment",
-            name="Draft fragment",
-            description="Not published yet.",
-            locator_type=RequirementFragment.LocatorType.XPATH,
-            result_kind=RequirementFragment.ResultKind.PRESENCE,
-            locator_definition={
-                "path": "//netex:Draft",
-                "namespaces": {"netex": "http://www.netex.org.uk/netex"},
-            },
-        )
-        version.required_fragments.add(self.netex_fragment, draft_fragment)
-        with self.assertRaises(IndicatorVersionTransitionError):
-            publish_indicator_version(version, actor=self.user)
-
-        version.required_fragments.remove(draft_fragment)
-        version = publish_indicator_version(version, actor=self.user)
-        with self.assertRaises(ValidationError):
-            with transaction.atomic():
-                version.required_fragments.add(self.siri_fragment)
-        with self.assertRaises(ValidationError):
-            with transaction.atomic():
-                version.required_fragments.clear()
-        with self.assertRaises(ValidationError):
-            with transaction.atomic():
-                self.netex_fragment.indicator_versions.remove(version)
-
-        with self.assertRaises(ProtectedError):
-            with transaction.atomic():
-                RequirementFragment.objects.filter(pk=self.netex_fragment.pk).delete()
-
     def test_lifecycle_is_audited_and_published_version_is_immutable(self):
         version = self._version(
             execution_engine=IndicatorVersion.ExecutionEngine.PREFECT,
             execution_reference="rpsd-monitoring/commercial-speed",
             artifact_identifier="dbt:rpsd-monitoring/commercial_speed@sha256:abc123",
         )
-        version.required_fragments.add(self.netex_fragment, self.siri_fragment)
+        for required_specification in [self.netex_input, self.siri_input]:
+            IndicatorVersionInput.objects.get_or_create(
+                indicator_version=version, dataset_specification=required_specification
+            )
         version = publish_indicator_version(version, actor=self.user)
 
         event = IndicatorVersionStatusEvent.objects.get(indicator_version=version)
@@ -239,63 +167,6 @@ class IndicatorVersionCatalogTests(TestCase):
         version = withdraw_indicator_version(version, actor=self.user)
         self.assertEqual(version.status, IndicatorVersion.Status.WITHDRAWN)
         self.assertEqual(version.status_events.count(), 3)
-
-    def test_snapshot_and_api_include_all_frozen_fragment_rules(self):
-        version = self._version()
-        version.required_fragments.add(self.netex_fragment, self.siri_fragment)
-        version = publish_indicator_version(version, actor=self.user)
-
-        first = serialize_indicator_version(version)
-        second = serialize_indicator_version(version)
-        self.assertEqual(first, second)
-        self.assertEqual(len(first["required_fragments"]), 2)
-        self.assertTrue(
-            all(
-                item["rules"][0]["rule_type"] == "exists"
-                for item in first["required_fragments"]
-            )
-        )
-        self.assertEqual(
-            canonical_indicator_version_json(version),
-            canonical_indicator_version_json(version),
-        )
-
-        self._version(code="commercial-speed_002", version="002")
-        self.client.force_login(self.user)
-        response = self.client.get(
-            "/exchange_agreement/api/v1/indicator-catalog/commercial-speed"
-        )
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual([item["code"] for item in payload["versions"]], [version.code])
-        self.assertEqual(len(payload["versions"][0]["required_fragments"]), 2)
-
-    def test_bootstrap_is_idempotent_and_uses_three_netex_and_one_siri_fragment(self):
-        first = ensure_commercial_speed_example()
-        second = ensure_commercial_speed_example()
-
-        self.assertEqual(first.pk, second.pk)
-        self.assertEqual(first.status, IndicatorVersion.Status.PUBLISHED)
-        fragments = list(
-            first.required_fragments.select_related(
-                "dataset_specification__dataset"
-            ).all()
-        )
-        self.assertEqual(len(fragments), 4)
-        self.assertEqual(
-            sum(
-                fragment.dataset_specification.dataset.code == "netex"
-                for fragment in fragments
-            ),
-            3,
-        )
-        self.assertEqual(
-            sum(
-                fragment.dataset_specification.dataset.code == "siri-vm"
-                for fragment in fragments
-            ),
-            1,
-        )
 
     def test_model_contains_no_results_or_scheduling_fields(self):
         field_names = {field.name for field in IndicatorVersion._meta.get_fields()}

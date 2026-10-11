@@ -178,11 +178,6 @@ def required_dataset_specifications(version) -> list:
     ):
         spec = binding.dataset_version_rule.dataset_specification
         specs[spec.pk] = spec
-    # Retain historical requirements until the explicit migration removes them.
-    for fragment in version.required_fragments.select_related(
-        "dataset_specification__dataset"
-    ):
-        specs[fragment.dataset_specification_id] = fragment.dataset_specification
     by_category = {}
     for spec in specs.values():
         if (

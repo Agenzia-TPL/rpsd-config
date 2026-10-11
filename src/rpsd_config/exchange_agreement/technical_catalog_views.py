@@ -34,7 +34,6 @@ from .models import (
     DatasetSpecificationAsset,
     DatasetVersionRule,
     DependencyRequiredDimension,
-    FragmentValidationRule,
     Indicator,
     IndicatorDimension,
     IndicatorVersion,
@@ -46,7 +45,6 @@ from .models import (
     ProcessingProfileIndicatorVersion,
     ProcessingProfileInputFlow,
     ProcessingProfileVersion,
-    RequirementFragment,
     ValidationRule,
     ValidationRuleVersion,
 )
@@ -74,100 +72,6 @@ from .services.processing_profiles import (
     publish_processing_profile,
     withdraw_processing_profile,
 )
-from .services.requirement_fragments import (
-    deprecate_requirement_fragment,
-    publish_requirement_fragment,
-    withdraw_requirement_fragment,
-)
-
-
-class RequirementFragmentCatalogForm(forms.ModelForm):
-    locator_path = forms.CharField(
-        required=False,
-        label="Percorso XPath",
-        help_text="Percorso dell'elemento, per esempio //netex:ServiceJourney.",
-    )
-    namespaces = forms.CharField(
-        required=False,
-        widget=forms.Textarea(attrs={"rows": 3}),
-        label="Namespace XPath",
-        help_text=(
-            "Una riga per namespace nel formato prefisso=URI. L'URI identifica "
-            "univocamente il vocabolario XML: non e' un link da aprire."
-        ),
-    )
-    table_resource = forms.CharField(
-        required=False,
-        label="Tabella o risorsa",
-        help_text="Nome della tabella/file per locator tabellari, per esempio trips.",
-    )
-    table_columns = forms.CharField(
-        required=False,
-        label="Colonna o colonne",
-        help_text="Nomi separati da virgola.",
-    )
-
-    class Meta:
-        model = RequirementFragment
-        fields = (
-            "dataset_specification",
-            "code",
-            "name",
-            "description",
-            "locator_type",
-            "result_kind",
-        )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        definition = self.instance.locator_definition or {}
-        if self.instance.locator_type == RequirementFragment.LocatorType.XPATH:
-            self.fields["locator_path"].initial = definition.get("path", "")
-            self.fields["namespaces"].initial = "\n".join(
-                f"{prefix}={uri}"
-                for prefix, uri in definition.get("namespaces", {}).items()
-            )
-        else:
-            self.fields["table_resource"].initial = definition.get("resource", "")
-            columns = definition.get("columns", [])
-            if definition.get("column"):
-                columns = [definition["column"]]
-            self.fields["table_columns"].initial = ", ".join(columns)
-
-    def clean(self):
-        cleaned = super().clean()
-        locator_type = cleaned.get("locator_type")
-        result_kind = cleaned.get("result_kind")
-        if locator_type == RequirementFragment.LocatorType.XPATH:
-            namespaces = {}
-            for line in (cleaned.get("namespaces") or "").splitlines():
-                if not line.strip():
-                    continue
-                if "=" not in line:
-                    self.add_error(
-                        "namespaces", "Usa il formato prefisso=URI su ogni riga."
-                    )
-                    continue
-                prefix, uri = line.split("=", 1)
-                namespaces[prefix.strip()] = uri.strip()
-            self.instance.locator_definition = {
-                "path": (cleaned.get("locator_path") or "").strip(),
-                "namespaces": namespaces,
-            }
-        else:
-            columns = [
-                item.strip()
-                for item in (cleaned.get("table_columns") or "").split(",")
-                if item.strip()
-            ]
-            definition = {"resource": (cleaned.get("table_resource") or "").strip()}
-            if result_kind == RequirementFragment.ResultKind.SCALAR_VALUES:
-                definition["column"] = columns[0] if columns else ""
-            elif columns:
-                definition["columns"] = columns
-            self.instance.locator_definition = definition
-        return cleaned
-
 
 DatasetForm = modelform_factory(
     Dataset,
@@ -260,17 +164,6 @@ CATALOGS = {
             "publish": publish_dataset_specification,
             "deprecate": deprecate_dataset_specification,
             "withdraw": withdraw_dataset_specification,
-        },
-    },
-    "fragments": {
-        "label": "Frammenti richiesti",
-        "model": RequirementFragment,
-        "form": RequirementFragmentCatalogForm,
-        "description": "Parti del dataset richieste dagli indicatori.",
-        "transitions": {
-            "publish": publish_requirement_fragment,
-            "deprecate": deprecate_requirement_fragment,
-            "withdraw": withdraw_requirement_fragment,
         },
     },
     "indicators": {
@@ -494,10 +387,6 @@ def _detail_context(slug: str, instance) -> dict:
             what=instance.dataset.code
         ).order_by("-version")
         context["asset_roles"] = DatasetSpecificationAsset.Role.choices
-    elif slug == "fragments":
-        context["validation_rules"] = instance.validation_rules.all()
-        context["rule_types"] = FragmentValidationRule.RuleType.choices
-        context["rule_severities"] = FragmentValidationRule.Severity.choices
     elif slug == "validation-rule-versions":
         context["rule_definition"] = instance.definition
     elif slug == "indicator-versions":
@@ -517,12 +406,6 @@ def _detail_context(slug: str, instance) -> dict:
         context["declared_inputs"] = instance.dataset_inputs.select_related(
             "dataset_specification"
         )
-        context["required_fragments"] = instance.required_fragments.select_related(
-            "dataset_specification"
-        )
-        context["available_fragments"] = RequirementFragment.objects.filter(
-            status=RequirementFragment.Status.PUBLISHED
-        ).select_related("dataset_specification")
     elif slug == "processing-profiles":
         context["profile_inputs"] = instance.input_flow_links.select_related(
             "dataset", "input_flow_version__dataset_specification"
@@ -551,33 +434,6 @@ def _detail_context(slug: str, instance) -> dict:
     return context
 
 
-def _rule_parameters(request: HttpRequest, rule_type: str) -> dict:
-    if rule_type == FragmentValidationRule.RuleType.EXISTS:
-        return {}
-    if rule_type == FragmentValidationRule.RuleType.NON_EMPTY:
-        return {"trim": request.POST.get("trim") == "on"}
-    value_keys = {
-        FragmentValidationRule.RuleType.ALL_VALUES_IN_SET: "allowed_values",
-        FragmentValidationRule.RuleType.CONTAINS_ALL_VALUES: "required_values",
-        FragmentValidationRule.RuleType.SET_EQUALS: "expected_values",
-    }
-    if rule_type not in value_keys:
-        raise ValidationError("Tipo di regola non supportato.")
-    key = value_keys[rule_type]
-    values = [
-        value.strip()
-        for value in (request.POST.get("rule_values") or "")
-        .replace("\n", ",")
-        .split(",")
-        if value.strip()
-    ]
-    return {
-        key: values,
-        "case_sensitive": request.POST.get("case_sensitive") == "on",
-        "trim": request.POST.get("trim") == "on",
-    }
-
-
 def _handle_composition_action(request: HttpRequest, slug: str, instance) -> bool:
     action = request.POST.get("action", "")
     if slug == "dataset-specifications" and action == "add-asset":
@@ -591,26 +447,6 @@ def _handle_composition_action(request: HttpRequest, slug: str, instance) -> boo
         )
     elif slug == "dataset-specifications" and action == "remove-asset":
         get_object_or_404(instance.asset_links, pk=request.POST.get("link_id")).delete()
-    elif slug == "fragments" and action == "add-rule":
-        rule_type = request.POST.get("rule_type", "")
-        FragmentValidationRule.objects.create(
-            requirement_fragment=instance,
-            rule_type=rule_type,
-            rule_version=1,
-            parameters=_rule_parameters(request, rule_type),
-            severity=request.POST.get("severity"),
-        )
-    elif slug == "fragments" and action == "remove-rule":
-        get_object_or_404(
-            instance.validation_rules, pk=request.POST.get("rule_id")
-        ).delete()
-    elif slug == "indicator-versions" and action == "add-fragment":
-        fragment = get_object_or_404(
-            RequirementFragment, pk=request.POST.get("fragment_id")
-        )
-        instance.required_fragments.add(fragment)
-    elif slug == "indicator-versions" and action == "remove-fragment":
-        instance.required_fragments.remove(request.POST.get("fragment_id"))
     elif slug == "processing-profiles" and action == "add-input":
         flow = get_object_or_404(
             InputFlowVersion.objects.select_related("dataset_specification__dataset"),

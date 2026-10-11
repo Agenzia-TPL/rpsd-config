@@ -31,7 +31,6 @@ from rpsd_config.exchange_agreement.models import (
     ProcessingProfileIndicatorVersion,
     ProcessingProfileInputFlow,
     ProcessingProfileVersion,
-    RequirementFragment,
 )
 from rpsd_config.exchange_agreement.services.contract_revision_permissions import (
     require_revision_approver,
@@ -266,29 +265,7 @@ def _asset_snapshot(specification: DatasetSpecification) -> list[dict]:
     ]
 
 
-def _fragment_snapshot(fragment: RequirementFragment) -> dict:
-    rules = fragment.validation_rules.order_by("rule_type", "rule_version", "id")
-    return {
-        "dataset_specification_code": fragment.dataset_specification.code,
-        "code": fragment.code,
-        "name": fragment.name,
-        "description": fragment.description,
-        "locator_type": fragment.locator_type,
-        "result_kind": fragment.result_kind,
-        "locator_definition": fragment.locator_definition,
-        "rules": [
-            {
-                "rule_type": rule.rule_type,
-                "rule_version": rule.rule_version,
-                "parameters": rule.parameters,
-                "severity": rule.severity,
-            }
-            for rule in rules
-        ],
-    }
-
-
-def _build_legacy_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
+def _build_base_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
     """Resolve the draft relations into a complete PK-independent snapshot."""
 
     profile = revision.processing_profile_version
@@ -311,10 +288,7 @@ def _build_legacy_revision_snapshot(revision: ContractConfigurationRevision) -> 
             "contract_indicator__logical_indicator",
             "processing_profile_indicator_version__indicator_version__indicator",
         )
-        .prefetch_related(
-            "processing_profile_indicator_version__indicator_version__required_fragments__dataset_specification",
-            "processing_profile_indicator_version__indicator_version__required_fragments__validation_rules",
-        )
+        .prefetch_related()
         .order_by(
             "contract_indicator__logical_indicator__code",
             "processing_profile_indicator_version__indicator_version__code",
@@ -349,11 +323,6 @@ def _build_legacy_revision_snapshot(revision: ContractConfigurationRevision) -> 
     indicators = []
     for configuration in indicator_configurations:
         version = configuration.processing_profile_indicator_version.indicator_version
-        fragments = (
-            version.required_fragments.select_related("dataset_specification")
-            .prefetch_related("validation_rules")
-            .order_by("dataset_specification__code", "code")
-        )
         indicators.append(
             {
                 "indicator_code": version.indicator.code,
@@ -368,7 +337,7 @@ def _build_legacy_revision_snapshot(revision: ContractConfigurationRevision) -> 
                 "aggregation": configuration.aggregation,
                 "penalties": configuration.penalties,
                 "parameters": configuration.parameters,
-                "fragments": [_fragment_snapshot(fragment) for fragment in fragments],
+                "fragments": [],
             }
         )
 
@@ -403,9 +372,7 @@ def build_revision_snapshot(revision: ContractConfigurationRevision) -> dict:
         build_validation_snapshot,
     )
 
-    return build_validation_snapshot(
-        revision, _build_legacy_revision_snapshot(revision)
-    )
+    return build_validation_snapshot(revision, _build_base_revision_snapshot(revision))
 
 
 def validate_revision_for_approval(
@@ -619,29 +586,6 @@ def validate_revision_for_approval(
                     details={"indicator_version_code": version.code},
                 )
             )
-        for fragment in version.required_fragments.select_related(
-            "dataset_specification"
-        ):
-            if (
-                fragment.status != RequirementFragment.Status.PUBLISHED
-                or fragment.dataset_specification_id not in selected_specification_ids
-            ):
-                issues.append(
-                    RevisionValidationIssue(
-                        code="missing_fragment",
-                        message=(
-                            f"Indicator version {version.code} requires fragment "
-                            f"{fragment.code} from specification "
-                            f"{fragment.dataset_specification.code}."
-                        ),
-                        details={
-                            "indicator_code": version.indicator.code,
-                            "indicator_version_code": version.code,
-                            "fragment_code": fragment.code,
-                            "specification_code": (fragment.dataset_specification.code),
-                        },
-                    )
-                )
         for field_name in ("thresholds", "aggregation", "penalties", "parameters"):
             try:
                 validate_business_configuration(

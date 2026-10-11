@@ -5,9 +5,6 @@
 from dataclasses import dataclass
 from unittest.mock import patch
 
-from django.db import models
-from django.utils import timezone
-
 from rpsd_config.exchange_agreement.models import (
     ContractConfigurationRevision,
     ContractIndicator,
@@ -17,12 +14,12 @@ from rpsd_config.exchange_agreement.models import (
     DatasetSpecification,
     Indicator,
     IndicatorVersion,
+    IndicatorVersionInput,
     InputFlowVersion,
     OrchestrationFlowVersion,
     ProcessingProfileIndicatorVersion,
     ProcessingProfileInputFlow,
     ProcessingProfileVersion,
-    RequirementFragment,
 )
 from rpsd_config.exchange_agreement.services.contract_revisions import (
     approve_contract_revision,
@@ -36,9 +33,6 @@ from rpsd_config.exchange_agreement.services.flow_catalog import (
 )
 from rpsd_config.exchange_agreement.services.processing_profiles import (
     publish_processing_profile,
-)
-from rpsd_config.exchange_agreement.services.requirement_fragments import (
-    publish_requirement_fragment,
 )
 
 
@@ -71,7 +65,7 @@ def install_approved_runtime_configuration(
     """Install a published profile and its first approved contract revision."""
 
     profile_inputs = []
-    required_fragments = []
+    required_specifications = []
     for item in inputs:
         dataset = Dataset.objects.create(
             code=item.category,
@@ -87,23 +81,8 @@ def install_approved_runtime_configuration(
             ),
             actor=actor,
         )
-        fragment = publish_requirement_fragment(
-            RequirementFragment.objects.create(
-                dataset_specification=specification,
-                code=f"{item.category}-required-fragment",
-                name=f"{item.dataset_name} required fragment",
-                description=f"Required {item.dataset_name} content.",
-                locator_type=RequirementFragment.LocatorType.XPATH,
-                result_kind=RequirementFragment.ResultKind.PRESENCE,
-                locator_definition={
-                    "path": f"//{item.category}:ServiceJourney",
-                    "namespaces": {item.category: f"urn:{item.category}"},
-                },
-            ),
-            actor=actor,
-        )
         if item.required:
-            required_fragments.append(fragment)
+            required_specifications.append(specification)
         input_flow = publish_input_flow_version(
             InputFlowVersion.objects.create(
                 dataset_specification=specification,
@@ -130,18 +109,20 @@ def install_approved_runtime_configuration(
         version="001",
         description="Runtime contract indicator version.",
         formula_description="Fixture formula.",
+        execution_engine="prefect",
+        execution_reference="fixture-indicators/runtime",
+        artifact_identifier="git:fixture@runtime",
     )
-    indicator_version.required_fragments.add(*required_fragments)
-    # Recreate an already-published pre-021 indicator. Historical snapshots
-    # without a calculation reference remain readable; new publication now
-    # requires Prefect. This bypass is confined to a legacy compatibility fixture.
-    models.QuerySet.update(
-        IndicatorVersion.objects.filter(pk=indicator_version.pk),
-        status="published",
-        published_at=timezone.now(),
-        published_by_id=actor.pk,
+    for required_specification in required_specifications:
+        IndicatorVersionInput.objects.get_or_create(
+            indicator_version=indicator_version,
+            dataset_specification=required_specification,
+        )
+    from rpsd_config.exchange_agreement.services.indicator_catalog import (
+        publish_indicator_version,
     )
-    indicator_version.refresh_from_db()
+
+    indicator_version = publish_indicator_version(indicator_version, actor=actor)
 
     orchestration = publish_orchestration_flow_version(
         OrchestrationFlowVersion.objects.create(

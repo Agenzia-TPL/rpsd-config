@@ -13,9 +13,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models, transaction
 from django.db.models import F, Func
-from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Lower, Now  # for db_default in Django 5.x
-from django.db.models.signals import m2m_changed, pre_delete
+from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.text import slugify
@@ -24,19 +23,6 @@ from django.utils.translation import gettext_lazy as _
 from rpsd_config.exchange_agreement.services.flow_catalog_registry import (
     ENGINE_PREFECT,
     validate_flow_executable_references,
-)
-from rpsd_config.exchange_agreement.services.fragment_registry import (
-    LOCATOR_TABLE,
-    LOCATOR_XPATH,
-    RESULT_PRESENCE,
-    RESULT_SCALAR_VALUES,
-    RULE_ALL_VALUES_IN_SET,
-    RULE_CONTAINS_ALL_VALUES,
-    RULE_EXISTS,
-    RULE_NON_EMPTY,
-    RULE_SET_EQUALS,
-    validate_locator_definition,
-    validate_rule_parameters,
 )
 from rpsd_config.exchange_agreement.services.indicator_registry import (
     EXECUTION_DBT,
@@ -1004,232 +990,6 @@ class DatasetSpecificationStatusEvent(models.Model):
         )
 
 
-class RequirementFragment(TimeStampedModel):
-    """Declarative, version-specific location of data required by indicators."""
-
-    class LocatorType(models.TextChoices):
-        XPATH = LOCATOR_XPATH, _("XPath")
-        TABLE = LOCATOR_TABLE, _("Table")
-
-    class ResultKind(models.TextChoices):
-        PRESENCE = RESULT_PRESENCE, _("Presence")
-        SCALAR_VALUES = RESULT_SCALAR_VALUES, _("Scalar values")
-
-    class Status(models.TextChoices):
-        DRAFT = "draft", _("Draft")
-        PUBLISHED = "published", _("Published")
-        DEPRECATED = "deprecated", _("Deprecated")
-        WITHDRAWN = "withdrawn", _("Withdrawn")
-
-    dataset_specification = models.ForeignKey(
-        DatasetSpecification,
-        on_delete=models.PROTECT,
-        related_name="requirement_fragments",
-    )
-    code = models.SlugField(max_length=96)
-    name = models.CharField(max_length=128)
-    description = models.TextField()
-    locator_type = models.CharField(max_length=16, choices=LocatorType.choices)
-    result_kind = models.CharField(max_length=24, choices=ResultKind.choices)
-    locator_definition = models.JSONField(default=dict)
-    status = models.CharField(
-        max_length=16,
-        choices=Status.choices,
-        default=Status.DRAFT,
-        db_index=True,
-    )
-
-    class Meta:
-        verbose_name = "Requirement fragment"
-        verbose_name_plural = "Requirement fragments"
-        ordering = ["dataset_specification__code", "code"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["dataset_specification", "code"],
-                name="uniq_requirement_fragment_spec_code",
-            )
-        ]
-        indexes = [
-            models.Index(
-                fields=["dataset_specification", "status"],
-                name="ix_fragment_spec_status",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.dataset_specification.code}:{self.code}"
-
-    def clean(self):
-        super().clean()
-        self.code = (self.code or "").strip()
-        self.name = (self.name or "").strip()
-        self.description = (self.description or "").strip()
-        errors = {}
-        if not self.name:
-            errors["name"] = _("Fragment name is required.")
-        if not self.description:
-            errors["description"] = _("Fragment description is required.")
-        try:
-            self.locator_definition = validate_locator_definition(
-                self.locator_type,
-                self.result_kind,
-                self.locator_definition,
-            )
-        except ValidationError as exc:
-            errors["locator_definition"] = exc.messages
-
-        if self.pk:
-            original = type(self).objects.filter(pk=self.pk).first()
-            if original is not None:
-                if self.status != original.status:
-                    errors["status"] = _(
-                        "Use the requirement fragment lifecycle service to "
-                        "change status."
-                    )
-                if original.status != self.Status.DRAFT:
-                    semantic_fields = (
-                        "dataset_specification_id",
-                        "code",
-                        "name",
-                        "description",
-                        "locator_type",
-                        "result_kind",
-                        "locator_definition",
-                    )
-                    if any(
-                        getattr(self, field) != getattr(original, field)
-                        for field in semantic_fields
-                    ):
-                        errors["__all__"] = _(
-                            "Published, deprecated or withdrawn fragments are "
-                            "immutable."
-                        )
-        if errors:
-            raise ValidationError(errors)
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        return super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        current_status = self.status
-        if self.pk:
-            current_status = (
-                type(self).objects.values_list("status", flat=True).get(pk=self.pk)
-            )
-        if current_status != self.Status.DRAFT:
-            raise ValidationError(_("Only draft requirement fragments can be deleted."))
-        return super().delete(*args, **kwargs)
-
-
-class FragmentValidationRule(models.Model):
-    class RuleType(models.TextChoices):
-        EXISTS = RULE_EXISTS, _("Exists")
-        NON_EMPTY = RULE_NON_EMPTY, _("Non-empty")
-        ALL_VALUES_IN_SET = RULE_ALL_VALUES_IN_SET, _("All values in set")
-        CONTAINS_ALL_VALUES = RULE_CONTAINS_ALL_VALUES, _("Contains all values")
-        SET_EQUALS = RULE_SET_EQUALS, _("Set equals")
-
-    class Severity(models.TextChoices):
-        ERROR = "error", _("Error")
-        WARNING = "warning", _("Warning")
-
-    requirement_fragment = models.ForeignKey(
-        RequirementFragment,
-        on_delete=models.CASCADE,
-        related_name="validation_rules",
-    )
-    rule_type = models.CharField(max_length=32, choices=RuleType.choices)
-    rule_version = models.PositiveIntegerField(default=1)
-    parameters = models.JSONField(default=dict, blank=True)
-    severity = models.CharField(
-        max_length=16,
-        choices=Severity.choices,
-        default=Severity.ERROR,
-    )
-
-    class Meta:
-        verbose_name = "Fragment validation rule"
-        verbose_name_plural = "Fragment validation rules"
-        ordering = ["rule_type", "rule_version", "id"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["requirement_fragment", "rule_type"],
-                name="uniq_fragment_validation_rule_type",
-            )
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.requirement_fragment}: {self.rule_type}/v{self.rule_version}"
-
-    def clean(self):
-        super().clean()
-        fragment = self.requirement_fragment
-        current_status = fragment.status
-        if fragment.pk:
-            current_status = RequirementFragment.objects.values_list(
-                "status", flat=True
-            ).get(pk=fragment.pk)
-        if current_status != RequirementFragment.Status.DRAFT:
-            raise ValidationError(
-                _("Rules can be changed only while the fragment is draft.")
-            )
-        try:
-            self.parameters = validate_rule_parameters(
-                self.rule_type,
-                self.rule_version,
-                fragment.result_kind,
-                self.parameters,
-            )
-        except ValidationError as exc:
-            raise ValidationError({"parameters": exc.messages}) from exc
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        return super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        current_status = RequirementFragment.objects.values_list(
-            "status", flat=True
-        ).get(pk=self.requirement_fragment_id)
-        if current_status != RequirementFragment.Status.DRAFT:
-            raise ValidationError(
-                _("Rules can be changed only while the fragment is draft.")
-            )
-        return super().delete(*args, **kwargs)
-
-
-class RequirementFragmentStatusEvent(models.Model):
-    requirement_fragment = models.ForeignKey(
-        RequirementFragment,
-        on_delete=models.PROTECT,
-        related_name="status_events",
-    )
-    from_status = models.CharField(max_length=16, blank=True)
-    to_status = models.CharField(
-        max_length=16,
-        choices=RequirementFragment.Status.choices,
-    )
-    changed_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="requirement_fragment_status_changes",
-    )
-    changed_at = models.DateTimeField(default=timezone.now, db_index=True)
-
-    class Meta:
-        verbose_name = "Requirement fragment status event"
-        verbose_name_plural = "Requirement fragment status events"
-        ordering = ["changed_at", "id"]
-
-    def __str__(self) -> str:
-        return (
-            f"{self.requirement_fragment}:{self.from_status or '-'}->{self.to_status}"
-        )
-
-
 class Indicator(TimeStampedModel):
     """Stable business identity of a monitored indicator."""
 
@@ -1344,11 +1104,6 @@ class IndicatorVersion(TimeStampedModel):
     )
     execution_reference = models.CharField(max_length=255, blank=True)
     artifact_identifier = models.CharField(max_length=512, blank=True)
-    required_fragments = models.ManyToManyField(
-        RequirementFragment,
-        related_name="indicator_versions",
-        blank=True,
-    )
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
@@ -1544,40 +1299,6 @@ class IndicatorVersionStatusEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.indicator_version}:{self.from_status or '-'}->{self.to_status}"
-
-
-@receiver(m2m_changed, sender=IndicatorVersion.required_fragments.through)
-def protect_indicator_version_fragments(
-    sender, instance, action, reverse, pk_set, **kwargs
-):
-    if action not in {"pre_add", "pre_remove", "pre_clear"}:
-        return
-    if reverse:
-        versions = (
-            instance.indicator_versions.all()
-            if pk_set is None
-            else IndicatorVersion.objects.filter(pk__in=pk_set)
-        )
-        if versions.exclude(status=IndicatorVersion.Status.DRAFT).exists():
-            raise ValidationError(
-                _("Required fragments of non-draft indicator versions are immutable.")
-            )
-    elif instance.status != IndicatorVersion.Status.DRAFT:
-        raise ValidationError(
-            _("Required fragments can be changed only while the version is draft.")
-        )
-
-
-@receiver(pre_delete, sender=RequirementFragment)
-def protect_published_indicator_fragment_reference(sender, instance, **kwargs):
-    protected_versions = instance.indicator_versions.exclude(
-        status=IndicatorVersion.Status.DRAFT
-    )
-    if protected_versions.exists():
-        raise ProtectedError(
-            "Requirement fragment is referenced by a non-draft indicator version.",
-            protected_versions,
-        )
 
 
 class FlowCatalogVersionBase(TimeStampedModel):
@@ -3772,7 +3493,6 @@ from rpsd_config.exchange_agreement.validation_models import (  # noqa: E402, F4
     IndicatorVersionInput,
     IndicatorVersionRule,
     IndicatorVersionRuleDimension,
-    LegacyValidationRuleMapping,
     ValidationRule,
     ValidationRuleStatusEvent,
     ValidationRuleVersion,

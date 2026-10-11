@@ -224,8 +224,8 @@ Con `validation_type=xpath`, `language_version=1.0`,
 `result_contract=violating_entities`. Il futuro validator deve interpretare
 una sequenza vuota come successo e i nodi restituiti come violazioni.
 Config verifica la struttura della configurazione e i namespace dichiarati;
-non compila né esegue l'espressione XPath. Le vecchie regole `exists` restano
-nel catalogo legacy e non vengono convertite implicitamente.
+non compila né esegue l'espressione XPath. Il percorso di sviluppo 026 rimuove
+il catalogo dei frammenti e non converte le vecchie regole `exists`.
 
 Le versioni `published`, `deprecated` e `withdrawn` sono immutabili e non
 eliminabili. Per cambiare una definizione creare una nuova versione.
@@ -412,6 +412,71 @@ motore e limiti runtime. Non si eseguono formule, macro o controlli in Config.
 `application_state` resta non supportato finché fonte e fase EA sono definite.
 
 
+## Ricostruzione del modello in sviluppo (026)
+
+Il percorso di sviluppo non converte i vecchi frammenti: i loro modelli,
+collegamenti, editor e comando `migrate_validation_catalog` sono rimossi.
+Le migrazioni storiche restano nella catena; le nuove migrazioni rimuovono
+le tabelle obsolete anche quando si costruisce un database da zero.
+
+Per identificare il target senza modificarlo:
+
+```bash
+uv run manage reset_config_database --show-target
+```
+
+Il reset cancella lo schema `public` del database configurato: usarlo solo sul
+proprio ambiente di sviluppo, dopo aver verificato il target. Richiede
+`DEBUG=True`, PostgreSQL, alias `default` e il nome esatto del database; i nomi
+PostgreSQL di sistema sono respinti.
+
+```bash
+uv run manage reset_config_database --confirm-database NOME_DATABASE
+```
+
+Il comando applica le migrazioni e carica il seed target. `--skip-seed` applica
+solo le migrazioni. Non modifica Keycloak o storage condiviso. Il seed da solo
+non cancella dati né ricostruisce lo schema:
+
+```bash
+uv run manage seed_target_demo
+```
+
+Anche `seed_target_demo` richiede `DEBUG=True`: crea l’utente locale di sviluppo
+`dummy_admin` con password `dummy_admin`, cataloghi NeTEx/SIRI e CSV, il profilo
+`validation-demo_001` con indicatore composto e il contratto `DEMO-CONTRACT-001`.
+La revisione approvata usa `canonical-json-v2`; padre e dipendenza conservano
+parametri propri. Il secondo seed conserva snapshot, checksum e data di
+approvazione. Un vecchio contratto demo con profilo/schema diverso viene
+respinto e richiede una ricostruzione esplicita del target di sviluppo.
+
+Per creare solo i cataloghi dimostrativi con un amministratore esistente:
+
+```bash
+uv run manage init_indicator_catalog --actor NOME_UTENTE
+uv run manage seed_validation_demo --actor NOME_UTENTE
+```
+
+Il secondo comando crea i profili `validation-demo_001` (XML) e
+`validation-csv-demo_001` (CSV), senza creare contratti. I seed respingono
+versioni con definizioni diverse; non aggiornano le versioni pubblicate.
+I riferimenti a processi sono fixture dichiarative: il provisioning e
+l’esecuzione del futuro validator restano esterni a Config.
+
+Le fixture CSV in `tests_integration/exchange_agreement/fixtures/` dichiarano:
+
+| File | Caso da verificare nel futuro validator |
+|---|---|
+| `validation_csv_valid.csv` | Tutte le colonne richieste presenti |
+| `validation_csv_missing_identity.csv` | Manca `journey_id`: regola `reject_import` |
+| `validation_csv_missing_timestamp.csv` | Manca `source_timestamp`: regola `warn` |
+| `validation_csv_missing_line.csv` | Manca `line`: compatibilità della dimensione Linea |
+
+I test Config verificano catalogo, policy, dimensioni, idempotenza e coerenza
+tra colonne delle fixture e definizioni; non certificano esiti di esecuzione.
+Bundle XSD e capability XPath/CSV/Excel/TXT sono verificati nei rispettivi test;
+restano da integrare il corpus CORSE_PDE completo e gli smoke del runtime esterno.
+
 ## Cataloghi e revisioni nell’interfaccia (025)
 
 Il catalogo tecnico permette di consultare la definizione completa di una regola,
@@ -444,15 +509,14 @@ le modifiche passano dal flusso contrattuale autorizzato.
 La revisione approvata distingue decorrenza futura, attuale o conclusa e mostra
 valori e controlli dallo snapshot congelato, separando regole dataset e
 compatibilità degli indicatori. Uno snapshot incoerente produce un messaggio
-diagnostico. Lo storico v1 resta consultabile come JSON; gli editor dei frammenti
-legacy restano disponibili fino alla migrazione e al cutover delle 026/027.
+diagnostico. Eventuali snapshot v1 restano consultabili come JSON; gli editor
+dei frammenti sono rimossi nel percorso di sviluppo 026.
 Il permesso di amministrare i cataloghi non attribuisce l’approvazione dei
 contratti: questa richiede il ruolo business nel relativo perimetro.
 
 ## Piano di validazione congelato (022)
 
-La revisione approvata conserva uno snapshot `canonical-json-v2` quando usa il
-modello di validazione target. Include input e asset, catalogo deduplicato delle
+Le nuove revisioni approvate conservano sempre uno snapshot `canonical-json-v2`. Include input e asset, catalogo deduplicato delle
 regole, politiche di import, consumatori, dipendenze, ordine di calcolo e valori
 contrattuali separati. L'approvazione ricontrolla configurazione e parametri e
 calcola il checksum nella stessa transazione. Gli snapshot legacy rimangono v1:
@@ -498,6 +562,9 @@ Gli errori usano l'envelope `error` con code, message e correlation_id:
 non efficace, configurazione non pronta/incoerente o categoria non configurata.
 Per snapshot v1 il piano target restituisce `validation_plan_not_available`:
 serve una nuova revisione target. Non deduce policy dalla severity legacy.
-Gli endpoint v1/v2 conservano i contratti precedenti, verificati con fixture
-storiche. Audit del piano include revisione, categoria, schema e checksum senza
+Gli endpoint operativi v1/v2 restano verificati con fixture contrattuali.
+I campi `structures`, `fragments` e `required_fragments`, ove presenti nei
+payload v1, sono elenchi vuoti; il catalogo `/v1/structures` è rimosso.
+Gli input e gli indicatori che li richiedono derivano dai metadati congelati
+`required_by_indicator_versions`; le regole complete sono esposte dal piano v3. Audit del piano include revisione, categoria, schema e checksum senza
 registrare token, definizioni di regole o contenuto dei dataset.

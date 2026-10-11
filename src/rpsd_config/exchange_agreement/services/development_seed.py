@@ -4,7 +4,9 @@
 
 from dataclasses import dataclass
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -64,9 +66,9 @@ def _ensure_platform_user():
     return user
 
 
-def _ensure_processing_profile() -> ProcessingProfileVersion:
+def _ensure_processing_profile(*, actor) -> ProcessingProfileVersion:
     input_flows, orchestration = ensure_standard_flow_catalog()
-    indicator_version = ensure_commercial_speed_example()
+    indicator_version = ensure_commercial_speed_example(actor=actor)
     profile, _created = ProcessingProfileVersion.objects.get_or_create(
         code="netex-siri-commercial-speed_001",
         defaults={
@@ -106,8 +108,20 @@ def _ensure_processing_profile() -> ProcessingProfileVersion:
 def ensure_target_development_seed() -> DevelopmentSeedResult:
     """Create one complete target-model scenario without duplicating records."""
 
+    if not settings.DEBUG:
+        raise ValidationError("The demo seed is allowed only with DEBUG=True.")
     actor = _ensure_platform_user()
-    profile = _ensure_processing_profile()
+    profile = _ensure_processing_profile(actor=actor)
+    from rpsd_config.exchange_agreement.services.validation_seed import (
+        ensure_validation_demo,
+    )
+
+    profile = ensure_validation_demo(actor=actor)
+    from rpsd_config.exchange_agreement.services.csv_validation_seed import (
+        ensure_csv_validation_demo,
+    )
+
+    ensure_csv_validation_demo(actor=actor)
     logical_indicator = (
         profile.indicator_version_links.select_related("indicator_version__indicator")
         .get(proposed_by_default=True)
@@ -179,7 +193,35 @@ def ensure_target_development_seed() -> DevelopmentSeedResult:
             actor,
             change_reason="Initial target-model development configuration.",
         )
+        from rpsd_config.exchange_agreement.services.revision_indicator_values import (
+            save_revision_indicator_values,
+        )
+
+        for code, parameters in (
+            ("demo-composed-performance_001", {"sample_window_minutes": 15}),
+            ("demo-journey-count_001", {"minimum_journeys": 1}),
+        ):
+            save_revision_indicator_values(
+                revision,
+                version_code=code,
+                actor=actor,
+                values={
+                    "parameters": parameters,
+                    "thresholds": {},
+                    "aggregation": {},
+                    "penalties": {},
+                },
+            )
         revision = approve_contract_revision(revision, actor=actor)
+
+    if (
+        revision.processing_profile_version_id != profile.pk
+        or revision.snapshot_schema_version != "canonical-json-v2"
+    ):
+        raise ValidationError(
+            "Existing development contract uses an obsolete seed; "
+            "reset the explicit development target first."
+        )
 
     publication = ContractPublication.objects.filter(contract=contract).first()
     if publication is None:

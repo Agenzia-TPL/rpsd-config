@@ -773,20 +773,3 @@ class ContractDependencyConfiguration(FrozenComposition):
                 "Only implicit indicators belong in dependency configuration.",
                 code="invalid_dependency_configuration",
             )
-
-
-class LegacyValidationRuleMapping(models.Model):
-    """Persistent provenance independent from the lifetime of source rows."""
-
-    source_legacy_id = models.PositiveBigIntegerField(unique=True)
-    source_digest = models.CharField(max_length=64)
-    source_definition = models.JSONField(default=dict)
-    rule_version = models.ForeignKey(
-        ValidationRuleVersion, on_delete=models.PROTECT, null=True, blank=True
-    )
-    status = models.CharField(
-        max_length=32,
-        choices=[("converted", "Converted"), ("manual_review", "Manual review")],
-    )
-    reason = models.TextField(blank=True)
-    created_at = models.DateTimeField(default=timezone.now)

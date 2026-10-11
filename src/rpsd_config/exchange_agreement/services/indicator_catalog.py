@@ -12,17 +12,9 @@ from rpsd_config.exchange_agreement.models import (
     Indicator,
     IndicatorVersion,
     IndicatorVersionStatusEvent,
-    RequirementFragment,
-)
-from rpsd_config.exchange_agreement.services.fragment_registry import (
-    validate_locator_definition,
-    validate_rule_parameters,
 )
 from rpsd_config.exchange_agreement.services.indicator_registry import (
     validate_execution_reference_fields,
-)
-from rpsd_config.exchange_agreement.services.requirement_fragments import (
-    serialize_requirement_fragment,
 )
 
 
@@ -74,24 +66,6 @@ def _validate_for_publication(version: IndicatorVersion) -> None:
     )
 
     resolve_indicator_closure([version])
-    fragments = version.required_fragments.prefetch_related("validation_rules")
-    for fragment in fragments:
-        if fragment.status != RequirementFragment.Status.PUBLISHED:
-            raise IndicatorVersionTransitionError(
-                f"Required fragment {fragment} is not published."
-            )
-        validate_locator_definition(
-            fragment.locator_type,
-            fragment.result_kind,
-            fragment.locator_definition,
-        )
-        for rule in fragment.validation_rules.all():
-            validate_rule_parameters(
-                rule.rule_type,
-                rule.rule_version,
-                fragment.result_kind,
-                rule.parameters,
-            )
 
 
 @transaction.atomic
@@ -172,12 +146,6 @@ def withdraw_indicator_version(
 
 
 def serialize_indicator_version(version: IndicatorVersion) -> dict:
-    fragments = [
-        serialize_requirement_fragment(fragment)
-        for fragment in version.required_fragments.prefetch_related(
-            "validation_rules"
-        ).order_by("dataset_specification__code", "code", "id")
-    ]
     return {
         "code": version.code,
         "version": version.version,
@@ -195,7 +163,7 @@ def serialize_indicator_version(version: IndicatorVersion) -> dict:
         "published_at": (
             version.published_at.isoformat() if version.published_at else None
         ),
-        "required_fragments": fragments,
+        "required_fragments": [],
     }
 
 

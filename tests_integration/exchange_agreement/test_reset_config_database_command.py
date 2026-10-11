@@ -37,6 +37,16 @@ class ResetConfigDatabaseCommandTests(SimpleTestCase):
         self.assertIn("database=rpsd_config_dev", output.getvalue())
         self.assertIn("schema=public", output.getvalue())
 
+    @override_settings(DEBUG=False)
+    def test_production_reset_is_rejected_before_any_mutation(self):
+        with (
+            patch.object(ResetCommand, "_target", return_value=self.target),
+            patch.object(ResetCommand, "_reset_public_schema") as reset_schema,
+            self.assertRaisesMessage(CommandError, "DEBUG=True"),
+        ):
+            call_command("reset_config_database", confirm_database=self.target.name)
+        reset_schema.assert_not_called()
+
     @override_settings(DEBUG=True)
     def test_exact_database_confirmation_is_required(self):
         with (

@@ -26,26 +26,6 @@ def build_validation_snapshot(revision, base: dict) -> dict:
     )
     roots = [c.processing_profile_indicator_version.indicator_version for c in configs]
     closure = resolve_indicator_closure(roots)
-    uses_target = any(
-        v.rule_bindings.exists()
-        or v.dataset_inputs.exists()
-        or v.dependency_links.exists()
-        or bool(v.parameter_schema)
-        for v in closure["versions"]
-    )
-    for selection in revision.input_selections.select_related(
-        "processing_profile_input_flow__input_flow_version__dataset_specification"
-    ):
-        flow = selection.processing_profile_input_flow.input_flow_version
-        selected_spec = flow.dataset_specification
-        uses_target |= selected_spec.rule_bindings.exists()
-    if not uses_target:
-        return base
-    if any(v.required_fragments.exists() for v in closure["versions"]):
-        raise ValidationError(
-            "Migrate legacy fragments before publishing a target validation plan.",
-            code="validation_plan_not_available",
-        )
     result = copy.deepcopy(base)
     result["snapshot_schema_version"] = SCHEMA_VERSION
     selected = {
@@ -108,6 +88,14 @@ def build_validation_snapshot(revision, base: dict) -> dict:
         dependency_impact_contract(edge) for edge in closure["edges"]
     ]
     result["indicator_execution_order"] = closure["execution_order"]
+    from rpsd_config.exchange_agreement.services.validation_bindings import (
+        required_dataset_specifications,
+    )
+
+    input_requirements = {
+        v.code: {spec.code for spec in required_dataset_specifications(v)}
+        for v in closure["versions"]
+    }
     rule_catalog = {}
     selected_specs = {
         item["dataset_specification"]["code"] for item in result["inputs"]
@@ -119,6 +107,11 @@ def build_validation_snapshot(revision, base: dict) -> dict:
     from rpsd_config.exchange_agreement.models import DatasetSpecification
 
     for item in result["inputs"]:
+        item["required_by_indicator_versions"] = sorted(
+            code
+            for code, specifications in input_requirements.items()
+            if item["dataset_specification"]["code"] in specifications
+        )
         spec = DatasetSpecification.objects.get(
             code=item["dataset_specification"]["code"]
         )
@@ -251,6 +244,13 @@ def validate_frozen_validation_snapshot(snapshot: dict) -> None:
         if len(set(categories)) != len(categories):
             fail()
         for item in inputs:
+            required_by = item.get("required_by_indicator_versions", [])
+            if (
+                not isinstance(required_by, list)
+                or any(code not in codes for code in required_by)
+                or required_by != sorted(set(required_by))
+            ):
+                fail()
             bindings = item["rule_bindings"]
             if not isinstance(bindings, list):
                 fail()

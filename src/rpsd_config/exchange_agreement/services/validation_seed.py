@@ -47,18 +47,38 @@ from rpsd_config.exchange_agreement.services.validation_catalog import (
 )
 
 
+def ensure_seed_version(model, *, defaults: dict, **lookup):
+    """Reject semantic drift instead of silently reusing a different seed version."""
+    instance, created = model.objects.get_or_create(defaults=defaults, **lookup)
+    if not created:
+        mismatches = [
+            field
+            for field, expected in defaults.items()
+            if getattr(instance, field) != expected
+        ]
+        if mismatches:
+            raise ValidationError(
+                f"Seed conflict for {model.__name__}: {', '.join(mismatches)}. "
+                "Create an explicitly reviewed new version.",
+                code="seed_definition_conflict",
+            )
+    return instance, created
+
+
 @transaction.atomic
 def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
     """Seed separate versions; never alter already published compositions."""
     require_catalog_admin(actor)
     specs = []
+    new_spec_ids = set()
     definitions = [
         ("netex", "//n:ServiceJourney", "http://www.netex.org.uk/netex"),
         ("siri-vm", "//n:VehicleActivity", "http://www.siri.org.uk/siri"),
     ]
     for code, path, namespace in definitions:
         dataset, _ = Dataset.objects.get_or_create(code=code, defaults={"name": code})
-        spec, created = DatasetSpecification.objects.get_or_create(
+        spec, created = ensure_seed_version(
+            DatasetSpecification,
             code=code + "-validation-demo_001",
             defaults={
                 "dataset": dataset,
@@ -67,11 +87,14 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
                 "metadata": {"format": "xml"},
             },
         )
+        if created:
+            new_spec_ids.add(spec.pk)
         rule, _ = ValidationRule.objects.get_or_create(
             code=code + "-demo-presence",
             defaults={"name": "Required " + code + " entities"},
         )
-        version, _ = ValidationRuleVersion.objects.get_or_create(
+        version, _ = ensure_seed_version(
+            ValidationRuleVersion,
             rule=rule,
             version="001",
             defaults={
@@ -90,13 +113,13 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
         binding = DatasetVersionRule.objects.filter(
             dataset_specification=spec, rule_version=version
         ).first()
+        if binding is not None and binding.import_policy != "reject_import":
+            raise ValidationError("Demo base rule policy differs from the seed.")
         if binding is None:
             if spec.status != "draft":
                 raise ValidationError(
-
-                        "Published demo dataset composition is incomplete; "
-                        "create a new version."
-
+                    "Published demo dataset composition is incomplete; "
+                    "create a new version."
                 )
             bind_dataset_rule(
                 specification=spec,
@@ -113,7 +136,8 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
     rule, _ = ValidationRule.objects.get_or_create(
         code="netex-demo-line", defaults={"name": "Line dimension"}
     )
-    line_rule, _ = ValidationRuleVersion.objects.get_or_create(
+    line_rule, _ = ensure_seed_version(
+        ValidationRuleVersion,
         rule=rule,
         version="001",
         defaults={
@@ -132,7 +156,14 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
     line_binding = DatasetVersionRule.objects.filter(
         dataset_specification=specs[0], rule_version=line_rule
     ).first()
+    if line_binding is not None and line_binding.import_policy != "indicator_only":
+        raise ValidationError("Demo indicator rule policy differs from the seed.")
     if line_binding is None:
+        if specs[0].status != "draft" and specs[0].pk not in new_spec_ids:
+            raise ValidationError(
+                "Published demo dataset is missing its indicator rule; "
+                "create a new version instead of changing the seed composition."
+            )
         line_binding = bind_dataset_rule(
             specification=specs[0],
             rule_version=line_rule,
@@ -145,7 +176,8 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
             code=code,
             defaults={"name": code, "description": "Validation demo indicator"},
         )
-        version, _ = IndicatorVersion.objects.get_or_create(
+        version, _ = ensure_seed_version(
+            IndicatorVersion,
             code=code + "_001",
             defaults={
                 "indicator": logical,
@@ -180,7 +212,8 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
         versions.append(version)
     flows = []
     for spec in specs:
-        flow, _ = InputFlowVersion.objects.get_or_create(
+        flow, _ = ensure_seed_version(
+            InputFlowVersion,
             code="validation-demo-" + spec.dataset.code + "_001",
             defaults={
                 "dataset_specification": spec,
@@ -195,7 +228,8 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
         if flow.status == "draft":
             flow = publish_input_flow_version(flow, actor=actor)
         flows.append(flow)
-    orchestration, _ = OrchestrationFlowVersion.objects.get_or_create(
+    orchestration, _ = ensure_seed_version(
+        OrchestrationFlowVersion,
         code="validation-demo-processing_001",
         defaults={
             "version": "001",
@@ -208,7 +242,8 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
     )
     if orchestration.status == "draft":
         orchestration = publish_orchestration_flow_version(orchestration, actor=actor)
-    profile, _ = ProcessingProfileVersion.objects.get_or_create(
+    profile, _ = ensure_seed_version(
+        ProcessingProfileVersion,
         code="validation-demo_001",
         defaults={
             "version": "001",

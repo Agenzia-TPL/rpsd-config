@@ -15,12 +15,12 @@ from rpsd_config.exchange_agreement.models import (
     DatasetSpecification,
     Indicator,
     IndicatorVersion,
+    IndicatorVersionInput,
     InputFlowVersion,
     OrchestrationFlowVersion,
     ProcessingProfileIndicatorVersion,
     ProcessingProfileInputFlow,
     ProcessingProfileVersion,
-    RequirementFragment,
 )
 from rpsd_config.exchange_agreement.services.dataset_catalog import (
     publish_dataset_specification,
@@ -40,9 +40,6 @@ from rpsd_config.exchange_agreement.services.processing_profiles import (
     publish_processing_profile,
     withdraw_processing_profile,
 )
-from rpsd_config.exchange_agreement.services.requirement_fragments import (
-    publish_requirement_fragment,
-)
 
 
 @override_settings(ROOT_URLCONF="rpsd_config.server.urls")
@@ -58,16 +55,8 @@ class RelationalProcessingProfileTests(TestCase):
         self.siri, self.siri_specification = self._published_specification(
             "siri-vm", "siri-vm_v001"
         )
-        self.netex_fragment = self._published_fragment(
-            self.netex_specification,
-            "scheduled-journey-movement",
-            "netex",
-        )
-        self.siri_fragment = self._published_fragment(
-            self.siri_specification,
-            "observed-journey-movement",
-            "siri",
-        )
+        self.netex_input = self.netex_specification
+        self.siri_input = self.siri_specification
         indicator = Indicator.objects.create(
             code="commercial-speed",
             name="Commercial speed",
@@ -83,9 +72,11 @@ class RelationalProcessingProfileTests(TestCase):
             execution_reference="indicators/test-fixture",
             artifact_identifier="git:rpsd-flows@test-fixture",
         )
-        self.indicator_version.required_fragments.add(
-            self.netex_fragment, self.siri_fragment
-        )
+        for required_specification in [self.netex_input, self.siri_input]:
+            IndicatorVersionInput.objects.get_or_create(
+                indicator_version=self.indicator_version,
+                dataset_specification=required_specification,
+            )
         self.indicator_version = publish_indicator_version(
             self.indicator_version, actor=self.user
         )
@@ -116,21 +107,6 @@ class RelationalProcessingProfileTests(TestCase):
             description=f"{dataset_code} specification",
         )
         return dataset, publish_dataset_specification(specification, actor=self.user)
-
-    def _published_fragment(self, specification, code, prefix):
-        fragment = RequirementFragment.objects.create(
-            dataset_specification=specification,
-            code=code,
-            name=code.replace("-", " ").title(),
-            description=f"Required {code} data.",
-            locator_type=RequirementFragment.LocatorType.XPATH,
-            result_kind=RequirementFragment.ResultKind.PRESENCE,
-            locator_definition={
-                "path": f"//{prefix}:Movement",
-                "namespaces": {prefix: f"urn:{prefix}"},
-            },
-        )
-        return publish_requirement_fragment(fragment, actor=self.user)
 
     def _published_input_flow(self, specification, code, *, version="002"):
         return publish_input_flow_version(
@@ -183,25 +159,6 @@ class RelationalProcessingProfileTests(TestCase):
             with transaction.atomic():
                 self._add_input(profile, self.netex, self.netex_flow)
 
-    def test_publication_checks_complete_fragment_coverage(self):
-        profile = self._profile()
-        self._add_input(profile, self.netex, self.netex_flow)
-        ProcessingProfileIndicatorVersion.objects.create(
-            processing_profile_version=profile,
-            indicator_version=self.indicator_version,
-        )
-
-        with self.assertRaisesMessage(
-            ProcessingProfileTransitionError,
-            "commercial-speed_002 requires fragment observed-journey-movement",
-        ):
-            publish_processing_profile(profile, actor=self.user)
-
-        self._add_input(profile, self.siri, self.siri_flow)
-        profile = publish_processing_profile(profile, actor=self.user)
-        self.assertEqual(profile.status, ProcessingProfileVersion.Status.PUBLISHED)
-        self.assertEqual(profile.status_events.count(), 1)
-
     def test_publication_requires_published_components(self):
         profile = self._complete_profile()
         InputFlowVersion.objects.filter(pk=self.siri_flow.pk).update(
@@ -225,7 +182,10 @@ class RelationalProcessingProfileTests(TestCase):
             execution_reference="indicators/test-fixture",
             artifact_identifier="git:rpsd-flows@test-fixture",
         )
-        second.required_fragments.add(self.netex_fragment, self.siri_fragment)
+        for required_specification in [self.netex_input, self.siri_input]:
+            IndicatorVersionInput.objects.get_or_create(
+                indicator_version=second, dataset_specification=required_specification
+            )
         second = publish_indicator_version(second, actor=self.user)
         ProcessingProfileIndicatorVersion.objects.create(
             processing_profile_version=profile,

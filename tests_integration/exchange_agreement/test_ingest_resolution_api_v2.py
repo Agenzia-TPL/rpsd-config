@@ -123,7 +123,7 @@ class IngestResolutionApiV2Tests(_ContractRevisionFixtureMixin, TestCase):
         )
         self.assertEqual(
             payload["snapshot_schema_version"],
-            "canonical-json-v1",
+            "canonical-json-v2",
         )
         self.assertEqual(payload["snapshot_checksum"], revision.snapshot_checksum)
         self.assertNotIn("fragments", payload)

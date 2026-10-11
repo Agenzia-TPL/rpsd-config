@@ -226,7 +226,6 @@ class M2MApiV1ContractTests(TestCase):
                 self._public_contract_path("required-inputs"),
                 self._public_contract_path("indicators"),
                 "/exchange_agreement/api/v1/indicators",
-                "/exchange_agreement/api/v1/structures",
                 "/exchange_agreement/api/v1/flow-profiles",
             )
             for path in public_paths:

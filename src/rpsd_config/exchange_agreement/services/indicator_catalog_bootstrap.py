@@ -4,14 +4,16 @@
 
 from dataclasses import dataclass
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from rpsd_config.exchange_agreement.models import (
     DatasetSpecification,
-    FragmentValidationRule,
+    DatasetVersionRule,
     Indicator,
     IndicatorVersion,
-    RequirementFragment,
+    ValidationRule,
+    ValidationRuleVersion,
 )
 from rpsd_config.exchange_agreement.services.dataset_catalog_bootstrap import (
     ensure_initial_dataset_catalog,
@@ -19,13 +21,10 @@ from rpsd_config.exchange_agreement.services.dataset_catalog_bootstrap import (
 from rpsd_config.exchange_agreement.services.indicator_catalog import (
     publish_indicator_version,
 )
-from rpsd_config.exchange_agreement.services.requirement_fragments import (
-    publish_requirement_fragment,
-)
 
 
 @dataclass(frozen=True)
-class ExampleFragment:
+class ExampleRequirement:
     specification_code: str
     code: str
     name: str
@@ -33,29 +32,29 @@ class ExampleFragment:
     namespace: str
 
 
-COMMERCIAL_SPEED_FRAGMENTS = (
-    ExampleFragment(
+COMMERCIAL_SPEED_REQUIREMENTS = (
+    ExampleRequirement(
         "netex-ita_v001",
         "service-journey",
         "Service journey",
         "//netex:ServiceJourney",
         "http://www.netex.org.uk/netex",
     ),
-    ExampleFragment(
+    ExampleRequirement(
         "netex-ita_v001",
         "line",
         "Line",
         "//netex:Line",
         "http://www.netex.org.uk/netex",
     ),
-    ExampleFragment(
+    ExampleRequirement(
         "netex-ita_v001",
         "scheduled-stop-point",
         "Scheduled stop point",
         "//netex:ScheduledStopPoint",
         "http://www.netex.org.uk/netex",
     ),
-    ExampleFragment(
+    ExampleRequirement(
         "siri-vm_v001",
         "observed-vehicle-journey",
         "Observed vehicle journey",
@@ -66,38 +65,64 @@ COMMERCIAL_SPEED_FRAGMENTS = (
 
 
 @transaction.atomic
-def ensure_commercial_speed_example() -> IndicatorVersion:
-    """Create a published example needing three NeTEx and one SIRI fragment."""
+def ensure_commercial_speed_example(*, actor) -> IndicatorVersion:
+    """Create an indicator with three NeTEx and one SIRI validation rule."""
 
     ensure_initial_dataset_catalog()
-    fragments = []
-    for definition in COMMERCIAL_SPEED_FRAGMENTS:
+    from rpsd_config.exchange_agreement.services.validation_bindings import (
+        bind_dataset_rule,
+        bind_indicator_rule,
+    )
+    from rpsd_config.exchange_agreement.services.validation_catalog import (
+        require_catalog_admin,
+        transition_validation_rule,
+    )
+    from rpsd_config.exchange_agreement.services.validation_seed import (
+        ensure_seed_version,
+    )
+
+    require_catalog_admin(actor)
+    bindings = []
+    for definition in COMMERCIAL_SPEED_REQUIREMENTS:
         specification = DatasetSpecification.objects.get(
             code=definition.specification_code
         )
         prefix = "siri" if specification.dataset.code.startswith("siri-") else "netex"
-        fragment, _created = RequirementFragment.objects.get_or_create(
-            dataset_specification=specification,
-            code=definition.code,
+        rule, _ = ValidationRule.objects.get_or_create(
+            code="commercial-speed-" + definition.code,
+            defaults={"name": definition.name},
+        )
+        rule_version, _ = ensure_seed_version(
+            ValidationRuleVersion,
+            rule=rule,
+            version="001",
             defaults={
                 "name": definition.name,
-                "description": f"Required input for {definition.name}.",
-                "locator_type": RequirementFragment.LocatorType.XPATH,
-                "result_kind": RequirementFragment.ResultKind.PRESENCE,
-                "locator_definition": {
-                    "path": definition.path,
-                    "namespaces": {prefix: definition.namespace},
-                },
+                "validation_type": "xpath",
+                "language_version": "1.0",
+                "definition": "/*[not(" + definition.path + ")]",
+                "options": {"namespaces": {prefix: definition.namespace}},
+                "execution_reference": "fixture-validators/"
+                + specification.dataset.code,
             },
         )
-        if fragment.status == RequirementFragment.Status.DRAFT:
-            FragmentValidationRule.objects.get_or_create(
-                requirement_fragment=fragment,
-                rule_type=FragmentValidationRule.RuleType.EXISTS,
-                defaults={"parameters": {}},
+        if rule_version.status == "draft":
+            rule_version = transition_validation_rule(
+                rule_version, target_status="published", actor=actor
             )
-            fragment = publish_requirement_fragment(fragment)
-        fragments.append(fragment)
+        binding = DatasetVersionRule.objects.filter(
+            dataset_specification=specification, rule_version=rule_version
+        ).first()
+        if binding is None:
+            binding = bind_dataset_rule(
+                specification=specification,
+                rule_version=rule_version,
+                import_policy="indicator_only",
+                actor=actor,
+            )
+        elif binding.import_policy != "indicator_only":
+            raise ValidationError("Commercial speed seed policy conflict.")
+        bindings.append(binding)
 
     indicator, _created = Indicator.objects.update_or_create(
         code="commercial-speed",
@@ -107,7 +132,8 @@ def ensure_commercial_speed_example() -> IndicatorVersion:
             "status": Indicator.Status.ACTIVE,
         },
     )
-    version, _created = IndicatorVersion.objects.get_or_create(
+    version, _created = ensure_seed_version(
+        IndicatorVersion,
         code="commercial-speed_002",
         defaults={
             "indicator": indicator,
@@ -132,6 +158,14 @@ def ensure_commercial_speed_example() -> IndicatorVersion:
         },
     )
     if version.status == IndicatorVersion.Status.DRAFT:
-        version.required_fragments.add(*fragments)
-        version = publish_indicator_version(version)
+        for binding in bindings:
+            if not version.rule_bindings.filter(dataset_version_rule=binding).exists():
+                bind_indicator_rule(
+                    indicator_version=version,
+                    dataset_rule=binding,
+                    impact="calculation",
+                    dimensions=[],
+                    actor=actor,
+                )
+        version = publish_indicator_version(version, actor=actor)
     return version

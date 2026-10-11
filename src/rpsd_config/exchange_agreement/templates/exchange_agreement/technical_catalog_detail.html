@@ -53,13 +53,7 @@
       </div></section>
     {% endif %}
 
-    {% if catalog_slug == "fragments" %}
-      <section class="card border-0 shadow-sm mb-3"><div class="card-body">
-        <h2 class="h5">Regole di validazione</h2>
-        <ul>{% for rule in validation_rules %}<li>{{ rule.get_rule_type_display }} · {{ rule.get_severity_display }}{% if is_editable %}<form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="remove-rule"><input type="hidden" name="rule_id" value="{{ rule.id }}"><button class="btn btn-link text-danger btn-sm">Rimuovi</button></form>{% endif %}</li>{% empty %}<li class="text-body-secondary">Nessuna regola.</li>{% endfor %}</ul>
-        {% if is_editable %}<form method="post" class="row g-2">{% csrf_token %}<input type="hidden" name="action" value="add-rule"><div class="col-md-6"><label class="form-label">Regola</label><select class="form-select" name="rule_type">{% for value,label in rule_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div><div class="col-md-6"><label class="form-label">Severità</label><select class="form-select" name="severity">{% for value,label in rule_severities %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div><div class="col-12"><label class="form-label">Valori</label><input class="form-control" name="rule_values" placeholder="lun, sab, dom"><div class="form-text">Usato solo dalle regole basate su insiemi.</div></div><div class="col-12"><label class="me-3"><input type="checkbox" name="trim" checked> Ignora spazi esterni</label><label><input type="checkbox" name="case_sensitive" checked> Maiuscole significative</label></div><div><button class="btn btn-primary btn-sm">Aggiungi regola</button></div></form>{% endif %}
-      </div></section>
-    {% endif %}
+
 
 
     {% if effective_indicator_rows or closure_error %}
@@ -91,12 +85,7 @@
     <ul>{% for edge in indicator_closure.edges %}<li>{{ edge.dependent.code }} → {{ edge.prerequisite.code }}{% for dimension in edge.required_dimensions.all %} · {{ dimension.name }}{% empty %} · totale{% endfor %}</li>{% endfor %}</ul>
     </div></section>
     {% endif %}
-    {% if catalog_slug == "indicator-versions" %}
-      <section class="card border-0 shadow-sm mb-3"><div class="card-body">
-        <h2 class="h5">Frammenti legacy (da migrare)</h2><ul>{% for fragment in required_fragments %}<li>{{ fragment }}{% if is_editable %}<form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="remove-fragment"><input type="hidden" name="fragment_id" value="{{ fragment.id }}"><button class="btn btn-link text-danger btn-sm">Rimuovi</button></form>{% endif %}</li>{% empty %}<li class="text-body-secondary">Nessun frammento richiesto.</li>{% endfor %}</ul>
-        {% if is_editable %}<form method="post" class="d-flex gap-2">{% csrf_token %}<input type="hidden" name="action" value="add-fragment"><select class="form-select" name="fragment_id">{% for fragment in available_fragments %}<option value="{{ fragment.id }}">{{ fragment }}</option>{% endfor %}</select><button class="btn btn-primary btn-sm">Aggiungi</button></form>{% endif %}
-      </div></section>
-    {% endif %}
+
 
     {% if catalog_slug == "processing-profiles" %}
       <section class="card border-0 shadow-sm mb-3"><div class="card-body"><h2 class="h5">Input ammessi</h2><p class="small text-body-secondary">Gli input diventano obbligatori solo quando servono agli indicatori scelti nella revisione.</p><ul>{% for link in profile_inputs %}<li>{{ link.dataset.name }} · {{ link.input_flow_version }}{% if is_editable %}<form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="remove-input"><input type="hidden" name="link_id" value="{{ link.id }}"><button class="btn btn-link text-danger btn-sm">Rimuovi</button></form>{% endif %}</li>{% empty %}<li class="text-body-secondary">Nessun input.</li>{% endfor %}</ul>{% if is_editable %}<form method="post" class="d-flex gap-2">{% csrf_token %}<input type="hidden" name="action" value="add-input"><select class="form-select" name="input_flow_id">{% for flow in available_input_flows %}<option value="{{ flow.id }}">{{ flow }}</option>{% endfor %}</select><button class="btn btn-primary btn-sm">Aggiungi</button></form>{% endif %}</div></section>

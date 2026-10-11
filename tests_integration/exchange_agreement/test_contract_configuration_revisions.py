@@ -28,13 +28,13 @@ from rpsd_config.exchange_agreement.models import (
     DatasetSpecificationAsset,
     Indicator,
     IndicatorVersion,
+    IndicatorVersionInput,
     InputFlowVersion,
     Lot,
     OrchestrationFlowVersion,
     ProcessingProfileIndicatorVersion,
     ProcessingProfileInputFlow,
     ProcessingProfileVersion,
-    RequirementFragment,
 )
 from rpsd_config.exchange_agreement.services.contract_revisions import (
     ContractRevisionError,
@@ -58,9 +58,6 @@ from rpsd_config.exchange_agreement.services.indicator_catalog import (
 )
 from rpsd_config.exchange_agreement.services.processing_profiles import (
     publish_processing_profile,
-)
-from rpsd_config.exchange_agreement.services.requirement_fragments import (
-    publish_requirement_fragment,
 )
 
 
@@ -131,21 +128,7 @@ class _ContractRevisionFixtureMixin:
             actor=self.user,
         )
         self.netex_specification = specification
-        fragment = publish_requirement_fragment(
-            RequirementFragment.objects.create(
-                dataset_specification=specification,
-                code="scheduled-journey-movement",
-                name="Scheduled journey movement",
-                description="Required scheduled journey movement.",
-                locator_type=RequirementFragment.LocatorType.XPATH,
-                result_kind=RequirementFragment.ResultKind.PRESENCE,
-                locator_definition={
-                    "path": "//netex:ServiceJourney",
-                    "namespaces": {"netex": "urn:netex"},
-                },
-            ),
-            actor=self.user,
-        )
+        fragment = specification
         siri_dataset = Dataset.objects.create(code="siri-vm", name="SIRI VM")
         siri_specification = publish_dataset_specification(
             DatasetSpecification.objects.create(
@@ -156,21 +139,7 @@ class _ContractRevisionFixtureMixin:
             ),
             actor=self.user,
         )
-        siri_fragment = publish_requirement_fragment(
-            RequirementFragment.objects.create(
-                dataset_specification=siri_specification,
-                code="observed-journey-movement",
-                name="Observed journey movement",
-                description="Required observed journey movement.",
-                locator_type=RequirementFragment.LocatorType.XPATH,
-                result_kind=RequirementFragment.ResultKind.PRESENCE,
-                locator_definition={
-                    "path": "//siri:VehicleActivity",
-                    "namespaces": {"siri": "urn:siri"},
-                },
-            ),
-            actor=self.user,
-        )
+        siri_fragment = siri_specification
         self.logical_indicator = Indicator.objects.create(
             code="commercial-speed-target",
             name="Commercial speed",
@@ -186,7 +155,11 @@ class _ContractRevisionFixtureMixin:
             execution_reference="indicators/test-fixture",
             artifact_identifier="git:rpsd-flows@test-fixture",
         )
-        indicator_version.required_fragments.add(fragment, siri_fragment)
+        for required_specification in [fragment, siri_fragment]:
+            IndicatorVersionInput.objects.get_or_create(
+                indicator_version=indicator_version,
+                dataset_specification=required_specification,
+            )
         indicator_version = publish_indicator_version(
             indicator_version, actor=self.user
         )

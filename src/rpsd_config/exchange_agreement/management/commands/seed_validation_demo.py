@@ -5,6 +5,9 @@
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
+from rpsd_config.exchange_agreement.services.csv_validation_seed import (
+    ensure_csv_validation_demo,
+)
 from rpsd_config.exchange_agreement.services.validation_seed import (
     ensure_validation_demo,
 )
@@ -12,7 +15,7 @@ from rpsd_config.exchange_agreement.services.validation_seed import (
 
 class Command(BaseCommand):
     help = (
-        "Seed a composed indicator and XML validation "
+        "Seed a composed indicator and XML/CSV validation "
         "catalog; runtime references are fixtures."
     )
 
@@ -25,7 +28,8 @@ class Command(BaseCommand):
         except get_user_model().DoesNotExist as exc:
             raise CommandError("The actor does not exist.") from exc
         profile = ensure_validation_demo(actor=actor)
+        csv_profile = ensure_csv_validation_demo(actor=actor)
         self.stdout.write(
-            f"Profile {profile.code}; "
+            f"Profiles {profile.code}, {csv_profile.code}; "
             "deployment references require external provisioning."
         )

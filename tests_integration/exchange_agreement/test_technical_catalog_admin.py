@@ -53,7 +53,10 @@ class TechnicalCatalogAdminTests(TestCase):
         model_names = (
             "datasetadminproxy",
             "datasetspecificationadminproxy",
-            "requirementfragmentadminproxy",
+            "validationruleadminproxy",
+            "validationruleversionadminproxy",
+            "datasetversionruleadminproxy",
+            "indicatorversionruleadminproxy",
             "indicatoradminproxy",
             "indicatorversionadminproxy",
             "inputflowversionadminproxy",
@@ -164,9 +167,7 @@ class TechnicalCatalogAdminTests(TestCase):
             reverse("exchange_agreement:technical-catalog-index"),
         )
 
-        catalog = self.client.get(
-            reverse("exchange_agreement:technical-catalog-index")
-        )
+        catalog = self.client.get(reverse("exchange_agreement:technical-catalog-index"))
         self.assertEqual(catalog.status_code, 200)
         self.assertContains(catalog, "Specifiche dataset")
         self.assertContains(catalog, "Profili tecnici")

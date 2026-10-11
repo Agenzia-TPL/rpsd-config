@@ -17,7 +17,6 @@ from rpsd_config.exchange_agreement.models import (
     ProcessingProfileInputFlow,
     ProcessingProfileVersion,
     ProcessingProfileVersionStatusEvent,
-    RequirementFragment,
 )
 
 
@@ -92,11 +91,7 @@ def validate_processing_profile_for_publication(
         covered_specification_ids.add(specification.pk)
 
     indicator_links = list(
-        profile.indicator_version_links.select_related(
-            "indicator_version__indicator"
-        ).prefetch_related(
-            "indicator_version__required_fragments__dataset_specification"
-        )
+        profile.indicator_version_links.select_related("indicator_version__indicator")
     )
     if not indicator_links:
         raise ProcessingProfileTransitionError(
@@ -120,27 +115,6 @@ def validate_processing_profile_for_publication(
             raise ProcessingProfileTransitionError(
                 f"Indicator {version.indicator.code} is not active."
             )
-        for fragment in version.required_fragments.all():
-            if fragment.status != RequirementFragment.Status.PUBLISHED:
-                raise ProcessingProfileTransitionError(
-                    f"Indicator {version.code} requires unpublished fragment "
-                    f"{fragment.code}."
-                )
-            if (
-                fragment.dataset_specification.status
-                != DatasetSpecification.Status.PUBLISHED
-            ):
-                raise ProcessingProfileTransitionError(
-                    f"Fragment {fragment.code} belongs to unpublished specification "
-                    f"{fragment.dataset_specification.code}."
-                )
-            if fragment.dataset_specification_id not in covered_specification_ids:
-                raise ProcessingProfileTransitionError(
-                    f"Indicator {version.code} requires fragment {fragment.code} "
-                    f"from uncovered specification "
-                    f"{fragment.dataset_specification.code}."
-                )
-
     from rpsd_config.exchange_agreement.services.indicator_dependencies import (
         resolve_indicator_closure,
     )

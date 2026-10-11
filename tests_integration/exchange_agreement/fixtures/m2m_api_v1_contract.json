@@ -42,28 +42,7 @@
               "name": "NeTEx",
               "description": "Scheduled public transport data."
             },
-            "structures": [
-              {
-                "id": "<structure-id>",
-                "name": "NeTEx required fragment",
-                "description": "Required NeTEx content.",
-                "dataset": {
-                  "slug": "netex",
-                  "name": "NeTEx",
-                  "description": "Scheduled public transport data."
-                },
-                "definition": {
-                  "path": "//netex:ServiceJourney",
-                  "namespaces": {
-                    "netex": "urn:netex"
-                  },
-                  "xpath": "//netex:ServiceJourney",
-                  "fields": []
-                },
-                "xpath": "//netex:ServiceJourney",
-                "fields": []
-              }
-            ],
+            "structures": [],
             "used_by_indicators": [
               "golden-flow-profile-001-indicator"
             ]

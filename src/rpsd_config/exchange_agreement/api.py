@@ -44,7 +44,6 @@ from .models import (
     Lot,
     OrchestrationFlowVersion,
     ProcessingProfileVersion,
-    RequirementFragment,
 )
 from .rbac import resolve_user_agency_scope
 from .services.agency_bootstrap import (
@@ -83,7 +82,6 @@ from .services.processing_profiles import (
     serialize_processing_profile,
 )
 from .services.publication import PublishContractError, publish_contract
-from .services.requirement_fragments import serialize_requirement_fragment_catalog
 
 
 class InvitationCheckResponse(Schema):
@@ -159,24 +157,6 @@ class DatasetSpecificationAssetSchema(Schema):
     checksum_sha256: str
 
 
-class FragmentValidationRuleSchema(Schema):
-    rule_type: str
-    rule_version: int
-    severity: str
-    parameters: dict
-
-
-class RequirementFragmentSchema(Schema):
-    code: str
-    name: str
-    description: str
-    locator_type: str
-    result_kind: str
-    locator_definition: dict
-    status: str
-    rules: list[FragmentValidationRuleSchema]
-
-
 class DatasetSpecificationSchema(Schema):
     code: str
     version: str
@@ -185,7 +165,7 @@ class DatasetSpecificationSchema(Schema):
     metadata: dict
     published_at: str | None
     assets: list[DatasetSpecificationAssetSchema]
-    fragments: list[RequirementFragmentSchema]
+    fragments: list[dict]
 
 
 class DatasetCatalogSchema(Schema):
@@ -211,7 +191,7 @@ class IndicatorVersionCatalogSchema(Schema):
     artifact_identifier: str
     status: str
     published_at: str | None
-    required_fragments: list[RequirementFragmentSchema]
+    required_fragments: list[dict]
 
 
 class IndicatorCatalogSchema(Schema):
@@ -787,7 +767,7 @@ def _dataset_specification_schema(
             else None
         ),
         assets=assets,
-        fragments=serialize_requirement_fragment_catalog(specification),
+        fragments=[],
     )
 
 
@@ -856,33 +836,7 @@ def _processing_profile_legacy_schema(
     )
 
 
-def _fragment_structure_schema(fragment: RequirementFragment) -> StructureSchema:
-    locator = (
-        fragment.locator_definition
-        if isinstance(fragment.locator_definition, dict)
-        else {}
-    )
-    definition = dict(locator)
-    xpath = locator.get("path", "") if fragment.locator_type == "xpath" else ""
-    if xpath:
-        definition["xpath"] = xpath
-    definition.setdefault("fields", [])
-    return StructureSchema(
-        id=fragment.id,
-        name=fragment.name,
-        description=fragment.description,
-        dataset=_dataset_ref(fragment.dataset_specification.dataset),
-        definition=definition,
-        xpath=xpath,
-        fields=[],
-    )
-
-
 def _indicator_version_legacy_schema(version: IndicatorVersion) -> IndicatorSchema:
-    fragments = list(version.required_fragments.all())
-    fragments.sort(
-        key=lambda item: (item.dataset_specification.dataset.code, item.code)
-    )
     return IndicatorSchema(
         code=version.indicator.code,
         type="OTHER",
@@ -892,7 +846,7 @@ def _indicator_version_legacy_schema(version: IndicatorVersion) -> IndicatorSche
         notes=version.description,
         sql_procedure_name=version.execution_reference,
         sql_snippet="",
-        structures=[_fragment_structure_schema(item) for item in fragments],
+        structures=[],
     )
 
 
@@ -1125,77 +1079,28 @@ def _legacy_revision_required_inputs_schema(
 ) -> RequiredInputsResponse:
     current = resolve_current_contract_configuration(contract)
     snapshot = current.snapshot
-    inputs_by_specification = {
-        item.get("dataset_specification", {}).get("code"): item
-        for item in snapshot.get("inputs", [])
-        if isinstance(item, dict)
-        and isinstance(item.get("dataset_specification"), dict)
+    versions = {
+        v["code"]: v["indicator_code"] for v in snapshot.get("effective_indicators", [])
     }
-    groups: dict[str, dict] = {}
-    structure_id = 0
-    for indicator in snapshot.get("indicators", []):
-        if not isinstance(indicator, dict):
-            continue
-        indicator_code = indicator.get("indicator_code", "")
-        for fragment in indicator.get("fragments", []):
-            if not isinstance(fragment, dict):
-                continue
-            specification_code = fragment.get("dataset_specification_code")
-            selected_input = inputs_by_specification.get(specification_code)
-            if not isinstance(selected_input, dict):
-                raise IngestResolutionError(
-                    "configuration_invariant_violation",
-                    "A required fragment has no selected input",
-                )
-            dataset_code = selected_input.get("dataset_code", "")
-            dataset = DatasetRefSchema(
-                slug=dataset_code,
-                name=selected_input.get("dataset_name", dataset_code),
-                description=selected_input.get("dataset_description", ""),
-            )
-            group = groups.setdefault(
-                dataset_code,
-                {
-                    "dataset": dataset,
-                    "structures": [],
-                    "used_by_indicators": set(),
-                },
-            )
-            locator = fragment.get("locator_definition", {})
-            if not isinstance(locator, dict):
-                locator = {}
-            xpath = (
-                locator.get("path", "")
-                if fragment.get("locator_type") == "xpath"
-                else ""
-            )
-            definition = dict(locator)
-            if xpath:
-                definition["xpath"] = xpath
-            definition.setdefault("fields", [])
-            structure_id += 1
-            group["structures"].append(
-                StructureSchema(
-                    id=structure_id,
-                    name=fragment.get("name") or fragment.get("code", ""),
-                    description=fragment.get("description", ""),
-                    dataset=dataset,
-                    definition=definition,
-                    xpath=xpath,
-                    fields=[],
-                )
-            )
-            group["used_by_indicators"].add(indicator_code)
-
     return RequiredInputsResponse(
         contract_code=contract.contract_code,
         required_inputs=[
             RequiredInputGroupSchema(
-                dataset=group["dataset"],
-                structures=group["structures"],
-                used_by_indicators=sorted(group["used_by_indicators"]),
+                dataset=DatasetRefSchema(
+                    slug=item["dataset_code"],
+                    name=item["dataset_name"],
+                    description=item["dataset_description"],
+                ),
+                structures=[],
+                used_by_indicators=sorted(
+                    {
+                        versions[code]
+                        for code in item.get("required_by_indicator_versions", [])
+                    }
+                ),
             )
-            for _, group in sorted(groups.items())
+            for item in snapshot.get("inputs", [])
+            if item.get("required_by_indicator_versions")
         ],
     )
 
@@ -1259,9 +1164,9 @@ def _contract_indicators_schema(contract: Contract) -> list[ContractIndicatorSch
     }
     versions = {
         version.code: version
-        for version in IndicatorVersion.objects.select_related("indicator")
-        .prefetch_related("required_fragments__dataset_specification__dataset")
-        .filter(code__in=version_codes)
+        for version in IndicatorVersion.objects.select_related("indicator").filter(
+            code__in=version_codes
+        )
     }
 
     result = []
@@ -1621,7 +1526,6 @@ def m2m_contract_validation_plan_v3(
         contract_code=contract.contract_code,
         data_category=category,
         revision_code=resolution.revision.code,
-
     )
     return plan
 
@@ -2281,10 +2185,7 @@ def list_published_indicator_catalog(request):
             status=Indicator.Status.ACTIVE,
             versions__status=IndicatorVersion.Status.PUBLISHED,
         )
-        .prefetch_related(
-            "versions__required_fragments__dataset_specification",
-            "versions__required_fragments__validation_rules",
-        )
+        .prefetch_related()
         .order_by("code")
         .distinct()
     )
@@ -2303,10 +2204,7 @@ def get_published_indicator_catalog_entry(request, indicator_code: str):
             status=Indicator.Status.ACTIVE,
             versions__status=IndicatorVersion.Status.PUBLISHED,
         )
-        .prefetch_related(
-            "versions__required_fragments__dataset_specification",
-            "versions__required_fragments__validation_rules",
-        )
+        .prefetch_related()
         .distinct()
         .first()
     )
@@ -2324,7 +2222,6 @@ def list_indicators(request):
             indicator__status=Indicator.Status.ACTIVE,
         )
         .select_related("indicator")
-        .prefetch_related("required_fragments__dataset_specification__dataset")
         .order_by("indicator__code", "-version", "-id")
     )
     latest_by_indicator = {}
@@ -2346,7 +2243,6 @@ def get_indicator(request, indicator_code: str):
             status=IndicatorVersion.Status.PUBLISHED,
         )
         .select_related("indicator")
-        .prefetch_related("required_fragments__dataset_specification__dataset")
         .order_by("-version", "-id")
         .first()
     )
@@ -2365,28 +2261,12 @@ def get_indicator_structures(request, indicator_code: str):
             status=IndicatorVersion.Status.PUBLISHED,
         )
         .select_related("indicator")
-        .prefetch_related("required_fragments__dataset_specification__dataset")
         .order_by("-version", "-id")
         .first()
     )
     if version is None:
         raise HttpError(404, "Indicator not found.")
     return _indicator_version_legacy_schema(version).structures
-
-
-@api.get("/v1/structures", response=list[StructureSchema])
-def list_structures(request, dataset_slug: str | None = None):
-    _require_auth(request)
-    qs = RequirementFragment.objects.filter(
-        status=RequirementFragment.Status.PUBLISHED,
-        dataset_specification__status=DatasetSpecification.Status.PUBLISHED,
-    ).select_related("dataset_specification__dataset")
-    if dataset_slug:
-        qs = qs.filter(dataset_specification__dataset__code=dataset_slug)
-    return [
-        _fragment_structure_schema(fragment)
-        for fragment in qs.order_by("dataset_specification__dataset__code", "name")
-    ]
 
 
 @api.get("/v1/datasets", response=list[DatasetCatalogSchema])
@@ -2399,7 +2279,6 @@ def list_published_datasets(request):
         )
         .prefetch_related(
             "specifications__asset_links__configuration_asset",
-            "specifications__requirement_fragments__validation_rules",
         )
         .order_by("code")
         .distinct()
@@ -2418,7 +2297,6 @@ def get_published_dataset(request, dataset_code: str):
         )
         .prefetch_related(
             "specifications__asset_links__configuration_asset",
-            "specifications__requirement_fragments__validation_rules",
         )
         .distinct()
         .first()
@@ -2426,23 +2304,6 @@ def get_published_dataset(request, dataset_code: str):
     if dataset is None:
         raise HttpError(404, "Published dataset not found.")
     return _dataset_catalog_schema(dataset)
-
-
-@api.get("/v1/structures/{structure_id}", response=StructureSchema)
-def get_structure(request, structure_id: int):
-    _require_auth(request)
-    fragment = (
-        RequirementFragment.objects.filter(
-            id=structure_id,
-            status=RequirementFragment.Status.PUBLISHED,
-            dataset_specification__status=DatasetSpecification.Status.PUBLISHED,
-        )
-        .select_related("dataset_specification__dataset")
-        .first()
-    )
-    if fragment is None:
-        raise HttpError(404, "Structure not found.")
-    return _fragment_structure_schema(fragment)
 
 
 @api.get("/v1/flow-profiles", response=list[FlowProfileSchema])
