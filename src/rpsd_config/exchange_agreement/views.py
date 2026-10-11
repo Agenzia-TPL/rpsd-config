@@ -45,7 +45,7 @@ from .models import (
     ContractConfigurationRevision,
     ContractInvitation,
     ContractMembership,
-    IndicatorProfile,
+    IndicatorVersion,
     IntegrationPrincipal,
     Lot,
     NetexValidationProfile,
@@ -853,9 +853,6 @@ def _build_initialization_state() -> dict:
             "profile_type", "-created_at", "-id"
         )
     )
-    indicator_profiles = list(
-        IndicatorProfile.objects.all().order_by("-created_at", "-id")
-    )
     configuration_assets = list(
         ConfigurationAsset.objects.all().order_by(
             "asset_type",
@@ -867,9 +864,9 @@ def _build_initialization_state() -> dict:
 
     netex_active_count = sum(1 for profile in netex_profiles if profile.is_active)
     siri_active_count = sum(1 for profile in siri_profiles if profile.is_active)
-    indicator_active_count = sum(
-        1 for profile in indicator_profiles if profile.is_active
-    )
+    indicator_published_count = IndicatorVersion.objects.filter(
+        status=IndicatorVersion.Status.PUBLISHED
+    ).count()
 
     active_siri_by_type: dict[str, int] = {}
     for profile in siri_profiles:
@@ -885,18 +882,17 @@ def _build_initialization_state() -> dict:
         netex_active_count == 1
         and siri_active_count >= 1
         and not siri_duplicate_active_types
-        and indicator_active_count >= 1
+        and indicator_published_count >= 1
     )
 
     return {
         "netex_profiles": netex_profiles,
         "siri_profiles": siri_profiles,
-        "indicator_profiles": indicator_profiles,
         "configuration_assets": configuration_assets,
         "summary": {
             "netex_active_count": netex_active_count,
             "siri_active_count": siri_active_count,
-            "indicator_active_count": indicator_active_count,
+            "indicator_published_count": indicator_published_count,
             "siri_duplicate_active_types": siri_duplicate_active_types,
             "initialized": initialized,
         },
@@ -2588,8 +2584,6 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "siri_label": "",
             "siri_type": SiriValidationProfile.ProfileType.PT,
             "siri_is_active": False,
-            "indicator_label": "",
-            "indicator_is_active": False,
         },
     }
 
@@ -2607,10 +2601,6 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             ).strip(),
             "siri_is_active": _normalize_boolean_flag(
                 request.POST.get("siri_is_active", "")
-            ),
-            "indicator_label": request.POST.get("indicator_label", "").strip(),
-            "indicator_is_active": _normalize_boolean_flag(
-                request.POST.get("indicator_is_active", "")
             ),
         }
         try:
@@ -2691,35 +2681,6 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                 result_context["upload_form_values"]["siri_label"] = ""
                 result_context["upload_form_values"]["siri_is_active"] = False
 
-            elif action == "upload-indicator":
-                uploaded_file = request.FILES.get("indicator_file")
-                if uploaded_file is None:
-                    raise ValidationError("Seleziona un file indicatori (.yml/.yaml).")
-                stored = store_configuration_asset(
-                    uploaded_file=uploaded_file,
-                    asset_type=ConfigurationAsset.AssetType.INDICATOR_YAML,
-                    label=result_context["upload_form_values"]["indicator_label"],
-                    activate=result_context["upload_form_values"][
-                        "indicator_is_active"
-                    ],
-                    uploaded_by=request.user,
-                )
-                profile = IndicatorProfile(
-                    label=result_context["upload_form_values"]["indicator_label"],
-                    file=uploaded_file,
-                    is_active=result_context["upload_form_values"][
-                        "indicator_is_active"
-                    ],
-                    configuration_asset=stored.asset,
-                )
-                profile.full_clean()
-                profile.save()
-                result_context["success_message"] = (
-                    "Definizione indicatori caricata correttamente."
-                )
-                result_context["upload_form_values"]["indicator_label"] = ""
-                result_context["upload_form_values"]["indicator_is_active"] = False
-
             elif action == "set-netex-active":
                 profile_id = int(request.POST.get("profile_id", "0"))
                 set_active = _normalize_boolean_flag(request.POST.get("set_active", ""))
@@ -2760,23 +2721,6 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
                         actor=request.user,
                     )
                 result_context["success_message"] = "Stato profilo SIRI aggiornato."
-
-            elif action == "set-indicator-active":
-                profile_id = int(request.POST.get("profile_id", "0"))
-                set_active = _normalize_boolean_flag(request.POST.get("set_active", ""))
-                profile = IndicatorProfile.objects.filter(pk=profile_id).first()
-                if profile is None:
-                    raise ValidationError("Profilo indicatori non trovato.")
-                profile.is_active = set_active
-                profile.save(update_fields=["is_active", "updated_at"])
-                if set_active and profile.configuration_asset_id:
-                    activate_configuration_asset(
-                        asset=profile.configuration_asset,
-                        actor=request.user,
-                    )
-                result_context["success_message"] = (
-                    "Stato profilo indicatori aggiornato."
-                )
 
             elif action == "set-config-asset-active":
                 asset_id = int(request.POST.get("asset_id", "0"))
@@ -2823,7 +2767,6 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "platform_user_summary": platform_user_summary,
             "netex_profiles": initialization_state["netex_profiles"],
             "siri_profiles": initialization_state["siri_profiles"],
-            "indicator_profiles": initialization_state["indicator_profiles"],
             "configuration_assets": initialization_state["configuration_assets"],
             "configuration_asset_type_choices": ConfigurationAsset.AssetType.choices,
             "initialization_summary": initialization_state["summary"],

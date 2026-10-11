@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
-"""Read-only inventory of calculation provenance and legacy indicator files."""
+"""Read-only inventory of calculation references and artifact provenance."""
 
 import json
 
@@ -13,7 +13,7 @@ from rpsd_config.exchange_agreement.services.indicator_dependencies import (
 
 class Command(BaseCommand):
     help = (
-        "Inventory indicator artifact identifiers separately from legacy YAML assets."
+        "Inventory indicator calculation references and execution artifact identifiers."
     )
 
     def handle(self, *args, **options):

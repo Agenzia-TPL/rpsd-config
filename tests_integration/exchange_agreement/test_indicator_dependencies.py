@@ -100,7 +100,8 @@ class IndicatorDependencyTests(TestCase):
             inventory["indicator_versions"][0]["artifact_identifier"],
             child.artifact_identifier,
         )
-        self.assertEqual(inventory["legacy_indicator_files"], [])
+        self.assertNotIn("legacy_indicator_files", inventory)
+        self.assertEqual(inventory["schema_version"], "indicator-artifact-inventory-v2")
         child.refresh_from_db()
         self.assertEqual(child.artifact_identifier, "git:flows@fixture")
 

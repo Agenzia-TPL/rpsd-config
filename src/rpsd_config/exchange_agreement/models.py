@@ -188,6 +188,7 @@ def siri_profile_upload_path(instance, filename):
 
 
 def indicator_profile_upload_path(instance, filename):
+    """Migration-only path required by historical migration 0019."""
     return _platform_initialization_file_path(category="indicators", filename=filename)
 
 
@@ -238,7 +239,6 @@ class ConfigurationAsset(TimeStampedModel):
     class AssetType(models.TextChoices):
         NETEX_XSD = "netex_xsd", _("NeTEx XSD")
         SIRI_PROFILE = "siri_profile", _("SIRI profile")
-        INDICATOR_YAML = "indicator_yaml", _("Indicator YAML")
 
     class Status(models.TextChoices):
         STORED = "stored", _("Stored")
@@ -248,7 +248,6 @@ class ConfigurationAsset(TimeStampedModel):
     ASSET_TYPE_EXTENSIONS = {
         AssetType.NETEX_XSD: {"xsd", "zip"},
         AssetType.SIRI_PROFILE: {"xsd", "xml", "zip"},
-        AssetType.INDICATOR_YAML: {"yml", "yaml"},
     }
 
     asset_type = models.CharField(
@@ -308,6 +307,10 @@ class ConfigurationAsset(TimeStampedModel):
                 condition=models.Q(is_active=True),
                 name="uniq_active_config_asset_type_what",
             ),
+            models.CheckConstraint(
+                condition=models.Q(asset_type__in=["netex_xsd", "siri_profile"]),
+                name="config_asset_supported_dataset_type",
+            ),
         ]
         indexes = [
             models.Index(
@@ -352,8 +355,6 @@ class ConfigurationAsset(TimeStampedModel):
             raise ValidationError(
                 _("SIRI asset filename must use a canonical name like siri-pt.xsd.")
             )
-        if asset_type == cls.AssetType.INDICATOR_YAML:
-            what = "indicators"
         return what
 
     def clean(self):
@@ -539,34 +540,6 @@ class SiriValidationProfile(TimeStampedModel):
         if self.label:
             return f"{self.profile_type} - {self.label}"
         return f"{self.profile_type} - {Path(self.file.name).name}"
-
-
-class IndicatorProfile(TimeStampedModel):
-    label = models.CharField(max_length=128, blank=True, default="")
-    file = models.FileField(
-        upload_to=indicator_profile_upload_path,
-        max_length=512,
-        validators=[FileExtensionValidator(allowed_extensions=["yml", "yaml"])],
-        help_text="Indicator definition file (.yml/.yaml).",
-    )
-    is_active = models.BooleanField(default=False, db_index=True)
-    configuration_asset = models.ForeignKey(
-        ConfigurationAsset,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="indicator_profiles",
-    )
-
-    class Meta:
-        verbose_name = "Indicator profile"
-        verbose_name_plural = "Indicator profiles"
-        ordering = ["-created_at", "-id"]
-
-    def __str__(self) -> str:
-        if self.label:
-            return self.label
-        return Path(self.file.name).name
 
 
 # -----------------------------------------------

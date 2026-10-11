@@ -10,9 +10,11 @@ from django.urls import reverse
 
 from rpsd_config.exchange_agreement.models import (
     ConfigurationAsset,
-    IndicatorProfile,
     NetexValidationProfile,
     SiriValidationProfile,
+)
+from rpsd_config.exchange_agreement.services.indicator_catalog_bootstrap import (
+    ensure_commercial_speed_example,
 )
 
 
@@ -187,23 +189,7 @@ class PlatformConfigurationPhase9Tests(TestCase):
             "SIRI PT v2",
         )
 
-        indicator = SimpleUploadedFile(
-            "indicatori-base.yml",
-            b"indicator_code: KPI-01\nlabel: Demo\n",
-            content_type="application/x-yaml",
-        )
-        indicator_upload = self.client.post(
-            self.url,
-            {
-                "tab": "inizializzazione",
-                "action": "upload-indicator",
-                "indicator_label": "Indicatori base",
-                "indicator_is_active": "on",
-                "indicator_file": indicator,
-            },
-        )
-        self.assertEqual(indicator_upload.status_code, 200)
-        self.assertEqual(IndicatorProfile.objects.filter(is_active=True).count(), 1)
+        ensure_commercial_speed_example(actor=self.platform_admin)
 
         final_page = self.client.get(self.url + "?tab=inizializzazione")
         self.assertEqual(final_page.status_code, 200)

@@ -56,7 +56,6 @@ from .proxies import (
     DatasetSpecificationAdminProxy,
     DatasetSpecificationStatusEventAdminProxy,
     IndicatorAdminProxy,
-    IndicatorProfileAdminProxy,
     IndicatorVersionAdminProxy,
     IndicatorVersionStatusEventAdminProxy,
     InputFlowVersionAdminProxy,
@@ -694,14 +693,6 @@ class SiriValidationProfileAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin
     )
     list_filter = ("profile_type", "is_active")
     search_fields = ("profile_type", "label", "file")
-    readonly_fields = ("created_at_human", "updated_at_human")
-
-
-@admin.register(IndicatorProfileAdminProxy)
-class IndicatorProfileAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
-    list_display = ("label", "file", "is_active", "created_at", "updated_at")
-    list_filter = ("is_active",)
-    search_fields = ("label", "file")
     readonly_fields = ("created_at_human", "updated_at_human")
 
 

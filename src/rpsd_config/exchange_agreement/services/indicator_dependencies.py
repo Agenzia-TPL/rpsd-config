@@ -154,11 +154,9 @@ def add_indicator_dependency(
 
 
 def indicator_artifact_inventory() -> dict:
-    """Inventory code provenance separately from removable legacy YAML files."""
-    from rpsd_config.exchange_agreement.models import ConfigurationAsset
-
+    """Inventory calculation references and execution artifact provenance."""
     return {
-        "schema_version": "indicator-artifact-inventory-v1",
+        "schema_version": "indicator-artifact-inventory-v2",
         "indicator_versions": [
             {
                 "code": version.code,
@@ -172,17 +170,5 @@ def indicator_artifact_inventory() -> dict:
             for version in IndicatorVersion.objects.select_related(
                 "indicator"
             ).order_by("code")
-        ],
-        "legacy_indicator_files": [
-            {
-                "asset_type": asset.asset_type,
-                "code": asset.what,
-                "version": asset.version,
-                "checksum_sha256": asset.checksum_sha256,
-                "status": asset.status,
-            }
-            for asset in ConfigurationAsset.objects.filter(
-                asset_type="indicator_yaml"
-            ).order_by("what", "version")
         ],
     }

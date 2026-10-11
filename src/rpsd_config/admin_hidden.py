@@ -18,7 +18,6 @@ from rpsd_config.exchange_agreement.models import (
     ContractPublication,
     Dataset,
     Indicator,
-    IndicatorProfile,
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
@@ -79,11 +78,6 @@ class NetexValidationProfileHidden(_HiddenAdmin):
 @admin.register(SiriValidationProfile)
 class SiriValidationProfileHidden(_HiddenAdmin):
     search_fields = ("profile_type", "label", "file")
-
-
-@admin.register(IndicatorProfile)
-class IndicatorProfileHidden(_HiddenAdmin):
-    search_fields = ("label", "file")
 
 
 @admin.register(ConfigurationAsset)

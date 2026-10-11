@@ -340,8 +340,9 @@ Il futuro validator applicherà questi criteri alle entità mappate; se il mappi
 manca, il risultato resta sconosciuto. Config non produce esiti o percentuali.
 
 Il comando di sola lettura `uv run manage indicator_artifact_inventory` elenca
-separatamente i riferimenti di provenienza delle versioni e i file YAML legacy.
-Non elimina file o riferimenti: la dismissione operativa resta nella 026.
+i riferimenti di calcolo e di provenienza delle versioni nel formato
+`indicator-artifact-inventory-v2`. Il catalogo YAML degli indicatori è rimosso;
+l’inventario non contiene più `legacy_indicator_files` e non elimina file.
 
 
 ## Bundle XSD e descrittori di validazione (023)
@@ -631,3 +632,53 @@ payload v1, sono elenchi vuoti; il catalogo `/v1/structures` è rimosso.
 Gli input e gli indicatori che li richiedono derivano dai metadati congelati
 `required_by_indicator_versions`; le regole complete sono esposte dal piano v3. Audit del piano include revisione, categoria, schema e checksum senza
 registrare token, definizioni di regole o contenuto dei dataset.
+
+## Dismissione dei file YAML indicatori (026)
+
+Gli indicatori si definiscono nel catalogo tecnico versionato. La configurazione
+piattaforma collega al catalogo e conta le versioni pubblicate per lo stato di
+inizializzazione; non richiede più un file YAML attivo. Upload e attivazione dei
+vecchi profili indicatori non sono supportati. Modello IndicatorProfile e proxy
+admin sono rimossi. Gli asset configurazione ammettono soltanto NeTEx XSD e
+profili SIRI: il controllo è applicato anche a livello database.
+
+Le migrazioni admin 0012 / exchange_agreement 0047 rimuovono lo schema del
+profilo YAML e i metadati ConfigurationAsset di tipo indicator_yaml, inclusi
+collegamenti obsoleti e relativi eventi. Conservano gli asset dataset e i campi
+execution_reference/artifact_identifier delle versioni indicatore. Non
+eliminano file fisici, non contattano storage, broker, Keycloak o Prefect.
+La funzione upload_to storica resta solo per applicare la migration 0019.
+
+Il passo è riferito all’ambiente di sviluppo senza dati da conservare concordato.
+La pulizia dei metadati è irreversibile: non si recupera lo schema precedente
+semplicemente tornando al vecchio codice. Applicare le migrazioni al proprio
+target verificato oppure usare la ricostruzione esplicita di sviluppo descritta
+sopra. Questa consegna non ha migrato né resettato il database applicativo.
+
+## Verifica finale provider Config (027)
+
+Verificato il 12 ottobre 2026: 210 test di cataloghi, transazioni concorrenti,
+binding, DAG, parametri, revisioni, snapshot, UI/RBAC, bundle, seed, cleanup e
+API v1/v2/v3. Esecuzione nella copia isolata `/tmp/rpsd-validation-cutover-test`
+con `PYTHONPATH` puntato ai suoi sorgenti e `UV_PROJECT_ENVIRONMENT=/app/.venv`:
+La suite elencata nei task 027 è stata eseguita con `uv run --no-sync pytest`
+e opzioni `--create-db --no-cov -q --tb=short -x`.
+`--create-db` ricostruisce il database di test; non è un comando per aggiornare
+il database applicativo. Django check e makemigrations --check --dry-run passati.
+
+I documenti workspace `modello_dati.md`, `modello_dati.mmd` e
+`modello_dati_preview.md` descrivono il dominio attuale; il diagramma omette
+esplicitamente audit/membership/inviti. Nomi e cardinalità delle 44 FK di 31
+entità sono verificati contro i metadati Django.
+
+La pubblicazione si svolge in Django e verifica il riferimento configurato;
+non richiede una chiamata a Prefect. Il registry espone contratti degli interpreti
+con runtime `external_not_verified`. Config non conserva esiti di trasferimento
+né avvia i job. Il futuro container validator interrogherà il piano v3 e gli
+asset autorizzati; ownership/repository, pin e persistenza del piano, esecuzione,
+retry/callback, ammissione e smoke Prefect sono ancora handoff esterni.
+La QA CORSE_PDE isolata non equivale allo smoke del servizio.
+
+Non sono stati migrati o resettati i dati applicativi né attivato un rollout.
+Per il percorso di sviluppo usare separatamente i comandi di migrazione,
+reset e seed già documentati, verificando il target prima di operare.

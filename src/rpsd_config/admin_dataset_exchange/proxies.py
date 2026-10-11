@@ -11,7 +11,6 @@ from rpsd_config.exchange_agreement.models import (
     DependencyRequiredDimension,
     Indicator,
     IndicatorDimension,
-    IndicatorProfile,
     IndicatorVersion,
     IndicatorVersionDependency,
     IndicatorVersionInput,
@@ -145,14 +144,6 @@ class SiriValidationProfileAdminProxy(SiriValidationProfile):
         app_label = "admin_dataset_exchange"
         verbose_name = "SIRI validation profile"
         verbose_name_plural = "SIRI validation profiles"
-
-
-class IndicatorProfileAdminProxy(IndicatorProfile):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Indicator profile"
-        verbose_name_plural = "Indicator profiles"
 
 
 class ConfigurationAssetAdminProxy(ConfigurationAsset):
