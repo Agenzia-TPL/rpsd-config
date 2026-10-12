@@ -17,7 +17,6 @@ from rpsd_config.exchange_agreement.models import (
     Company,
     Contract,
     ContractConfigurationRevision,
-    ContractIndicator,
     ContractMembership,
     ContractPublication,
     Lot,
@@ -122,12 +121,6 @@ def ensure_target_development_seed() -> DevelopmentSeedResult:
     )
 
     ensure_csv_validation_demo(actor=actor)
-    logical_indicator = (
-        profile.indicator_version_links.select_related("indicator_version__indicator")
-        .get(proposed_by_default=True)
-        .indicator_version.indicator
-    )
-
     agency, _created = Agency.objects.get_or_create(
         agency_key="demo-agency",
         defaults={
@@ -177,11 +170,6 @@ def ensure_target_development_seed() -> DevelopmentSeedResult:
             "role": ContractMembership.Role.CONTRACT_ADMIN,
             "created_by": actor,
         },
-    )
-
-    ContractIndicator.objects.get_or_create(
-        contract=contract,
-        logical_indicator=logical_indicator,
     )
 
     revision = ContractConfigurationRevision.objects.filter(contract=contract).first()

@@ -7,9 +7,8 @@ from unittest.mock import patch
 
 from rpsd_config.exchange_agreement.models import (
     ContractConfigurationRevision,
-    ContractIndicator,
-    ContractIndicatorConfiguration,
     ContractInputSelection,
+    ContractRevisionIndicator,
     Dataset,
     DatasetSpecification,
     Indicator,
@@ -158,10 +157,6 @@ def install_approved_runtime_configuration(
     )
     profile = publish_processing_profile(profile, actor=actor)
 
-    contract_indicator = ContractIndicator.objects.create(
-        contract=contract,
-        logical_indicator=logical_indicator,
-    )
     revision = ContractConfigurationRevision.objects.create(
         contract=contract,
         revision_number=1,
@@ -176,9 +171,8 @@ def install_approved_runtime_configuration(
             revision=revision,
             processing_profile_input_flow=profile_input,
         )
-    ContractIndicatorConfiguration.objects.create(
+    ContractRevisionIndicator.objects.create(
         revision=revision,
-        contract_indicator=contract_indicator,
         processing_profile_indicator_version=profile_indicator,
     )
     with patch(

@@ -12,7 +12,6 @@ from rpsd_config.exchange_agreement.models import (
     ConfigurationAssetEvent,
     Contract,
     ContractDocument,
-    ContractIndicator,
     ContractInvitation,
     ContractMembership,
     ContractPublication,
@@ -98,15 +97,6 @@ class ContractHidden(_HiddenAdmin):
 @admin.register(ContractDocument)
 class ContractDocumentHidden(_HiddenAdmin):
     search_fields = ("name", "file")
-
-
-@admin.register(ContractIndicator)
-class ContractIndicatorHidden(_HiddenAdmin):
-    search_fields = (
-        "contract__contract_code",
-        "logical_indicator__code",
-        "logical_indicator__name",
-    )
 
 
 @admin.register(ContractMembership)

@@ -1,0 +1,17 @@
+/* Scoped Config admin guidance, using Django theme variables. */
+.config-example { margin-block: .8rem; max-width: 70rem; }
+.config-example summary, .config-inline-guidance summary { cursor: pointer; padding: .4rem 0; }
+.config-example summary:focus-visible, .config-example pre:focus-visible,
+.config-inline-guidance summary:focus-visible { outline: 2px solid var(--link-fg); outline-offset: 2px; }
+.config-example pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; padding: .8rem; background: var(--darkened-bg); color: var(--body-fg); border-radius: 4px; }
+.config-example p { line-height: 1.5; }
+.config-guidance-notice { padding: .8rem; background: var(--darkened-bg); border-left: 3px solid var(--link-fg); }
+.config-inline-guidance { padding: .5rem 1rem; max-width: 70rem; }
+.config-inline-guidance .help { margin-left: 0; padding: .5rem; }
+.config-inline-guidance + table { display: block; overflow-x: auto; }
+.form-row .readonly { overflow-wrap: anywhere; min-width: 0; }
+.form-row .help { line-height: 1.5; }
+@media (max-width: 767px) {
+  .config-example, .config-inline-guidance { max-width: 100%; }
+  .form-row textarea { max-width: 100%; box-sizing: border-box; }
+}

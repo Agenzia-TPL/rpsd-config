@@ -1328,17 +1328,20 @@ def _revision_error_message(exc: Exception, *, technical: bool) -> str:
 
 
 def _revision_indicator_configs_from_post(request, revision):
-    link_ids = {
-        int(value)
-        for value in request.POST.getlist("indicator_link_ids")
-        if value.isdigit()
-    }
+    requested_ids = request.POST.getlist("indicator_link_ids")
+    if any(not value.isdigit() for value in requested_ids):
+        raise ContractRevisionError("Indicator selections must use valid profile IDs.")
+    link_ids = {int(value) for value in requested_ids}
     links = list(
         ProcessingProfileIndicatorVersion.objects.filter(
             processing_profile_version=revision.processing_profile_version,
             pk__in=link_ids,
         ).select_related("indicator_version__indicator")
     )
+    if {link.pk for link in links} != link_ids:
+        raise ContractRevisionError(
+            "Indicator selections must belong to the revision profile."
+        )
     existing = {
         item.processing_profile_indicator_version_id: item
         for item in revision.indicator_configurations.all()

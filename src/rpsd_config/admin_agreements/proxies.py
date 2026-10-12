@@ -4,7 +4,6 @@ from rpsd_config.exchange_agreement.models import (
     Contract,
     ContractConfigurationRevision,
     ContractDocument,
-    ContractIndicator,
     ContractInvitation,
     ContractMembership,
     ContractPublication,
@@ -33,14 +32,6 @@ class ContractDocumentAdminProxy(ContractDocument):
         app_label = "admin_agreements"
         verbose_name = "Contract document"
         verbose_name_plural = "Contract documents"
-
-
-class ContractIndicatorAdminProxy(ContractIndicator):
-    class Meta:
-        proxy = True
-        app_label = "admin_agreements"
-        verbose_name = "Contract indicator"
-        verbose_name_plural = "Contract indicators"
 
 
 class ContractMembershipAdminProxy(ContractMembership):

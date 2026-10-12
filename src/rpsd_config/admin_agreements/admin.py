@@ -9,11 +9,12 @@ from django.utils import timezone
 from django.utils.formats import date_format
 
 from rpsd_config import admin_hidden  # noqa: F401
+from rpsd_config.admin_guidance import GuidedAdminMixin, GuidedInlineMixin
 from rpsd_config.exchange_agreement.models import (
     Contract,
     ContractConfigurationRevisionStatusEvent,
-    ContractIndicatorConfiguration,
     ContractInputSelection,
+    ContractRevisionIndicator,
     ProcessingProfileIndicatorVersion,
     ProcessingProfileInputFlow,
     ProcessingProfileVersion,
@@ -32,29 +33,20 @@ from .proxies import (
     ContractAdminProxy,
     ContractConfigurationRevisionAdminProxy,
     ContractDocumentAdminProxy,
-    ContractIndicatorAdminProxy,
     ContractInvitationAdminProxy,
     ContractMembershipAdminProxy,
     ContractPublicationAdminProxy,
 )
 
 
-class ContractDocumentInline(admin.TabularInline):
+class ContractDocumentInline(GuidedInlineMixin, admin.TabularInline):
     model = ContractDocumentAdminProxy
     extra = 0
     fields = ("name", "file")
     show_change_link = True
 
 
-class ContractIndicatorInline(admin.TabularInline):
-    model = ContractIndicatorAdminProxy
-    extra = 0
-    fields = ("logical_indicator",)
-    autocomplete_fields = ("logical_indicator",)
-    show_change_link = True
-
-
-class ContractMembershipInline(admin.TabularInline):
+class ContractMembershipInline(GuidedInlineMixin, admin.TabularInline):
     model = ContractMembershipAdminProxy
     extra = 0
     fields = ("user", "role", "created_by")
@@ -62,7 +54,7 @@ class ContractMembershipInline(admin.TabularInline):
     show_change_link = True
 
 
-class ContractInvitationInline(admin.TabularInline):
+class ContractInvitationInline(GuidedInlineMixin, admin.TabularInline):
     model = ContractInvitationAdminProxy
     extra = 0
     fields = ("email", "role_to_assign", "token", "status", "expires_at", "invited_by")
@@ -71,7 +63,7 @@ class ContractInvitationInline(admin.TabularInline):
     show_change_link = True
 
 
-class ContractConfigurationRevisionInline(admin.TabularInline):
+class ContractConfigurationRevisionInline(GuidedInlineMixin, admin.TabularInline):
     model = ContractConfigurationRevisionAdminProxy
     extra = 0
     fields = ("code", "revision_number", "valid_from", "status")
@@ -85,7 +77,7 @@ class ContractConfigurationRevisionInline(admin.TabularInline):
         return False
 
 
-class _HumanReadableTimestampsMixin:
+class _HumanReadableTimestampsMixin(GuidedAdminMixin):
     @staticmethod
     def _format_timestamp(value):
         if value is None or isinstance(value, DatabaseDefault):
@@ -96,13 +88,13 @@ class _HumanReadableTimestampsMixin:
             value = timezone.make_aware(value, timezone.get_current_timezone())
         return date_format(timezone.localtime(value), "DATETIME_FORMAT")
 
-    @admin.display(description="Created at")
+    @admin.display(description="Creazione")
     def created_at_human(self, obj):
         if obj is None:
             return "-"
         return self._format_timestamp(getattr(obj, "created_at", None))
 
-    @admin.display(description="Updated at")
+    @admin.display(description="Ultimo aggiornamento")
     def updated_at_human(self, obj):
         if obj is None:
             return "-"
@@ -141,7 +133,6 @@ class ContractAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     date_hierarchy = "start_date"
     inlines = (
         ContractDocumentInline,
-        ContractIndicatorInline,
         ContractMembershipInline,
         ContractInvitationInline,
         ContractConfigurationRevisionInline,
@@ -214,7 +205,7 @@ class ContractAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
             )
         return tuple(readonly)
 
-    @admin.action(description="Publish selected contracts")
+    @admin.action(description="Pubblica i contratti selezionati")
     def publish_selected_contracts(self, request, queryset):
         published = 0
         skipped_draft = 0
@@ -250,27 +241,27 @@ class ContractAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
         if published:
             self.message_user(
                 request,
-                f"Published {published} contract(s).",
+                f"Contratti pubblicati: {published}.",
                 level=messages.SUCCESS,
             )
         if skipped_draft:
             self.message_user(
                 request,
-                f"Skipped {skipped_draft} draft contract(s):"
-                " drafts are not publishable from this action.",
+                f"Contratti in bozza ignorati: {skipped_draft}."
+                " Le bozze non sono pubblicabili con questa azione.",
                 level=messages.WARNING,
             )
         if skipped_other:
             self.message_user(
                 request,
-                f"Skipped {skipped_other} closed contract(s).",
+                f"Contratti chiusi ignorati: {skipped_other}.",
                 level=messages.WARNING,
             )
         if failed:
             self.message_user(
                 request,
-                f"Failed to publish {failed} contract(s)"
-                " due to validation/permission errors.",
+                f"Pubblicazione non riuscita per {failed} contratti"
+                " per errori di validazione o permessi.",
                 level=messages.ERROR,
             )
 
@@ -283,19 +274,7 @@ class ContractDocumentAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     readonly_fields = ("created_at_human", "updated_at_human")
 
 
-@admin.register(ContractIndicatorAdminProxy)
-class ContractIndicatorAdmin(admin.ModelAdmin):
-    list_display = ("contract", "logical_indicator")
-    list_filter = ("logical_indicator__status",)
-    search_fields = (
-        "contract__contract_code",
-        "logical_indicator__code",
-        "logical_indicator__name",
-    )
-    autocomplete_fields = ("contract", "logical_indicator")
-
-
-class ContractInputSelectionInline(admin.TabularInline):
+class ContractInputSelectionInline(GuidedInlineMixin, admin.TabularInline):
     model = ContractInputSelection
     extra = 0
 
@@ -316,14 +295,18 @@ class ContractInputSelectionInline(admin.TabularInline):
         return bool(obj is None or obj.status == obj.Status.DRAFT)
 
 
-class ContractIndicatorConfigurationInline(admin.TabularInline):
-    model = ContractIndicatorConfiguration
+class ContractRevisionIndicatorInline(GuidedInlineMixin, admin.TabularInline):
+    model = ContractRevisionIndicator
     extra = 0
+
+    def get_formset(self, request, obj=None, **kwargs):
+        self.revision_profile_id = obj.processing_profile_version_id if obj else None
+        return super().get_formset(request, obj, **kwargs)
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "processing_profile_indicator_version":
             kwargs["queryset"] = ProcessingProfileIndicatorVersion.objects.filter(
-                processing_profile_version__status=ProcessingProfileVersion.Status.PUBLISHED
+                processing_profile_version_id=getattr(self, "revision_profile_id", None)
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
@@ -337,7 +320,9 @@ class ContractIndicatorConfigurationInline(admin.TabularInline):
         return bool(obj is None or obj.status == obj.Status.DRAFT)
 
 
-class ContractConfigurationRevisionStatusEventInline(admin.TabularInline):
+class ContractConfigurationRevisionStatusEventInline(
+    GuidedInlineMixin, admin.TabularInline
+):
     model = ContractConfigurationRevisionStatusEvent
     extra = 0
     can_delete = False
@@ -392,7 +377,7 @@ class ContractConfigurationRevisionAdmin(
     )
     inlines = (
         ContractInputSelectionInline,
-        ContractIndicatorConfigurationInline,
+        ContractRevisionIndicatorInline,
         ContractConfigurationRevisionStatusEventInline,
     )
     actions = ("approve_selected", "withdraw_selected")
@@ -436,15 +421,15 @@ class ContractConfigurationRevisionAdmin(
         if completed:
             self.message_user(
                 request,
-                f"Updated contract revisions: {completed}",
+                f"Revisioni aggiornate: {completed}",
                 level=messages.SUCCESS,
             )
 
-    @admin.action(description="Approve selected contract revisions")
+    @admin.action(description="Approva le revisioni selezionate")
     def approve_selected(self, request, queryset):
         self._transition_selected(request, queryset, approve_contract_revision)
 
-    @admin.action(description="Withdraw selected contract revisions")
+    @admin.action(description="Ritira le revisioni selezionate")
     def withdraw_selected(self, request, queryset):
         self._transition_selected(
             request,
@@ -483,7 +468,7 @@ class ContractInvitationAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
 
 
 @admin.register(ContractPublicationAdminProxy)
-class ContractPublicationAdmin(admin.ModelAdmin):
+class ContractPublicationAdmin(GuidedAdminMixin, admin.ModelAdmin):
     list_display = (
         "contract",
         "configuration_revision",

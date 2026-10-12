@@ -59,7 +59,8 @@
         {% csrf_token %}
         <input type="hidden" name="action" value="save-revision-composition">
         <div class="card-body">
-          <h2 class="h5">Indicatori da monitorare</h2>
+          <h2 class="h5">Indicatori della revisione</h2>
+          <p class="text-body-secondary">Seleziona le versioni ammesse dal profilo tecnico. Le scelte e i valori appartengono a questa revisione; una nuova revisione può cambiarli.</p>
           <p class="text-body-secondary small">Puoi scegliere un sottoinsieme tra quelli validati nel profilo tecnico. Rimuovendo un indicatore, saranno rimossi dalla bozza anche i valori delle dipendenze che non servono più.</p>
           {% for row in indicator_rows %}
             <div class="form-check mb-2">

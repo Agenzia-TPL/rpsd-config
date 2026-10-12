@@ -86,6 +86,24 @@ class DatasetRuleAdmin(FrozenCompositionAdmin):
 
     form = DatasetRuleAdminForm
     readonly_fields = ("created_by", "created_at")
+    list_display = (
+        "dataset_specification",
+        "rule_version",
+        "import_policy",
+        "created_by",
+    )
+    list_filter = ("import_policy", "dataset_specification")
+    search_fields = (
+        "dataset_specification__code",
+        "dataset_specification__version",
+        "rule_version__rule__code",
+        "rule_version__version",
+    )
+    list_select_related = (
+        "dataset_specification__dataset",
+        "rule_version__rule",
+        "created_by",
+    )
 
     def save_model(self, request, obj, form, change):
         save_dataset_rule(obj, actor=request.user)
@@ -172,15 +190,15 @@ class RuleVersionAdmin(admin.ModelAdmin):
             except ValidationError as exc:
                 self.message_user(request, "; ".join(exc.messages), messages.ERROR)
 
-    @admin.action(description="Publish selected rules")
+    @admin.action(description="Pubblica le regole selezionate")
     def publish_rules(self, request, queryset):
         self.transition(request, queryset, "published")
 
-    @admin.action(description="Deprecate selected rules")
+    @admin.action(description="Depreca le regole selezionate")
     def deprecate_rules(self, request, queryset):
         self.transition(request, queryset, "deprecated")
 
-    @admin.action(description="Withdraw selected rules")
+    @admin.action(description="Ritira le regole selezionate")
     def withdraw_rules(self, request, queryset):
         self.transition(request, queryset, "withdrawn")
 
@@ -188,6 +206,27 @@ class RuleVersionAdmin(admin.ModelAdmin):
 class IndicatorRuleAdmin(FrozenCompositionAdmin):
     form = IndicatorRuleAdminForm
     list_display = ("indicator_version", "dataset_version_rule", "impact")
+    list_filter = ("impact", "dataset_version_rule__import_policy")
+    search_fields = (
+        "indicator_version__code",
+        "indicator_version__version",
+        "dataset_version_rule__dataset_specification__code",
+        "dataset_version_rule__rule_version__rule__code",
+        "dataset_version_rule__rule_version__version",
+    )
+    list_select_related = (
+        "indicator_version__indicator",
+        "dataset_version_rule__dataset_specification__dataset",
+        "dataset_version_rule__rule_version__rule",
+    )
+
+    @admin.display(description="Dimensioni interessate")
+    def dimensions(self, obj):
+        """Expose frozen dimension selections without enabling a write widget."""
+        return (
+            ", ".join(str(dimension) for dimension in obj.affected_dimensions.all())
+            or "—"
+        )
 
     def save_model(self, request, obj, form, change):
         obj.check_editable()
@@ -242,6 +281,70 @@ def register_validation_admin(permission_mixin) -> None:
         "DatasetVersionRule": DatasetRuleAdmin,
         "ContractDependencyConfiguration": ReadOnlyContractValuesAdmin,
     }
+    presentation = {
+        "IndicatorDimension": {
+            "list_display": ("code", "name", "description"),
+            "search_fields": ("code", "name"),
+        },
+        "IndicatorVersionInput": {
+            "list_display": ("indicator_version", "dataset_specification"),
+            "search_fields": (
+                "indicator_version__code",
+                "indicator_version__version",
+                "dataset_specification__code",
+                "dataset_specification__version",
+            ),
+            "list_select_related": (
+                "indicator_version__indicator",
+                "dataset_specification__dataset",
+            ),
+        },
+        "IndicatorVersionDependency": {
+            "list_display": ("dependent", "prerequisite"),
+            "search_fields": (
+                "dependent__code",
+                "dependent__version",
+                "prerequisite__code",
+                "prerequisite__version",
+            ),
+            "list_select_related": ("dependent__indicator", "prerequisite__indicator"),
+        },
+        "DependencyRequiredDimension": {
+            "list_display": ("dependency", "dimension"),
+            "search_fields": (
+                "dependency__dependent__code",
+                "dependency__prerequisite__code",
+                "dimension__code",
+                "dimension__name",
+            ),
+            "list_select_related": (
+                "dependency__dependent__indicator",
+                "dependency__prerequisite__indicator",
+                "dimension",
+            ),
+        },
+        "ContractDependencyConfiguration": {
+            "list_display": ("revision", "indicator_version"),
+            "search_fields": (
+                "revision__code",
+                "revision__contract__contract_code",
+                "indicator_version__code",
+                "indicator_version__version",
+            ),
+            "list_select_related": (
+                "revision__contract",
+                "indicator_version__indicator",
+            ),
+        },
+        "ValidationRuleStatusEvent": {
+            "list_select_related": ("rule_version__rule", "changed_by"),
+            "search_fields": (
+                "rule_version__rule__code",
+                "rule_version__version",
+                "reason",
+            ),
+        },
+    }
     for name in (
         "ValidationRule",
         "ValidationRuleVersion",
@@ -268,5 +371,5 @@ def register_validation_admin(permission_mixin) -> None:
             f"{name}ScopedAdmin", (permission_mixin, admin.ModelAdmin), {}
         )
         bases = (scoped_base,) if base is admin.ModelAdmin else (base, scoped_base)
-        admin_class = type(f"{name}CatalogAdmin", bases, {})
+        admin_class = type(f"{name}CatalogAdmin", bases, presentation.get(name, {}))
         admin.site.register(getattr(proxies, f"{name}AdminProxy"), admin_class)

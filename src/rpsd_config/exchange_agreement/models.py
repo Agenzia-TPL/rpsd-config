@@ -2269,63 +2269,6 @@ class ContractPublication(TimeStampedModel):
         return f"{self.contract.contract_code} v{self.publication_version}"
 
 
-class ContractIndicator(models.Model):
-    """Contract association with a stable logical indicator."""
-
-    contract = models.ForeignKey(
-        Contract, on_delete=models.CASCADE, related_name="indicators"
-    )
-    logical_indicator = models.ForeignKey(
-        Indicator,
-        on_delete=models.PROTECT,
-        related_name="contract_links",
-    )
-
-    class Meta:
-        verbose_name = "Contract indicator"
-        verbose_name_plural = "Contract indicators"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["contract", "logical_indicator"],
-                name="unique_contract_logical_indicator",
-            ),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.contract.contract_code}:{self.logical_indicator.code}"
-
-    def clean(self):
-        super().clean()
-        if not self.pk:
-            return
-        original = type(self).objects.filter(pk=self.pk).first()
-        if original is None:
-            return
-        protected = original.revision_configurations.exclude(
-            revision__status=ContractConfigurationRevision.Status.DRAFT
-        )
-        if protected.exists() and (
-            self.contract_id != original.contract_id
-            or self.logical_indicator_id != original.logical_indicator_id
-        ):
-            raise ValidationError(
-                _("Indicators referenced by approved revisions are immutable.")
-            )
-
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        return super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        if self.revision_configurations.exclude(
-            revision__status=ContractConfigurationRevision.Status.DRAFT
-        ).exists():
-            raise ValidationError(
-                _("Indicators referenced by approved revisions cannot be deleted.")
-            )
-        return super().delete(*args, **kwargs)
-
-
 class ContractConfigurationRevision(TimeStampedModel):
     """Complete temporal snapshot of a contract's technical configuration."""
 
@@ -2645,16 +2588,28 @@ class ContractInputSelection(models.Model):
             return super().delete(*args, **kwargs)
 
 
-class ContractIndicatorConfiguration(models.Model):
+class ContractRevisionIndicatorQuerySet(models.QuerySet):
+    """Prevent bulk writes from bypassing revision locks and validation."""
+
+    def update(self, **kwargs):
+        raise ValidationError("Update revision indicators through validated saves.")
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValidationError("Create revision indicators through validated saves.")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError("Update revision indicators through validated saves.")
+
+
+class ContractRevisionIndicator(models.Model):
+    """Select a profile-approved indicator version for one contract revision."""
+
+    objects = ContractRevisionIndicatorQuerySet.as_manager()
+
     revision = models.ForeignKey(
         ContractConfigurationRevision,
         on_delete=models.CASCADE,
         related_name="indicator_configurations",
-    )
-    contract_indicator = models.ForeignKey(
-        ContractIndicator,
-        on_delete=models.PROTECT,
-        related_name="revision_configurations",
     )
     processing_profile_indicator_version = models.ForeignKey(
         ProcessingProfileIndicatorVersion,
@@ -2667,13 +2622,15 @@ class ContractIndicatorConfiguration(models.Model):
     parameters = models.JSONField(default=dict, blank=True)
 
     class Meta:
-        verbose_name = "Contract indicator configuration"
-        verbose_name_plural = "Contract indicator configurations"
-        ordering = ["contract_indicator__logical_indicator__code"]
+        verbose_name = "Indicatore della revisione"
+        verbose_name_plural = "Indicatori della revisione"
+        ordering = [
+            "processing_profile_indicator_version__indicator_version__indicator__code"
+        ]
         constraints = [
             models.UniqueConstraint(
-                fields=["revision", "contract_indicator"],
-                name="unique_revision_contract_indicator",
+                fields=["revision", "processing_profile_indicator_version"],
+                name="unique_revision_profile_indicator",
             )
         ]
 
@@ -2684,6 +2641,10 @@ class ContractIndicatorConfiguration(models.Model):
             original_revision_id = (
                 type(self).objects.values_list("revision_id", flat=True).get(pk=self.pk)
             )
+            if original_revision_id != self.revision_id:
+                errors["revision"] = _(
+                    "A selection cannot move between revisions; create a new selection."
+                )
             original_status = ContractConfigurationRevision.objects.values_list(
                 "status", flat=True
             ).get(pk=original_revision_id)
@@ -2710,11 +2671,6 @@ class ContractIndicatorConfiguration(models.Model):
                 errors["revision"] = _(
                     "Indicators can be changed only while the revision is draft."
                 )
-        if self.revision_id and self.contract_indicator_id:
-            if self.contract_indicator.contract_id != self.revision.contract_id:
-                errors["contract_indicator"] = _(
-                    "The indicator link must belong to the revision contract."
-                )
         if self.revision_id and self.processing_profile_indicator_version_id:
             profile_link = self.processing_profile_indicator_version
             if (
@@ -2724,19 +2680,39 @@ class ContractIndicatorConfiguration(models.Model):
                 errors["processing_profile_indicator_version"] = _(
                     "The indicator version must belong to the revision profile."
                 )
-            logical_indicator_id = self.contract_indicator.logical_indicator_id
-            if profile_link.indicator_version.indicator_id != logical_indicator_id:
+            duplicates = (
+                type(self)
+                .objects.filter(
+                    revision_id=self.revision_id,
+                    processing_profile_indicator_version__indicator_version__indicator_id=(
+                        profile_link.indicator_version.indicator_id
+                    ),
+                )
+                .exclude(pk=self.pk)
+            )
+            if duplicates.exists():
                 errors["processing_profile_indicator_version"] = _(
-                    "The technical version must match the contract indicator."
+                    "Only one version per logical indicator can be selected."
                 )
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         with transaction.atomic():
-            ContractConfigurationRevision.objects.select_for_update().get(
-                pk=self.revision_id
+            revision_ids = {self.revision_id}
+            if self.pk:
+                revision_ids.add(
+                    type(self)
+                    .objects.values_list("revision_id", flat=True)
+                    .get(pk=self.pk)
+                )
+            list(
+                ContractConfigurationRevision.objects.select_for_update()
+                .filter(pk__in=revision_ids)
+                .order_by("pk")
             )
+            # Discard cached relations: status and profile must reflect the lock.
+            self._state.fields_cache.pop("revision", None)
             self.full_clean()
             return super().save(*args, **kwargs)
 
@@ -2756,18 +2732,22 @@ class ContractIndicatorConfiguration(models.Model):
 
 @receiver(pre_delete, sender=ContractConfigurationRevision)
 def protect_non_draft_contract_revision_delete(sender, instance, **kwargs):
-    status = ContractConfigurationRevision.objects.values_list("status", flat=True).get(
-        pk=instance.pk
+    status = (
+        ContractConfigurationRevision.objects.select_for_update()
+        .values_list("status", flat=True)
+        .get(pk=instance.pk)
     )
     if status != ContractConfigurationRevision.Status.DRAFT:
         raise ValidationError(_("Only draft revisions can be deleted."))
 
 
 @receiver(pre_delete, sender=ContractInputSelection)
-@receiver(pre_delete, sender=ContractIndicatorConfiguration)
+@receiver(pre_delete, sender=ContractRevisionIndicator)
 def protect_frozen_contract_revision_children(sender, instance, **kwargs):
-    status = ContractConfigurationRevision.objects.values_list("status", flat=True).get(
-        pk=instance.revision_id
+    status = (
+        ContractConfigurationRevision.objects.select_for_update()
+        .values_list("status", flat=True)
+        .get(pk=instance.revision_id)
     )
     if status != ContractConfigurationRevision.Status.DRAFT:
         raise ValidationError(

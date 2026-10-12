@@ -67,12 +67,10 @@ This keeps the Django codebase focused on contracts and monitoring configuration
 
 - `Contract` represents a service contract between one client agency and one contractor company, bound to one `Lot`
 - `ContractDocument` stores supporting contract documents
-- `ContractIndicator` associates the stable logical indicators monitored by a
-  contract.
 - `ContractConfigurationRevision` is a complete configuration snapshot with a
   `valid_from` date. Drafts are editable; approved or withdrawn revisions are
   immutable.
-- `ContractInputSelection` and `ContractIndicatorConfiguration` store the input
+- `ContractInputSelection` and `ContractRevisionIndicator` store the input
   and indicator choices of one revision, including thresholds, aggregation,
   penalties and parameters.
 
@@ -447,3 +445,11 @@ SPDX-License-Identifier: `EUPL-1.2`
 
 For bug reports, questions, and feature requests, please open an issue on the
 [GitHub issue tracker](https://github.com/Agenzia-TPL/rpsd-config/issues).
+
+## Data model documentation
+
+- [Data model description](docs/modello_dati.md)
+- [Mermaid ER diagram](docs/modello_dati.mmd)
+- [Diagram preview](docs/modello_dati_preview.md)
+
+The current model documentation is maintained in this repository’s `docs/` directory.

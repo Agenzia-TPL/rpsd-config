@@ -12,6 +12,7 @@ from rpsd_config import admin_hidden  # noqa: F401
 from rpsd_config.admin_dataset_exchange.validation_admin import (
     register_validation_admin,
 )
+from rpsd_config.admin_guidance import GuidedAdminMixin, GuidedInlineMixin
 from rpsd_config.exchange_agreement.models import (
     DatasetSpecificationAsset,
     IndicatorVersion,
@@ -69,7 +70,7 @@ from .proxies import (
 )
 
 
-class _HumanReadableTimestampsMixin:
+class _HumanReadableTimestampsMixin(GuidedAdminMixin):
     @staticmethod
     def _format_timestamp(value):
         if value is None or isinstance(value, DatabaseDefault):
@@ -80,20 +81,20 @@ class _HumanReadableTimestampsMixin:
             return date_format(timezone.localtime(value), "DATETIME_FORMAT")
         return str(value)
 
-    @admin.display(description="Created at")
+    @admin.display(description="Creazione")
     def created_at_human(self, obj):
         if obj is None:
             return "-"
         return self._format_timestamp(getattr(obj, "created_at", None))
 
-    @admin.display(description="Updated at")
+    @admin.display(description="Ultimo aggiornamento")
     def updated_at_human(self, obj):
         if obj is None:
             return "-"
         return self._format_timestamp(getattr(obj, "updated_at", None))
 
 
-class _PlatformCatalogAdminMixin:
+class _PlatformCatalogAdminMixin(GuidedAdminMixin):
     @staticmethod
     def _can_manage(request):
         user = request.user
@@ -130,7 +131,7 @@ class DatasetAdmin(
     readonly_fields = ("created_at_human", "updated_at_human")
 
 
-class DatasetSpecificationAssetInline(admin.TabularInline):
+class DatasetSpecificationAssetInline(GuidedInlineMixin, admin.TabularInline):
     model = DatasetSpecificationAsset
     extra = 0
     autocomplete_fields = ("configuration_asset",)
@@ -192,17 +193,17 @@ class DatasetSpecificationAdmin(
             except (DatasetSpecificationTransitionError, ValidationError) as exc:
                 self.message_user(request, str(exc), level="ERROR")
         if completed:
-            self.message_user(request, f"Updated specifications: {completed}")
+            self.message_user(request, f"Specifiche aggiornate: {completed}")
 
-    @admin.action(description="Publish selected specifications")
+    @admin.action(description="Pubblica le specifiche selezionate")
     def publish_selected(self, request, queryset):
         self._transition_selected(request, queryset, publish_dataset_specification)
 
-    @admin.action(description="Deprecate selected specifications")
+    @admin.action(description="Depreca le specifiche selezionate")
     def deprecate_selected(self, request, queryset):
         self._transition_selected(request, queryset, deprecate_dataset_specification)
 
-    @admin.action(description="Withdraw selected specifications")
+    @admin.action(description="Ritira le specifiche selezionate")
     def withdraw_selected(self, request, queryset):
         self._transition_selected(request, queryset, withdraw_dataset_specification)
 
@@ -323,17 +324,19 @@ class IndicatorVersionAdmin(
             except (IndicatorVersionTransitionError, ValidationError) as exc:
                 self.message_user(request, str(exc), level="ERROR")
         if completed:
-            self.message_user(request, f"Updated indicator versions: {completed}")
+            self.message_user(
+                request, f"Versioni di indicatore aggiornate: {completed}"
+            )
 
-    @admin.action(description="Publish selected indicator versions")
+    @admin.action(description="Pubblica le versioni di indicatore selezionate")
     def publish_selected(self, request, queryset):
         self._transition_selected(request, queryset, publish_indicator_version)
 
-    @admin.action(description="Deprecate selected indicator versions")
+    @admin.action(description="Depreca le versioni di indicatore selezionate")
     def deprecate_selected(self, request, queryset):
         self._transition_selected(request, queryset, deprecate_indicator_version)
 
-    @admin.action(description="Withdraw selected indicator versions")
+    @admin.action(description="Ritira le versioni di indicatore selezionate")
     def withdraw_selected(self, request, queryset):
         self._transition_selected(request, queryset, withdraw_indicator_version)
 
@@ -419,17 +422,17 @@ class _FlowVersionAdminBase(
             except (FlowCatalogTransitionError, ValidationError) as exc:
                 self.message_user(request, str(exc), level="ERROR")
         if completed:
-            self.message_user(request, f"Updated flow versions: {completed}")
+            self.message_user(request, f"Flussi aggiornati: {completed}")
 
-    @admin.action(description="Publish selected flow versions")
+    @admin.action(description="Pubblica i flussi selezionati")
     def publish_selected(self, request, queryset):
         self._transition_selected(request, queryset, self.publish_transition)
 
-    @admin.action(description="Deprecate selected flow versions")
+    @admin.action(description="Depreca i flussi selezionati")
     def deprecate_selected(self, request, queryset):
         self._transition_selected(request, queryset, self.deprecate_transition)
 
-    @admin.action(description="Withdraw selected flow versions")
+    @admin.action(description="Ritira i flussi selezionati")
     def withdraw_selected(self, request, queryset):
         self._transition_selected(request, queryset, self.withdraw_transition)
 
@@ -517,7 +520,7 @@ class OrchestrationFlowVersionStatusEventAdmin(_FlowVersionStatusEventAdminBase)
     )
 
 
-class ProcessingProfileInputFlowInline(admin.TabularInline):
+class ProcessingProfileInputFlowInline(GuidedInlineMixin, admin.TabularInline):
     model = ProcessingProfileInputFlow
     extra = 0
     autocomplete_fields = ("dataset",)
@@ -546,7 +549,7 @@ class ProcessingProfileInputFlowInline(admin.TabularInline):
         return bool(obj is None or obj.status == obj.Status.DRAFT)
 
 
-class ProcessingProfileIndicatorVersionInline(admin.TabularInline):
+class ProcessingProfileIndicatorVersionInline(GuidedInlineMixin, admin.TabularInline):
     model = ProcessingProfileIndicatorVersion
     extra = 0
 
@@ -626,17 +629,17 @@ class ProcessingProfileVersionAdmin(
             except (ProcessingProfileTransitionError, ValidationError) as exc:
                 self.message_user(request, str(exc), level="ERROR")
         if completed:
-            self.message_user(request, f"Updated processing profiles: {completed}")
+            self.message_user(request, f"Profili tecnici aggiornati: {completed}")
 
-    @admin.action(description="Publish selected processing profiles")
+    @admin.action(description="Pubblica i profili tecnici selezionati")
     def publish_selected(self, request, queryset):
         self._transition_selected(request, queryset, publish_processing_profile)
 
-    @admin.action(description="Deprecate selected processing profiles")
+    @admin.action(description="Depreca i profili tecnici selezionati")
     def deprecate_selected(self, request, queryset):
         self._transition_selected(request, queryset, deprecate_processing_profile)
 
-    @admin.action(description="Withdraw selected processing profiles")
+    @admin.action(description="Ritira i profili tecnici selezionati")
     def withdraw_selected(self, request, queryset):
         self._transition_selected(request, queryset, withdraw_processing_profile)
 

@@ -666,8 +666,9 @@ e opzioni `--create-db --no-cov -q --tb=short -x`.
 `--create-db` ricostruisce il database di test; non è un comando per aggiornare
 il database applicativo. Django check e makemigrations --check --dry-run passati.
 
-I documenti workspace `modello_dati.md`, `modello_dati.mmd` e
-`modello_dati_preview.md` descrivono il dominio attuale; il diagramma omette
+I documenti [modello dati](docs/modello_dati.md),
+[diagramma ER](docs/modello_dati.mmd) e
+[anteprima](docs/modello_dati_preview.md) descrivono il dominio attuale; il diagramma omette
 esplicitamente audit/membership/inviti. Nomi e cardinalità delle 44 FK di 31
 entità sono verificati contro i metadati Django.
 
@@ -682,3 +683,127 @@ La QA CORSE_PDE isolata non equivale allo smoke del servizio.
 Non sono stati migrati o resettati i dati applicativi né attivato un rollout.
 Per il percorso di sviluppo usare separatamente i comandi di migrazione,
 reset e seed già documentati, verificando il target prima di operare.
+
+## Attivazione locale del provider target — 12 ottobre 2026
+
+Il container locale precedente conteneva sorgenti antecedenti alla 019; monta
+soltanto `.env`, quindi le modifiche al workspace richiedono una nuova immagine.
+È stato aggiornato esclusivamente Config sul target di sviluppo verificato
+`rpsd@config-db:5432/public`, con `DEBUG=True`. Operazioni eseguite dal repo rpsd:
+
+```bash
+docker compose --profile config build rpsd-config
+docker compose --profile config stop rpsd-config
+docker compose --profile config run --rm --no-deps rpsd-config \
+  uv run --no-sync manage migrate --noinput
+docker compose --profile config run --rm --no-deps rpsd-config \
+  uv run --no-sync manage seed_validation_demo --actor dummy_admin
+docker compose --profile config up -d --force-recreate --no-deps rpsd-config
+```
+
+Applicate 11 migrazioni fino a exchange_agreement 0047 e admin_dataset_exchange
+0012. Nessun reset dello schema: utenti, contratti e revisioni esistenti sono
+conservati. Le tabelle obsolete di frammenti/mapping/profili YAML sono rimosse;
+i file fisici non sono stati cancellati. Il controllo del target precede ogni
+applicazione: questi comandi non identificano implicitamente un ambiente sicuro.
+
+Il seed additivo ha pubblicato `validation-demo_001` (XML e indicatore composto)
+e `validation-csv-demo_001` (CSV), con 6 versioni regola. La seconda esecuzione
+ha conservato numero e contenuto delle versioni, stati e timestamp pubblicati.
+Verificati: zero migrazioni pendenti, 4 utenti, 2 contratti, 4 revisioni con gli
+stessi checksum precedenti, Django check positivo. HTTP locale: home/login 200,
+API piano v3 senza token 401. Non è uno smoke autenticato del futuro validator.
+
+I contratti precedenti restano su snapshot v1. Per adottare il target, creare
+una nuova revisione con un profilo target e approvarla tramite il normale flusso
+contrattuale; questo genera canonical-json-v2 e rende disponibile il piano v3.
+La pubblicazione dei profili non riscrive le revisioni approvate. Il corpus
+CORSE_PDE non è caricato sul DB locale: richiede il suo bundle XSD attivo esatto
+tramite il comando dedicato documentato sopra. Nessun deployment è provisionato.
+
+Le note precedenti «database applicativo non modificato» si riferiscono alle
+verifiche isolate; questo passo ha applicato le migrazioni e il seed al database
+locale di sviluppo. Non sono stati eseguiti rollout su altri ambienti.
+
+
+## Guide contestuali dell’admin Django (028)
+
+Nell’admin Config i campi hanno etichette e spiegazioni in italiano, anche quando
+la versione è pubblicata o la revisione è approvata. Le sezioni distinguono
+identità/versione, configurazione, processi, stato/validità e audit. I codici
+tecnici, i valori degli enum e le chiavi JSON delle API restano gli stessi.
+
+Aprire «Esempio» per consultare e copiare una definizione. Gli esempi non
+compilano i campi e non vengono salvati automaticamente. Per una regola usare
+la combinazione coerente di tipo, linguaggio, risultato, definizione e opzioni:
+XPath/XML, bundle XSD/XML, CSV, XLSX o TXT. La guida del bundle CORSE_PDE indica
+l’archivio e il digest reali della fixture: occorre collegare l’asset corrispondente,
+non copiare quel manifest per un file diverso.
+
+Le associazioni mostrano la versione del dataset, quella della regola e la
+politica di import. L’impatto sull’indicatore distingue perdita di calcolabilità
+per le entità non conformi e perdita delle dimensioni di disaggregazione.
+Nelle dipendenze **A dipende da B**; le dimensioni richieste a B sono distinte
+dalle dimensioni interessate dal KO di una regola.
+
+Gli schemi input/output descrivono il processo; lo schema dei parametri descrive
+valori ammessi e obbligatori. Parametri, soglie, aggregazione e penali effettivi
+appartengono alla revisione contrattuale, separatamente per ogni indicatore e
+prerequisito. Il dettaglio dei valori delle dipendenze resta in sola lettura:
+«Apri il workflow web della revisione» compare solo per chi ha i permessi di
+preparazione sul contratto. Una revisione approvata richiede una nuova bozza
+per cambiare i valori; una decorrenza futura non la riporta allo stato draft.
+
+I riferimenti Prefect descrivono i processi esterni di validazione, importazione,
+orchestrazione o calcolo. La pubblicazione in Django verifica la configurazione
+locale e non avvia né certifica la disponibilità di un deployment Prefect.
+Stato editoriale, validità del contratto e stato dell’invio di un evento sono
+spiegati separatamente. Provenienza automatica e identità dei bundle conservati
+sono consultabili in sola lettura.
+
+Gli aiuti degli inline sono testo apribile con `details/summary`, senza librerie
+esterne o JavaScript aggiuntivo. Gli esempi lunghi hanno ritorno a capo e un
+blocco selezionabile; la verifica visuale su tastiera e viewport ridotto resta
+da completare perché nella sessione di implementazione non era disponibile
+un browser collegato. Il rendering e i vincoli sono verificati sul DB di test.
+
+
+Aggiornamento locale del 12 ottobre 2026: ricostruito e ricreato il solo container
+Config. Login admin e CSS HTTP 200; API M2M anonima HTTP 401. Il confronto dei
+conteggi applicativi e del digest degli snapshot conferma dati invariati.
+La feature non richiede migrazioni o una nuova applicazione dei seed.
+
+### Persistent configuration assets in local development
+
+The platform Compose service mounts `rpsd-config/mnt/config-assets` at
+`/tmp/rpsd-config-assets`. With `CONFIG_ASSETS_STORAGE_PROVIDER=fs` and
+`CONFIG_ASSETS_STORAGE_FS_BASE_PATH=/tmp/rpsd-config-assets`, asset files and
+their storage metadata survive container recreation. The host directory is
+ignored by Git. Keep this path aligned with the mount when changing settings.
+Before adding the mount to an existing installation, copy any files from the
+old container directory to the host directory before recreating the container.
+This development mount does not configure production storage; use persistent
+storage or the existing S3 provider for production.
+
+Admin field help identifies the integration in parentheses: `(rpsd-storage)`
+for asset storage data and asset links, and `(rpsd-transport)` for RabbitMQ
+notification data. SHA-256 and bundle manifests remain computed by Config;
+these annotations do not change validators or model fields.
+
+### Indicator selections belong to the contract revision (029)
+
+Prepare a draft revision, select a published technical profile, then choose
+indicator versions admitted by that profile. The admin inline is named
+“Indicatori della revisione”; there is no separate “Contract indicators” menu.
+Each ContractRevisionIndicator stores thresholds, aggregation, penalties and
+parameters for that revision. The logical indicator is derived from the selected
+profile entry. A new revision may add, remove or replace indicators without
+changing earlier revisions. Approved and withdrawn selections remain immutable.
+Only one version per logical indicator can be selected in a revision.
+
+Migration 0048 audits historical selections, preserves their IDs/values and
+frozen snapshot/checksum fields, and removes the redundant contract-level link.
+It refuses inconsistent or duplicate selections. Do not reset or reseed the
+application database to apply it; test the migration and retain a backup before
+rollout. Returning to an older binary after the drop requires a matching database
+restore. Existing API and snapshot schema versions are unchanged.

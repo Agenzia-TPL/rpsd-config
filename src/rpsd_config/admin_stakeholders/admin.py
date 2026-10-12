@@ -11,6 +11,8 @@ from django.contrib.gis.db.models import GeometryField
 from leaflet.admin import LeafletGeoAdmin
 from leaflet.forms.widgets import LeafletWidget
 
+from rpsd_config.admin_guidance import GuidedAdminMixin
+
 from .proxies import (
     AgencyAdminProxy,
     AuthorityAdminProxy,
@@ -21,7 +23,7 @@ from .proxies import (
 # Alternative setup: import `LeafletWidget` and configure it via `formfield_overrides`.
 
 
-class GeomAdmin(LeafletGeoAdmin):
+class GeomAdmin(GuidedAdminMixin, LeafletGeoAdmin):
     # change_form_template = "admin/custom_admin.html"
     formfield_overrides = {
         GeometryField: {
@@ -36,7 +38,7 @@ class GeomAdmin(LeafletGeoAdmin):
 
 
 @admin.register(AgencyAdminProxy)
-class AgencyAdmin(admin.ModelAdmin):
+class AgencyAdmin(GuidedAdminMixin, admin.ModelAdmin):
     list_display = ("name", "description", "created_at", "updated_at")
     #    list_display = ("name", "description")
     search_fields = ("name",)
@@ -44,7 +46,7 @@ class AgencyAdmin(admin.ModelAdmin):
 
 
 @admin.register(CompanyAdminProxy)
-class CompanyAdmin(admin.ModelAdmin):
+class CompanyAdmin(GuidedAdminMixin, admin.ModelAdmin):
     list_display = ("name", "description", "created_at", "updated_at")
     search_fields = ("name",)
     readonly_fields = ("created_at", "updated_at")
@@ -63,7 +65,7 @@ class AuthorityAdmin(GeomAdmin):
 
 
 @admin.register(AuthorityMembershipAdminProxy)
-class AuthorityMembershipAdmin(admin.ModelAdmin):
+class AuthorityMembershipAdmin(GuidedAdminMixin, admin.ModelAdmin):
     list_display = ("authority", "user", "is_active", "created_at")
     list_filter = ("is_active", "authority")
     search_fields = ("authority__name", "user__username", "user__email")

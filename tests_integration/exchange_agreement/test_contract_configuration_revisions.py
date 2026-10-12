@@ -20,9 +20,8 @@ from rpsd_config.exchange_agreement.models import (
     ConfigurationAsset,
     Contract,
     ContractConfigurationRevision,
-    ContractIndicator,
-    ContractIndicatorConfiguration,
     ContractInputSelection,
+    ContractRevisionIndicator,
     Dataset,
     DatasetSpecification,
     DatasetSpecificationAsset,
@@ -90,10 +89,6 @@ class _ContractRevisionFixtureMixin:
             status=Contract.ContractStatus.ACTIVE,
         )
         self.profile = self._published_processing_profile()
-        self.contract_indicator = ContractIndicator.objects.create(
-            contract=self.contract,
-            logical_indicator=self.logical_indicator,
-        )
 
     def _published_processing_profile(self):
         dataset = Dataset.objects.create(code="netex", name="NeTEx")
@@ -241,9 +236,8 @@ class _ContractRevisionFixtureMixin:
             revision=revision,
             processing_profile_input_flow=self.siri_profile_input,
         )
-        ContractIndicatorConfiguration.objects.create(
+        ContractRevisionIndicator.objects.create(
             revision=revision,
-            contract_indicator=self.contract_indicator,
             processing_profile_indicator_version=self.profile_indicator,
             thresholds={"minimum": "15.5", "unit": "km/h"},
             aggregation={
@@ -452,9 +446,7 @@ class ContractConfigurationRevisionTests(_ContractRevisionFixtureMixin, TestCase
             configuration.save()
 
         forbidden = {"cron", "frequency", "trigger", "interval", "schedule"}
-        fields = {
-            field.name for field in ContractIndicatorConfiguration._meta.get_fields()
-        }
+        fields = {field.name for field in ContractRevisionIndicator._meta.get_fields()}
         self.assertFalse(fields & forbidden)
 
     def test_authority_membership_is_read_only_contract_visibility(self):

@@ -19,9 +19,8 @@ from rpsd_config.exchange_agreement.models import (
     Contract,
     ContractConfigurationRevision,
     ContractConfigurationRevisionStatusEvent,
-    ContractIndicator,
-    ContractIndicatorConfiguration,
     ContractInputSelection,
+    ContractRevisionIndicator,
     Dataset,
     DatasetSpecification,
     Indicator,
@@ -285,12 +284,11 @@ def _build_base_revision_snapshot(revision: ContractConfigurationRevision) -> di
     )
     indicator_configurations = (
         revision.indicator_configurations.select_related(
-            "contract_indicator__logical_indicator",
             "processing_profile_indicator_version__indicator_version__indicator",
         )
         .prefetch_related()
         .order_by(
-            "contract_indicator__logical_indicator__code",
+            "processing_profile_indicator_version__indicator_version__indicator__code",
             "processing_profile_indicator_version__indicator_version__code",
         )
     )
@@ -493,7 +491,6 @@ def validate_revision_for_approval(
 
     configurations = list(
         revision.indicator_configurations.select_related(
-            "contract_indicator__logical_indicator",
             "processing_profile_indicator_version__indicator_version",
         )
     )
@@ -507,17 +504,6 @@ def validate_revision_for_approval(
 
     configured_logical_indicator_ids: set[int] = set()
     for configuration in configurations:
-        contract_indicator = configuration.contract_indicator
-        if contract_indicator.contract_id != revision.contract_id:
-            issues.append(
-                RevisionValidationIssue(
-                    code="contract_indicator_not_in_contract",
-                    message=(
-                        "A configured contract indicator belongs to another contract."
-                    ),
-                    details={"contract_indicator_id": contract_indicator.pk},
-                )
-            )
         profile_indicator = configuration.processing_profile_indicator_version
         if profile_indicator.processing_profile_version_id != profile.pk:
             issues.append(
@@ -571,17 +557,6 @@ def validate_revision_for_approval(
                     message=(
                         f"Indicator version {version.code} has incomplete executor "
                         "references."
-                    ),
-                    details={"indicator_version_code": version.code},
-                )
-            )
-        if version.indicator_id != contract_indicator.logical_indicator_id:
-            issues.append(
-                RevisionValidationIssue(
-                    code="indicator_mismatch",
-                    message=(
-                        f"Indicator version {version.code} does not match the "
-                        "contract indicator."
                     ),
                     details={"indicator_version_code": version.code},
                 )
@@ -732,14 +707,8 @@ def create_revision_draft(
         )
 
     for profile_indicator in proposed_links:
-        logical_indicator_id = profile_indicator.indicator_version.indicator_id
-        contract_indicator, _created = ContractIndicator.objects.get_or_create(
-            contract=locked_contract,
-            logical_indicator_id=logical_indicator_id,
-        )
-        ContractIndicatorConfiguration.objects.create(
+        ContractRevisionIndicator.objects.create(
             revision=revision,
-            contract_indicator=contract_indicator,
             processing_profile_indicator_version=profile_indicator,
         )
 
@@ -760,12 +729,6 @@ def _resolve_profile_indicator(
     if isinstance(value, ProcessingProfileIndicatorVersion):
         return value
     return ProcessingProfileIndicatorVersion.objects.get(pk=value)
-
-
-def _resolve_contract_indicator(value: ContractIndicator | int) -> ContractIndicator:
-    if isinstance(value, ContractIndicator):
-        return value
-    return ContractIndicator.objects.get(pk=value)
 
 
 @transaction.atomic
@@ -831,35 +794,14 @@ def replace_draft_configuration(
                 ]
             )
         selected_logical_indicator_ids.add(logical_indicator_id)
-        supplied_contract_indicator = item.get("contract_indicator")
-        if supplied_contract_indicator is not None:
-            contract_indicator = _resolve_contract_indicator(
-                supplied_contract_indicator
-            )
-            if (
-                contract_indicator.contract_id != locked.contract_id
-                or contract_indicator.logical_indicator_id != logical_indicator_id
-            ):
-                raise ContractRevisionValidationError(
-                    [
-                        RevisionValidationIssue(
-                            code="indicator_mismatch",
-                            message=(
-                                "The selected indicator does not match the contract."
-                            ),
-                        )
-                    ]
-                )
-        else:
-            contract_indicator, _created = ContractIndicator.objects.get_or_create(
-                contract=locked.contract,
-                logical_indicator_id=logical_indicator_id,
+        if "contract_indicator" in item:
+            raise ContractRevisionError(
+                "contract_indicator is no longer supported; select a profile version."
             )
         selected_profile_indicators.append(profile_indicator)
         resolved_configurations.append(
             {
                 "profile_indicator": profile_indicator,
-                "contract_indicator": contract_indicator,
                 "thresholds": item.get("thresholds", {}),
                 "aggregation": item.get("aggregation", {}),
                 "penalties": item.get("penalties", {}),
@@ -883,9 +825,8 @@ def replace_draft_configuration(
             processing_profile_input_flow=profile_input,
         )
     for item in resolved_configurations:
-        ContractIndicatorConfiguration.objects.create(
+        ContractRevisionIndicator.objects.create(
             revision=locked,
-            contract_indicator=item["contract_indicator"],
             processing_profile_indicator_version=item["profile_indicator"],
             thresholds=item["thresholds"],
             aggregation=item["aggregation"],

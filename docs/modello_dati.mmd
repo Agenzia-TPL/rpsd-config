@@ -1,0 +1,250 @@
+erDiagram
+    AGENCY {
+        bigint id PK
+        string name UK
+    }
+    COMPANY {
+        bigint id PK
+        string name UK
+    }
+    AUTHORITY {
+        bigint id PK
+        string name
+    }
+    LOT {
+        bigint id PK
+        bigint agency_id FK
+    }
+    CONTRACT {
+        bigint id PK
+        bigint replaced_by_id FK
+        string contract_code UK
+        bigint client_agency_id FK
+        bigint contractor_company_id FK
+        bigint governing_authority_id FK
+        date start_date
+        date end_date
+        bigint lot_id FK
+        string status
+    }
+    DATASET {
+        bigint id PK
+        string code UK
+        string name
+    }
+    DATASET_SPECIFICATION {
+        bigint id PK
+        bigint dataset_id FK
+        string code UK
+        json metadata
+    }
+    CONFIGURATION_ASSET {
+        bigint id PK
+        string asset_type
+        string what
+        int version
+        string checksum_sha256
+        json bundle_manifest
+    }
+    DATASET_SPECIFICATION_ASSET {
+        bigint id PK
+        bigint dataset_specification_id FK
+        bigint configuration_asset_id FK
+    }
+    VALIDATION_RULE {
+        bigint id PK
+        string code UK
+        string name
+    }
+    VALIDATION_RULE_VERSION {
+        bigint id PK
+        bigint rule_id FK
+        string version
+        string name
+        string validation_type
+        string definition
+        string language_version
+        json options
+        string result_contract
+        string execution_reference
+        string status
+    }
+    DATASET_VERSION_RULE {
+        bigint id PK
+        bigint dataset_specification_id FK
+        bigint rule_version_id FK
+        string import_policy
+    }
+    INDICATOR {
+        bigint id PK
+        string code UK
+        string name
+    }
+    INDICATOR_VERSION {
+        bigint id PK
+        bigint indicator_id FK
+        string code UK
+        string version
+        json input_schema
+        json output_schema
+        json parameter_schema
+        string execution_engine
+        string execution_reference
+        string artifact_identifier
+        string status
+    }
+    INDICATOR_DIMENSION {
+        bigint id PK
+        string code UK
+        string name
+    }
+    INDICATOR_VERSION_INPUT {
+        bigint id PK
+        bigint indicator_version_id FK
+        bigint dataset_specification_id FK
+    }
+    INDICATOR_VERSION_RULE {
+        bigint id PK
+        bigint indicator_version_id FK
+        bigint dataset_version_rule_id FK
+        string impact
+    }
+    INDICATOR_VERSION_RULE_DIMENSION {
+        bigint id PK
+        bigint binding_id FK
+        bigint dimension_id FK
+    }
+    INDICATOR_VERSION_DEPENDENCY {
+        bigint id PK
+        bigint dependent_id FK
+        bigint prerequisite_id FK
+    }
+    DEPENDENCY_REQUIRED_DIMENSION {
+        bigint id PK
+        bigint dependency_id FK
+        bigint dimension_id FK
+    }
+    INPUT_FLOW_VERSION {
+        bigint id PK
+        string code UK
+        string version
+        string name
+        string deployment_name
+        string artifact_identifier
+        string status
+        bigint dataset_specification_id FK
+    }
+    ORCHESTRATION_FLOW_VERSION {
+        bigint id PK
+        string code UK
+        string version
+        string name
+        string deployment_name
+        string artifact_identifier
+        string status
+    }
+    PROCESSING_PROFILE_VERSION {
+        bigint id PK
+        string code UK
+        string name
+        bigint orchestration_flow_version_id FK
+    }
+    PROCESSING_PROFILE_INPUT_FLOW {
+        bigint id PK
+        bigint processing_profile_version_id FK
+        bigint dataset_id FK
+        bigint input_flow_version_id FK
+    }
+    PROCESSING_PROFILE_INDICATOR_VERSION {
+        bigint id PK
+        bigint processing_profile_version_id FK
+        bigint indicator_version_id FK
+        boolean proposed_by_default
+    }
+    CONTRACT_CONFIGURATION_REVISION {
+        bigint id PK
+        bigint contract_id FK
+        int revision_number
+        string code UK
+        bigint processing_profile_version_id FK
+        bigint replaces_revision_id FK
+        date valid_from
+        string status
+        string snapshot_schema_version
+        json configuration_snapshot
+        string snapshot_checksum
+    }
+    CONTRACT_INPUT_SELECTION {
+        bigint id PK
+        bigint revision_id FK
+        bigint processing_profile_input_flow_id FK
+    }
+    CONTRACT_REVISION_INDICATOR {
+        bigint id PK
+        bigint revision_id FK
+        bigint processing_profile_indicator_version_id FK
+        json thresholds
+        json aggregation
+        json penalties
+        json parameters
+    }
+    CONTRACT_DEPENDENCY_CONFIGURATION {
+        bigint id PK
+        bigint revision_id FK
+        bigint indicator_version_id FK
+        json thresholds
+        json parameters
+        json aggregation
+        json penalties
+    }
+    CONTRACT_PUBLICATION {
+        bigint id PK
+        bigint contract_id FK
+        bigint configuration_revision_id FK
+        int publication_version
+        string snapshot_schema_version
+        json snapshot
+        string snapshot_checksum
+    }
+
+    AGENCY o|--o{ LOT : agency
+    AGENCY ||--o{ CONTRACT : client_agency
+    COMPANY ||--o{ CONTRACT : contractor_company
+    AUTHORITY o|--o{ CONTRACT : governing_authority
+    LOT ||--o{ CONTRACT : lot
+    DATASET ||--o{ DATASET_SPECIFICATION : dataset
+    DATASET_SPECIFICATION ||--o{ DATASET_SPECIFICATION_ASSET : dataset_specification
+    CONFIGURATION_ASSET ||--o{ DATASET_SPECIFICATION_ASSET : configuration_asset
+    VALIDATION_RULE ||--o{ VALIDATION_RULE_VERSION : rule
+    DATASET_SPECIFICATION ||--o{ DATASET_VERSION_RULE : dataset_specification
+    VALIDATION_RULE_VERSION ||--o{ DATASET_VERSION_RULE : rule_version
+    INDICATOR ||--o{ INDICATOR_VERSION : indicator
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_INPUT : indicator_version
+    DATASET_SPECIFICATION ||--o{ INDICATOR_VERSION_INPUT : dataset_specification
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_RULE : indicator_version
+    DATASET_VERSION_RULE ||--o{ INDICATOR_VERSION_RULE : dataset_version_rule
+    INDICATOR_VERSION_RULE ||--o{ INDICATOR_VERSION_RULE_DIMENSION : binding
+    INDICATOR_DIMENSION ||--o{ INDICATOR_VERSION_RULE_DIMENSION : dimension
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_DEPENDENCY : dependent
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_DEPENDENCY : prerequisite
+    INDICATOR_VERSION_DEPENDENCY ||--o{ DEPENDENCY_REQUIRED_DIMENSION : dependency
+    INDICATOR_DIMENSION ||--o{ DEPENDENCY_REQUIRED_DIMENSION : dimension
+    DATASET_SPECIFICATION ||--o{ INPUT_FLOW_VERSION : dataset_specification
+    ORCHESTRATION_FLOW_VERSION ||--o{ PROCESSING_PROFILE_VERSION : orchestration_flow_version
+    PROCESSING_PROFILE_VERSION ||--o{ PROCESSING_PROFILE_INPUT_FLOW : processing_profile_version
+    DATASET ||--o{ PROCESSING_PROFILE_INPUT_FLOW : dataset
+    INPUT_FLOW_VERSION ||--o{ PROCESSING_PROFILE_INPUT_FLOW : input_flow_version
+    PROCESSING_PROFILE_VERSION ||--o{ PROCESSING_PROFILE_INDICATOR_VERSION : processing_profile_version
+    INDICATOR_VERSION ||--o{ PROCESSING_PROFILE_INDICATOR_VERSION : indicator_version
+    CONTRACT ||--o{ CONTRACT_CONFIGURATION_REVISION : contract
+    PROCESSING_PROFILE_VERSION ||--o{ CONTRACT_CONFIGURATION_REVISION : processing_profile_version
+    CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_INPUT_SELECTION : revision
+    PROCESSING_PROFILE_INPUT_FLOW ||--o{ CONTRACT_INPUT_SELECTION : processing_profile_input_flow
+    CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_REVISION_INDICATOR : revision
+    PROCESSING_PROFILE_INDICATOR_VERSION ||--o{ CONTRACT_REVISION_INDICATOR : processing_profile_indicator_version
+    CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_DEPENDENCY_CONFIGURATION : revision
+    INDICATOR_VERSION ||--o{ CONTRACT_DEPENDENCY_CONFIGURATION : indicator_version
+    CONTRACT ||--o{ CONTRACT_PUBLICATION : contract
+    CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_PUBLICATION : configuration_revision
+    CONTRACT o|--o{ CONTRACT : replaced_by
+    CONTRACT_CONFIGURATION_REVISION o|--o{ CONTRACT_CONFIGURATION_REVISION : replaces_revision

@@ -6,6 +6,11 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from rpsd_config.exchange_agreement.field_guidance import (
+    DIMENSIONS_HELP,
+    IMPACT_HELP,
+    IMPORT_POLICY_HELP,
+)
 from rpsd_config.exchange_agreement.models import (
     DatasetVersionRule,
     IndicatorDimension,
@@ -21,11 +26,7 @@ class IndicatorRuleForm(forms.ModelForm):
         queryset=IndicatorDimension.objects.all(),
         required=False,
         label="Dimensioni interessate",
-        help_text=(
-            "Per dimension indicare le disaggregazioni perse; "
-            "calculation non ammette dimensioni. Il file è rifiutato "
-            "solo se la politica dataset è reject_import."
-        ),
+        help_text=DIMENSIONS_HELP,
     )
 
     class Meta:
@@ -34,12 +35,9 @@ class IndicatorRuleForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["impact"].help_text = (
-            "calculation: le entità non conformi non contribuiscono al calcolo. "
-            "dimension: il totale rimane possibile, ma si perdono le "
-            "disaggregazioni indicate. L'impatto non cambia la politica di import."
-        )
-        if self.instance.pk:
+        if "impact" in self.fields:
+            self.fields["impact"].help_text = IMPACT_HELP
+        if self.instance.pk and "dimensions" in self.fields:
             self.fields["dimensions"].initial = self.instance.affected_dimensions.all()
 
     def clean(self):
@@ -115,6 +113,9 @@ class DatasetRuleForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Django removes frozen fields before constructing a readonly admin form.
+        if "import_policy" not in self.fields:
+            return
         self.fields["import_policy"].label = "Politica di import"
         self.fields["import_policy"].choices = [
             ("reject_import", "Blocco dell’import: sempre per questo dataset"),
@@ -124,8 +125,4 @@ class DatasetRuleForm(forms.ModelForm):
                 "Compatibilità: se richiesta dagli indicatori effettivi",
             ),
         ]
-        self.fields["import_policy"].help_text = (
-            "reject_import rifiuta il file; warn mantiene l’import con un avviso; "
-            "indicator_only controlla la compatibilità con gli indicatori "
-            "selezionati e le loro dipendenze."
-        )
+        self.fields["import_policy"].help_text = IMPORT_POLICY_HELP

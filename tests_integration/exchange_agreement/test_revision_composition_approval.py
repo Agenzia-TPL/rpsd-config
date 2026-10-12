@@ -70,7 +70,7 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
         self.assertEqual(revision.created_by, self.agency_user)
         self.assertEqual(revision.input_selections.count(), 2)
         configuration = revision.indicator_configurations.get()
-        self.assertEqual(configuration.contract_indicator, self.contract_indicator)
+        self.assertEqual(configuration.revision.contract, self.contract)
         self.assertEqual(validate_revision_for_approval(revision), ())
         self.assertEqual(
             available_processing_profiles(self.contract, self.agency_user),
@@ -107,7 +107,6 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
             selections=[],
             indicator_configs=[
                 {
-                    "contract_indicator": configuration.contract_indicator,
                     "processing_profile_indicator_version": (
                         configuration.processing_profile_indicator_version
                     ),
@@ -127,7 +126,6 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
                 selections=[self.profile_input],
                 indicator_configs=[
                     {
-                        "contract_indicator": configuration.contract_indicator,
                         "processing_profile_indicator_version": (
                             configuration.processing_profile_indicator_version
                         ),
