@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
+import uuid
 from dataclasses import dataclass
-from pathlib import Path
 from typing import BinaryIO
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.http import Http404
 from django.utils import timezone
 
@@ -103,10 +104,14 @@ def create_asset_event(
     )
 
 
+@transaction.atomic
 def publish_asset_event(event: ConfigurationAssetEvent) -> ConfigurationAssetEvent:
     if not getattr(settings, "CONFIG_ASSETS_RABBITMQ_ENABLED", True):
         return event
 
+    event = ConfigurationAssetEvent.objects.select_for_update().get(pk=event.pk)
+    if event.status == ConfigurationAssetEvent.Status.PUBLISHED:
+        return event
     event.attempts += 1
     try:
         from rpsd_transport import get_carrier
@@ -176,6 +181,34 @@ def publish_asset_event(event: ConfigurationAssetEvent) -> ConfigurationAssetEve
     return event
 
 
+@transaction.atomic
+def _record_asset_event_result(
+    asset: ConfigurationAsset, event: ConfigurationAssetEvent
+) -> None:
+    """Update delivery diagnostics without replaying stale activation state."""
+    ConfigurationAsset.objects.select_for_update().get(pk=asset.pk)
+    latest = (
+        asset.events.order_by("-created_at", "-pk").values_list("pk", flat=True).first()
+    )
+    if latest != event.pk:
+        asset.refresh_from_db()
+        return
+    ConfigurationAsset.objects.filter(pk=asset.pk).update(
+        publish_status=event.status,
+        last_publish_error=event.last_error,
+        updated_at=timezone.now(),
+    )
+    asset.refresh_from_db()
+
+
+def _lock_asset_family(asset_type: str, what: str) -> None:
+    """Serialize version allocation and activation, including the first upload."""
+    digest = hashlib.sha256(f"{asset_type}:{what}".encode()).digest()
+    key = int.from_bytes(digest[:8], "big", signed=True)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])
+
+
 def _next_asset_version(*, asset_type: str, what: str) -> int:
     latest = (
         ConfigurationAsset.objects.filter(asset_type=asset_type, what=what)
@@ -189,7 +222,10 @@ def _next_asset_version(*, asset_type: str, what: str) -> int:
 def _read_uploaded_content(uploaded_file: BinaryIO) -> bytes:
     if hasattr(uploaded_file, "seek"):
         uploaded_file.seek(0)
-    content = uploaded_file.read()
+    limit = settings.CONFIG_ASSETS_MAX_UPLOAD_BYTES
+    content = uploaded_file.read(limit + 1)
+    if len(content) > limit:
+        raise ValidationError(f"Asset exceeds the upload limit of {limit} bytes.")
     if hasattr(uploaded_file, "seek"):
         uploaded_file.seek(0)
     if isinstance(content, str):
@@ -197,16 +233,13 @@ def _read_uploaded_content(uploaded_file: BinaryIO) -> bytes:
     return content
 
 
-def store_configuration_asset(
-    *,
-    uploaded_file: BinaryIO,
-    asset_type: str,
-    label: str = "",
-    activate: bool = False,
-    uploaded_by=None,
-) -> StoredConfigurationAsset:
-    filename = Path(getattr(uploaded_file, "name", "")).name
-    what = ConfigurationAsset.validate_filename_for_type(asset_type, filename)
+def inspect_configuration_asset_upload(
+    uploaded_file: BinaryIO, *, asset_type: str, what: str
+) -> tuple[str, bytes, dict]:
+    """Validate uploaded bytes without persisting or executing their content."""
+    filename = getattr(uploaded_file, "name", "")
+    ConfigurationAsset.validate_filename_for_type(asset_type, filename)
+    ConfigurationAsset.validate_asset_code(what)
     content = _read_uploaded_content(uploaded_file)
     if not content:
         raise ValidationError("Il file asset e' vuoto.")
@@ -215,77 +248,122 @@ def store_configuration_asset(
         inspect_schema_bundle,
     )
 
-    bundle_manifest = (
-        inspect_schema_bundle(content) if filename.lower().endswith(".zip") else {}
+    is_bundle = asset_type == ConfigurationAsset.AssetType.XSD_BUNDLE or (
+        asset_type in {"netex_xsd", "siri_profile"}
+        and filename.lower().endswith(".zip")
+    )
+    bundle_manifest = inspect_schema_bundle(content) if is_bundle else {}
+    if asset_type == ConfigurationAsset.AssetType.JSON_SCHEMA:
+        try:
+            json.loads(content)
+        except (ValueError, UnicodeError) as exc:
+            raise ValidationError("Invalid JSON schema file.") from exc
+    return filename, content, bundle_manifest
+
+
+def store_configuration_asset(
+    *,
+    uploaded_file: BinaryIO,
+    asset_type: str,
+    what: str,
+    label: str = "",
+    activate: bool = False,
+    uploaded_by=None,
+) -> StoredConfigurationAsset:
+    filename, content, bundle_manifest = inspect_configuration_asset_upload(
+        uploaded_file, asset_type=asset_type, what=what
     )
     content_type = (
         getattr(uploaded_file, "content_type", "") or "application/octet-stream"
     )
     checksum = hashlib.sha256(content).hexdigest()
-    provider = _storage_provider()
+    try:
+        provider = _storage_provider()
+    except Exception as exc:
+        raise ValidationError(
+            "Asset storage is unavailable.", code="asset_storage_error"
+        ) from exc
 
-    with transaction.atomic():
-        version = _next_asset_version(asset_type=asset_type, what=what)
-        storage_what = f"config-assets/{asset_type}/{what}/v{version}"
-        storage_url, metadata = provider.save(
-            content,
-            filename=filename,
-            who="rpsd-config",
-            what=storage_what,
-            content_type=content_type,
-            custom_metadata={
-                "asset_type": asset_type,
-                "what": what,
-                "version": version,
-            },
-        )
-        asset = ConfigurationAsset(
-            asset_type=asset_type,
-            what=what,
-            label=label,
-            version=version,
-            status=ConfigurationAsset.Status.ACTIVE
-            if activate
-            else ConfigurationAsset.Status.STORED,
-            is_active=activate,
-            storage_url=storage_url,
-            storage_provider=getattr(metadata, "provider", ""),
-            storage_key=getattr(metadata, "object_id", ""),
-            original_filename=filename,
-            content_type=content_type,
-            checksum_sha256=checksum,
-            size_bytes=len(content),
-            bundle_manifest=bundle_manifest,
-            uploaded_by=uploaded_by
-            if getattr(uploaded_by, "is_authenticated", False)
-            else None,
-            uploaded_at=timezone.now(),
-            activated_by=uploaded_by
-            if activate and getattr(uploaded_by, "is_authenticated", False)
-            else None,
-            activated_at=timezone.now() if activate else None,
-        )
-        if activate:
-            ConfigurationAsset.objects.filter(
+    storage_url = None
+    try:
+        with transaction.atomic():
+            _lock_asset_family(asset_type, what)
+            version = _next_asset_version(asset_type=asset_type, what=what)
+            storage_what = (
+                f"config-assets/{asset_type}/{what}/v{version}/{uuid.uuid4().hex}"
+            )
+            storage_url, metadata = provider.save(
+                content,
+                filename=filename,
+                who="rpsd-config",
+                what=storage_what,
+                content_type=content_type,
+                custom_metadata={
+                    "asset_type": asset_type,
+                    "what": what,
+                    "version": version,
+                },
+            )
+            asset = ConfigurationAsset(
                 asset_type=asset_type,
                 what=what,
-                is_active=True,
-            ).update(
-                is_active=False,
-                status=ConfigurationAsset.Status.ARCHIVED,
-                archived_at=timezone.now(),
+                label=label,
+                version=version,
+                status=ConfigurationAsset.Status.ACTIVE
+                if activate
+                else ConfigurationAsset.Status.STORED,
+                is_active=activate,
+                storage_url=storage_url,
+                storage_provider=getattr(metadata, "provider", ""),
+                storage_key=getattr(metadata, "object_id", ""),
+                original_filename=filename,
+                content_type=content_type,
+                checksum_sha256=checksum,
+                size_bytes=len(content),
+                bundle_manifest=bundle_manifest,
+                uploaded_by=uploaded_by
+                if getattr(uploaded_by, "is_authenticated", False)
+                else None,
+                uploaded_at=timezone.now(),
+                activated_by=uploaded_by
+                if activate and getattr(uploaded_by, "is_authenticated", False)
+                else None,
+                activated_at=timezone.now() if activate else None,
             )
-        asset.full_clean()
-        asset.save()
-        event = create_asset_event(
-            asset=asset,
-            event_type="config_asset.activated" if activate else "config_asset.created",
-        )
+            if activate:
+                ConfigurationAsset.objects.filter(
+                    asset_type=asset_type,
+                    what=what,
+                    is_active=True,
+                ).update(
+                    is_active=False,
+                    status=ConfigurationAsset.Status.ARCHIVED,
+                    archived_at=timezone.now(),
+                )
+            asset.full_clean()
+            asset.save()
+            event = create_asset_event(
+                asset=asset,
+                event_type="config_asset.activated"
+                if activate
+                else "config_asset.created",
+            )
+    except Exception as exc:
+        if storage_url:
+            try:
+                provider.delete(storage_url)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Failed to remove rolled-back asset"
+                )
+        if isinstance(exc, ValidationError):
+            raise
+        raise ValidationError(
+            "Asset upload could not be stored.", code="asset_storage_error"
+        ) from exc
 
-    publish_asset_event(event)
-    asset.publish_status = event.status
-    asset.last_publish_error = event.last_error
-    asset.save(update_fields=["publish_status", "last_publish_error", "updated_at"])
+    event = publish_asset_event(event)
+    _record_asset_event_result(asset, event)
     return StoredConfigurationAsset(asset=asset, event=event)
 
 
@@ -295,6 +373,8 @@ def activate_configuration_asset(
     actor=None,
 ) -> ConfigurationAsset:
     with transaction.atomic():
+        _lock_asset_family(asset.asset_type, asset.what)
+        asset.refresh_from_db()
         ConfigurationAsset.objects.filter(
             asset_type=asset.asset_type,
             what=asset.what,
@@ -313,10 +393,8 @@ def activate_configuration_asset(
         asset.save()
         event = create_asset_event(asset=asset, event_type="config_asset.activated")
 
-    publish_asset_event(event)
-    asset.publish_status = event.status
-    asset.last_publish_error = event.last_error
-    asset.save(update_fields=["publish_status", "last_publish_error", "updated_at"])
+    event = publish_asset_event(event)
+    _record_asset_event_result(asset, event)
     return asset
 
 
@@ -325,16 +403,16 @@ def archive_configuration_asset(
     asset: ConfigurationAsset,
 ) -> ConfigurationAsset:
     with transaction.atomic():
+        _lock_asset_family(asset.asset_type, asset.what)
+        asset.refresh_from_db()
         asset.is_active = False
         asset.status = ConfigurationAsset.Status.ARCHIVED
         asset.archived_at = timezone.now()
         asset.save()
         event = create_asset_event(asset=asset, event_type="config_asset.archived")
 
-    publish_asset_event(event)
-    asset.publish_status = event.status
-    asset.last_publish_error = event.last_error
-    asset.save(update_fields=["publish_status", "last_publish_error", "updated_at"])
+    event = publish_asset_event(event)
+    _record_asset_event_result(asset, event)
     return asset
 
 
@@ -364,6 +442,21 @@ def retry_pending_asset_events() -> int:
         ]
     ).order_by("created_at", "id")
     for event in events:
-        publish_asset_event(event)
-        count += 1
+        if retry_asset_event(event.pk) is not None:
+            count += 1
     return count
+
+
+@transaction.atomic
+def retry_asset_event(event_id: int) -> ConfigurationAssetEvent | None:
+    """Serialize explicit retries and never replay an already published event."""
+    event = (
+        ConfigurationAssetEvent.objects.select_for_update(skip_locked=True)
+        .filter(pk=event_id, status__in=["pending", "failed"])
+        .first()
+    )
+    if event is None or not settings.CONFIG_ASSETS_RABBITMQ_ENABLED:
+        return None
+    event = publish_asset_event(event)
+    _record_asset_event_result(event.asset, event)
+    return event

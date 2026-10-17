@@ -6,7 +6,7 @@ from threading import Barrier, Thread
 
 from django.contrib import admin
 from django.core.exceptions import ValidationError
-from django.db import close_old_connections, transaction
+from django.db import close_old_connections, models, transaction
 from django.test import RequestFactory, TestCase, TransactionTestCase
 
 from rpsd_config.admin_agreements.admin import ContractRevisionIndicatorInline
@@ -94,7 +94,9 @@ class RevisionIndicatorTests(_ContractRevisionFixtureMixin, TestCase):
         alternate = ProcessingProfileIndicatorVersion(
             processing_profile_version=self.profile, indicator_version=version
         )
-        ProcessingProfileIndicatorVersion.objects.bulk_create([alternate])
+        models.QuerySet.bulk_create(
+            ProcessingProfileIndicatorVersion.objects.all(), [alternate]
+        )
         with self.assertRaisesMessage(ValidationError, "Only one version"):
             ContractRevisionIndicator.objects.create(
                 revision=revision, processing_profile_indicator_version=alternate

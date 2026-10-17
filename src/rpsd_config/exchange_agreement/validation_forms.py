@@ -31,7 +31,13 @@ class IndicatorRuleForm(forms.ModelForm):
 
     class Meta:
         model = IndicatorVersionRule
-        fields = ("indicator_version", "dataset_version_rule", "impact", "dimensions")
+        fields = (
+            "indicator_version",
+            "dataset_specification",
+            "rule_version",
+            "impact",
+            "dimensions",
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -109,20 +115,16 @@ class DatasetRuleForm(forms.ModelForm):
 
     class Meta:
         model = DatasetVersionRule
-        fields = ("dataset_specification", "rule_version", "import_policy")
+        fields = ("dataset_specification", "rule_version", "failure_policy")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Django removes frozen fields before constructing a readonly admin form.
-        if "import_policy" not in self.fields:
+        if "failure_policy" not in self.fields:
             return
-        self.fields["import_policy"].label = "Politica di import"
-        self.fields["import_policy"].choices = [
+        self.fields["failure_policy"].label = "Politica di import"
+        self.fields["failure_policy"].choices = [
             ("reject_import", "Blocco dell’import: sempre per questo dataset"),
             ("warn", "Avviso dataset: sempre per questo dataset"),
-            (
-                "indicator_only",
-                "Compatibilità: se richiesta dagli indicatori effettivi",
-            ),
         ]
-        self.fields["import_policy"].help_text = IMPORT_POLICY_HELP
+        self.fields["failure_policy"].help_text = IMPORT_POLICY_HELP

@@ -46,6 +46,7 @@ from rpsd_config.exchange_agreement.services.validation_bindings import (
     bind_indicator_rule,
 )
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
     require_catalog_admin,
     transition_validation_rule,
 )
@@ -80,7 +81,7 @@ def ensure_corse_pde_demo(
     schema_asset.refresh_from_db()
     if (
         not schema_asset.is_active
-        or schema_asset.asset_type != "netex_xsd"
+        or schema_asset.asset_type not in {"netex_xsd", "xsd_bundle", "siri_profile"}
         or schema_asset.checksum_sha256 != expected_bundle["sha256"]
         or schema_asset.bundle_manifest.get("entrypoint")
         != expected_bundle["entrypoint"]
@@ -98,8 +99,8 @@ def ensure_corse_pde_demo(
             "dataset": dataset,
             "version": "corse-pde-001",
             "description": "CORSE_PDE Lev5 file-only fixture; EA workflow excluded",
+            "format": "xml",
             "metadata": {
-                "format": "xml",
                 "source": corpus["source"],
                 "excluded_requirements": ["WF-001"],
             },
@@ -144,8 +145,10 @@ def ensure_corse_pde_demo(
             version="001",
             defaults={
                 "name": row["name"],
-                "validation_type": "xsd_bundle" if is_schema else "xpath",
-                "language_version": "1.0" if is_schema else row["language_version"],
+                "validation_type_version": get_validation_type_version(
+                    "xsd_bundle" if is_schema else "xpath",
+                    "1.0" if is_schema else row["language_version"],
+                ),
                 "definition": definition,
                 "options": {} if is_schema else {"namespaces": namespaces},
                 "result_contract": (
@@ -164,23 +167,24 @@ def ensure_corse_pde_demo(
             )
         if version.status != "published":
             raise ValidationError("CORSE_PDE seed cannot reuse a retired rule version.")
-        policy = "reject_import" if is_schema else "indicator_only"
+        bindings[row["code"]] = version
+        if not is_schema:
+            continue
         binding = DatasetVersionRule.objects.filter(
             dataset_specification=specification, rule_version=version
         ).first()
         if binding is None:
             if specification.status != "draft":
                 raise ValidationError("Published CORSE_PDE dataset is incomplete.")
-            binding = bind_dataset_rule(
+            bind_dataset_rule(
                 specification=specification,
                 rule_version=version,
-                import_policy=policy,
+                failure_policy="reject_import",
                 actor=actor,
             )
-        elif binding.import_policy != policy:
+        elif binding.failure_policy != "reject_import":
             raise ValidationError("CORSE_PDE import policy conflicts with the seed.")
-        bindings[row["code"]] = binding
-    if specification.rule_bindings.count() != len(bindings):
+    if specification.rule_bindings.count() != 1:
         raise ValidationError("CORSE_PDE dataset has unexpected rule associations.")
     if specification.status == "draft":
         specification = publish_dataset_specification(specification, actor=actor)
@@ -215,12 +219,13 @@ def ensure_corse_pde_demo(
             dimensions.append(dimension)
         impact = "calculation" if row["blocking"] == "sì" else "dimension"
         binding = indicator.rule_bindings.filter(
-            dataset_version_rule=bindings[row["code"]]
+            dataset_specification=specification, rule_version=bindings[row["code"]]
         ).first()
         if binding is None and indicator.status == "draft":
             bind_indicator_rule(
                 indicator_version=indicator,
-                dataset_rule=bindings[row["code"]],
+                specification=specification,
+                rule_version=bindings[row["code"]],
                 impact=impact,
                 dimensions=dimensions,
                 actor=actor,

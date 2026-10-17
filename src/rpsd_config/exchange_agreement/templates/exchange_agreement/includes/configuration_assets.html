@@ -1,0 +1,31 @@
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h5">Carica asset tecnico dataset</h2>
+  <p>File di configurazione associabili a una o più versioni dataset. Non sono conferimenti TPL né documenti contrattuali. Il codice è indipendente dal nome del file.</p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}<input type="hidden" name="tab" value="asset"><input type="hidden" name="action" value="upload-config-asset">
+    {{ asset_upload_form.as_p }}
+    <button class="btn btn-primary" type="submit">Carica asset</button>
+  </form>
+</div></div>
+<form method="get" class="d-flex flex-wrap gap-2 mb-3">
+  <input type="hidden" name="tab" value="asset">
+  <label>Tipo <select name="asset_type" class="form-select"><option value="">Tutti</option>{% for value,label in configuration_asset_type_choices %}<option value="{{ value }}" {% if value == asset_type_filter %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+  <label>Codice <input class="form-control" name="asset_code" value="{{ asset_code_filter }}"></label>
+  <button class="btn btn-outline-primary" type="submit">Filtra</button>
+</form>
+{% for asset in configuration_assets %}
+<details class="card mb-3"><summary class="card-header">{{ asset.what }} · {{ asset.get_asset_type_display }} · v{{ asset.version }} · {{ asset.get_status_display }}</summary>
+<div class="card-body">
+  <p>{{ asset.label }} — {{ asset.original_filename }} ({{ asset.size_bytes }} byte)</p>
+  <dl><dt>SHA-256</dt><dd class="text-break"><code>{{ asset.checksum_sha256 }}</code></dd><dt>Caricamento</dt><dd>{{ asset.uploaded_at }} · {{ asset.uploaded_by|default:"Sistema" }}</dd><dt>Storage (rpsd-storage)</dt><dd>{{ asset.storage_provider }}</dd><dt>Notifica (rpsd-transport)</dt><dd>{{ asset.publish_status|default:"In attesa" }}</dd></dl>
+  {% if asset.bundle_manifest %}<p>Entrypoint XSD: <code>{{ asset.bundle_manifest.entrypoint }}</code></p>{% endif %}
+  <p>Versioni dataset associate: {% for link in asset.dataset_specification_links.all %}<a href="{% url 'exchange_agreement:technical-catalog-detail' catalog_slug='dataset-specifications' object_id=link.dataset_specification_id %}">{{ link.dataset_specification.code }}</a> ({{ link.get_role_display }}){% if not forloop.last %}, {% endif %}{% empty %}nessuna{% endfor %}.</p>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-primary" href="{% url 'exchange_agreement:configuration-asset-download' asset_id=asset.id %}">Scarica</a>
+    <a class="btn btn-outline-secondary" href="?tab=asset&amp;asset_type={{ asset.asset_type }}&amp;what={{ asset.what }}">Carica nuova versione</a>
+    <form method="post">{% csrf_token %}<input type="hidden" name="tab" value="asset"><input type="hidden" name="asset_id" value="{{ asset.id }}"><input type="hidden" name="action" value="activate-config-asset"><button class="btn btn-outline-success" type="submit" {% if asset.is_active %}disabled{% endif %}>Attiva</button></form>
+    <form method="post">{% csrf_token %}<input type="hidden" name="tab" value="asset"><input type="hidden" name="asset_id" value="{{ asset.id }}"><input type="hidden" name="action" value="archive-config-asset"><button class="btn btn-outline-secondary" type="submit" {% if asset.status == 'archived' %}disabled{% endif %}>Archivia</button></form>
+  </div>
+  <p class="small mt-2">L’attivazione non cambia le versioni già associate ai dataset o congelate nei contratti.</p>
+</div></details>
+{% empty %}<p>Nessun asset corrisponde ai filtri.</p>{% endfor %}

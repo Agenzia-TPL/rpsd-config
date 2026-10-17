@@ -1,0 +1,19 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'admin/config-guidance.css' %}">{% endblock %}
+{% block content %}
+<p>Carica una risorsa tecnica per le versioni dataset. Identità e contenuto saranno immutabili; per modificarli carica una nuova versione.</p>
+<section aria-label="Limiti tecnici degli asset">
+<h2>Limiti tecnici effettivi</h2>
+<dl>{% for name,value in asset_limits.items %}<dt><code>{{ name }}</code></dt><dd>{{ value }}{% if name != "CONFIG_ASSETS_XSD_MAX_FILES" %} byte{% else %} elementi nell'archivio{% endif %}</dd>{% endfor %}</dl>
+<p>Soglie configurate in <code>rpsd-config/.env</code>, documentate in <code>.env.example</code>.
+Sono limiti tecnici di memoria e protezione degli archivi, legati alle risorse del deployment:
+per questo sono impostazioni di ambiente e non una tabella modificabile nel database.
+Dopo una modifica riavviare Config. I limiti XSD riguardano i bundle, non gli archivi generici.</p>
+</section>
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <input type="submit" value="Carica asset" class="default">
+</form>
+{% endblock %}

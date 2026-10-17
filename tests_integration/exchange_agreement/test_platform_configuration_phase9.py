@@ -10,11 +10,6 @@ from django.urls import reverse
 
 from rpsd_config.exchange_agreement.models import (
     ConfigurationAsset,
-    NetexValidationProfile,
-    SiriValidationProfile,
-)
-from rpsd_config.exchange_agreement.services.indicator_catalog_bootstrap import (
-    ensure_commercial_speed_example,
 )
 
 
@@ -77,120 +72,27 @@ class PlatformConfigurationPhase9Tests(TestCase):
         self.assertContains(response, "/rpsd/admin")
         self.assertContains(response, "Platform admin")
 
-    def test_initialization_uploads_and_activation_rules(self):
+    def test_legacy_initialization_redirects_and_actions_have_no_effect(self):
         self.client.force_login(self.platform_admin)
-
-        first_netex = SimpleUploadedFile(
-            "netex.xsd",
-            b"<xsd:schema xmlns:xsd='http://www.w3.org/2001/XMLSchema'></xsd:schema>",
-            content_type="application/xml",
+        self.assertRedirects(
+            self.client.get(self.url + "?tab=inizializzazione"), self.url + "?tab=asset"
         )
-        first_upload = self.client.post(
-            self.url,
-            {
-                "tab": "inizializzazione",
-                "action": "upload-netex",
-                "netex_label": "Netex v1",
-                "netex_is_active": "on",
-                "netex_file": first_netex,
-            },
+        for action in (
+            "upload-netex",
+            "upload-siri",
+            "set-netex-active",
+            "set-siri-active",
+        ):
+            response = self.client.post(
+                self.url,
+                {
+                    "tab": "inizializzazione",
+                    "action": action,
+                    "netex_file": SimpleUploadedFile("netex.xsd", b"schema"),
+                },
+            )
+            self.assertEqual(response.status_code, 400)
+        self.assertFalse(ConfigurationAsset.objects.exists())
+        self.assertNotContains(
+            self.client.get(self.url), "Stato inizializzazione sistema"
         )
-        self.assertEqual(first_upload.status_code, 200)
-        self.assertEqual(NetexValidationProfile.objects.count(), 1)
-        self.assertEqual(
-            ConfigurationAsset.objects.filter(
-                asset_type=ConfigurationAsset.AssetType.NETEX_XSD,
-                what="netex",
-            ).count(),
-            1,
-        )
-        self.assertEqual(
-            NetexValidationProfile.objects.filter(is_active=True).count(), 1
-        )
-
-        second_netex = SimpleUploadedFile(
-            "netex.xsd",
-            b"<xsd:schema xmlns:xsd='http://www.w3.org/2001/XMLSchema'></xsd:schema>",
-            content_type="application/xml",
-        )
-        second_upload = self.client.post(
-            self.url,
-            {
-                "tab": "inizializzazione",
-                "action": "upload-netex",
-                "netex_label": "Netex v2",
-                "netex_is_active": "on",
-                "netex_file": second_netex,
-            },
-        )
-        self.assertEqual(second_upload.status_code, 200)
-        self.assertEqual(NetexValidationProfile.objects.count(), 2)
-        self.assertEqual(
-            ConfigurationAsset.objects.filter(
-                asset_type=ConfigurationAsset.AssetType.NETEX_XSD,
-                what="netex",
-            ).count(),
-            2,
-        )
-        self.assertEqual(
-            NetexValidationProfile.objects.filter(is_active=True).count(), 1
-        )
-        self.assertEqual(
-            NetexValidationProfile.objects.get(is_active=True).label,
-            "Netex v2",
-        )
-
-        first_siri = SimpleUploadedFile(
-            "siri-pt.xsd",
-            b"<xsd:schema xmlns:xsd='http://www.w3.org/2001/XMLSchema'></xsd:schema>",
-            content_type="application/xml",
-        )
-        self.client.post(
-            self.url,
-            {
-                "tab": "inizializzazione",
-                "action": "upload-siri",
-                "siri_type": SiriValidationProfile.ProfileType.PT,
-                "siri_label": "SIRI PT v1",
-                "siri_is_active": "on",
-                "siri_file": first_siri,
-            },
-        )
-
-        second_siri = SimpleUploadedFile(
-            "siri-pt.xsd",
-            b"<xsd:schema xmlns:xsd='http://www.w3.org/2001/XMLSchema'></xsd:schema>",
-            content_type="application/xml",
-        )
-        self.client.post(
-            self.url,
-            {
-                "tab": "inizializzazione",
-                "action": "upload-siri",
-                "siri_type": SiriValidationProfile.ProfileType.PT,
-                "siri_label": "SIRI PT v2",
-                "siri_is_active": "on",
-                "siri_file": second_siri,
-            },
-        )
-
-        self.assertEqual(
-            SiriValidationProfile.objects.filter(
-                profile_type=SiriValidationProfile.ProfileType.PT,
-                is_active=True,
-            ).count(),
-            1,
-        )
-        self.assertEqual(
-            SiriValidationProfile.objects.get(
-                profile_type=SiriValidationProfile.ProfileType.PT,
-                is_active=True,
-            ).label,
-            "SIRI PT v2",
-        )
-
-        ensure_commercial_speed_example(actor=self.platform_admin)
-
-        final_page = self.client.get(self.url + "?tab=inizializzazione")
-        self.assertEqual(final_page.status_code, 200)
-        self.assertContains(final_page, "Sistema inizializzato")

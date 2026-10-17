@@ -64,6 +64,7 @@ class CorsePdeSeedTests(TestCase):
         self.asset = store_configuration_asset(
             uploaded_file=SimpleUploadedFile("netex.zip", bundle.read_bytes()),
             asset_type="netex_xsd",
+            what="netex",
             activate=True,
             uploaded_by=self.actor,
         ).asset
@@ -73,7 +74,7 @@ class CorsePdeSeedTests(TestCase):
         self.assertEqual(profile.status, "published")
         spec = DatasetSpecification.objects.get(code="netex-corse-pde_001")
         indicator = IndicatorVersion.objects.get(code="corse-pde-file-checks_001")
-        self.assertEqual(spec.rule_bindings.count(), 14)
+        self.assertEqual(spec.rule_bindings.count(), 1)
         self.assertEqual(indicator.rule_bindings.count(), 13)
         self.assertEqual(spec.metadata["excluded_requirements"], ["WF-001"])
         self.assertFalse(
@@ -82,19 +83,20 @@ class CorsePdeSeedTests(TestCase):
         for row in load_corse_pde_corpus()["rules"]:
             if row["requirement_type"] == "STATO":
                 continue
-            binding = spec.rule_bindings.select_related("rule_version").get(
-                rule_version__rule__code="corse-pde-" + row["code"].lower()
-            )
+            code = "corse-pde-" + row["code"].lower()
+            if row["requirement_type"] == "XSD":
+                binding = spec.rule_bindings.get(rule_version__rule__code=code)
+            else:
+                binding = indicator.rule_bindings.get(rule_version__rule__code=code)
             version = binding.rule_version
             with self.subTest(rule=row["code"]):
                 if row["requirement_type"] == "XSD":
-                    self.assertEqual(binding.import_policy, "reject_import")
+                    self.assertEqual(binding.failure_policy, "reject_import")
                     self.assertEqual(version.validation_type, "xsd_bundle")
                     continue
                 self.assertEqual(version.definition, row["definition"])
                 self.assertEqual(version.language_version, row["language_version"])
-                self.assertEqual(binding.import_policy, "indicator_only")
-                consumer = indicator.rule_bindings.get(dataset_version_rule=binding)
+                consumer = binding
                 self.assertEqual(
                     consumer.impact,
                     "calculation" if row["blocking"] == "sì" else "dimension",
@@ -119,7 +121,7 @@ class CorsePdeSeedTests(TestCase):
         )
         self.assertEqual(before, list(ValidationRuleVersion.objects.values()))
         self.assertEqual(ValidationRule.objects.count(), 14)
-        self.assertEqual(DatasetSpecification.objects.get().rule_bindings.count(), 14)
+        self.assertEqual(DatasetSpecification.objects.get().rule_bindings.count(), 1)
         self.assertEqual(IndicatorVersion.objects.get().rule_bindings.count(), 13)
 
     def test_non_admin_is_rejected_before_creating_catalogs(self):
@@ -155,6 +157,7 @@ class CorsePdeSeedTests(TestCase):
                 "netex.xsd", b'<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>'
             ),
             asset_type="netex_xsd",
+            what="netex",
             activate=True,
             uploaded_by=self.actor,
         ).asset
@@ -173,6 +176,7 @@ class CorsePdeSeedTests(TestCase):
                 ).read_bytes(),
             ),
             asset_type="netex_xsd",
+            what="netex",
             activate=True,
             uploaded_by=self.actor,
         ).asset

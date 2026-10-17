@@ -1,6 +1,6 @@
 # Modello dati RPSD Config — stato consolidato
 
-Data aggiornamento: 12 ottobre 2026.
+Data aggiornamento: 15 ottobre 2026.
 
 Questo documento descrive il modello implementato in `rpsd-config` al termine
 delle feature Config 019–023/025–026, sulla baseline 008–018. Il diagramma ER è disponibile in
@@ -94,23 +94,34 @@ processo di ingest.
 ### `Dataset` e `DatasetSpecification`
 
 `Dataset` è l’identità logica (es. `netex`); il suo codice è il valore di routing.
-`DatasetSpecification` è la versione tecnica (es. `netex-ita_v001`), con metadata,
-formato e ciclo `draft`, `published`, `deprecated`, `withdrawn`.
+`DatasetSpecification` è la versione tecnica (es. `netex-ita_v001`), con formato esplicito (xml/csv/xlsx/txt), metadata facoltativi e ciclo `draft`, `published`, `deprecated`, `withdrawn`.
 
 ### `ConfigurationAsset` e `DatasetSpecificationAsset`
 
-Gli asset persistiti ammettono solo `netex_xsd` e `siri_profile`, anche tramite
-vincolo DB. Contengono storage, checksum e metadati; la tabella ponte assegna
-ruolo e obbligatorietà alla specifica dataset. Un bundle XSD è un archivio ZIP
-con entrypoint, manifest dei file, riferimenti locali e checksum: non un nuovo
-modello `SchemaBundle`. Non sono ammessi include/import remoti o path insicuri.
-Gli asset YAML degli indicatori e `IndicatorProfile` sono rimossi.
+Gli asset tecnici ammettono `xsd_schema`, `xsd_bundle`, `json_schema`,
+`document`, `archive`, `other` e i tipi storici `netex_xsd`/`siri_profile`.
+`what` è il codice asset esplicito: non deriva dal filename e non deve coincidere
+con il codice del dataset. La terna tipo/codice/versione identifica una risorsa
+immutabile conservata tramite `rpsd-storage`, con checksum, dimensione e audit.
+Un file generico non implica la disponibilità di un interprete di validazione.
+
+La tabella ponte assegna ruolo e obbligatorietà alla versione dataset; lo stesso
+asset può essere condiviso da specifiche diverse. La composizione è modificabile
+soltanto in bozza. L'attivazione indica la versione preferita di una famiglia,
+ma non cambia associazioni a versioni precise o snapshot già approvati.
+
+Un bundle XSD è uno ZIP con entrypoint, manifest, riferimenti locali e checksum:
+non una tabella autonoma. Include/import remoti e path insicuri sono rifiutati.
+Gli ZIP generici sono conservati senza interpretazione XSD. Il binding di una
+regola `xsd_bundle` richiede un unico bundle idoneo con ruolo `validation_schema`;
+un riferimento ambiguo è un errore. Gli asset YAML degli indicatori e
+`IndicatorProfile` restano rimossi.
 
 ### `ValidationRule` e `ValidationRuleVersion`
 
 `ValidationRule` identifica la regola con un codice stabile univoco.
 `ValidationRuleVersion` appartiene a una sola regola; la coppia regola/versione
-è univoca. Contiene `validation_type`, `definition`, `language_version`,
+è univoca. Seleziona un `ValidationTypeVersion` protetto; contiene `definition`,
 `options`, `result_contract`, `execution_reference`, stato e audit pubblicazione.
 La stessa versione può essere associata a più specifiche dataset.
 
@@ -127,7 +138,9 @@ Il risultato `violating_entities` identifica i nodi non conformi; sequenza vuota
 significa successo secondo il contratto dell’interprete. Config controlla la
 configurazione, senza valutare l’XPath sul dataset trasferito.
 
-Il registry degli interpreti è codice, non una tabella. I contratti configurabili
+Il catalogo `ValidationTypeVersion` contiene le sette coppie supportate di tipo e
+versione del linguaggio, selezionate tramite una sola FK. Il registry nel codice
+continua a validarne sintassi/opzioni: una riga di catalogo non installa un interprete. I contratti configurabili
 sono: XPath XML 1.0/2.0/3.1, bundle XSD 1.0, colonne obbligatorie CSV/XLSX e
 pattern TXT. Le definizioni tabellari/testuali sono JSON dichiarativi versionati,
 non codice Python arbitrario. `application_state` è escluso finché non siano
@@ -139,15 +152,16 @@ note fonte e fase dell’approvazione EA. Il manifest dichiara
 Associa una specifica dataset a una versione regola; coppia univoca. La politica
 si trova sull’associazione, non sulla definizione condivisa:
 
-| `import_policy` | Conseguenza prevista nel consumer |
+| `failure_policy` | Conseguenza prevista nel consumer |
 | --- | --- |
 | `reject_import` | Violazione: trasferimento non ammesso all’import |
-| `warn` | Controllo sempre applicabile; violazione: avviso dataset |
-| `indicator_only` | Controllo solo se richiesto dagli indicatori effettivi |
+| `warn` | Violazione: avviso dataset |
 
-Le regole di base si compongono nella bozza della specifica. Su una specifica
-pubblicata si possono aggiungere nuove applicabilità `indicator_only`; non si
-modificano le politiche già pubblicate. Gli snapshot approvati restano congelati.
+Queste regole si applicano sempre al dataset e si compongono soltanto nella
+bozza della specifica. I requisiti degli indicatori sono associazioni distinte,
+modificabili nelle bozze indicatore senza alterare una specifica pubblicata.
+Il marker `indicator_only` rimane soltanto nel piano pubblico di compatibilità,
+non è un valore persistibile in questa tabella. Snapshot approvati immutati.
 
 ## 6. Indicatori, input e dipendenze
 
@@ -165,13 +179,14 @@ Non esiste una tabella separata per metodi di calcolo o file YAML indicatori.
 ### `IndicatorVersionInput`
 
 Associa gli input dataset necessari a una versione indicatore, anche quando
-non ci sono regole. Coppia indicatore-versione/specifica univoca. Gli input
+non ci sono regole. Coppia indicatore-versione/specifica univoca; ORM `input_specifications` con
+`through=IndicatorVersionInput`. Gestione inline «Dataset richiesti». Gli input
 richiesti includono anche le specifiche delle regole associate.
 
 ### `IndicatorVersionRule` e dimensioni
 
-Associa una versione indicatore a `DatasetVersionRule`, non direttamente a un
-frammento. Coppia univoca, nessun booleano `mandatory`.
+Associa direttamente versione indicatore, specifica dataset e versione regola.
+La terna è univoca e non contiene politiche di import né booleani `mandatory`.
 
 - `impact=calculation`: le entità non conformi non contribuiscono al calcolo.
 - `impact=dimension`: il totale può essere calcolabile, ma le disaggregazioni
@@ -377,3 +392,49 @@ i deployment del validator verranno definiti successivamente.
 Aggiornamento 029: una sola versione per indicatore logico in ciascuna revisione;
 nessuna associazione autonoma contratto/indicatore. La versione è ricavata dalla
 voce del profilo tecnico selezionata.
+
+## Revisione 031: configurazione e amministrazione
+
+Il formato è obbligatorio e guidato; `metadata.format` è vietato nelle nuove
+scritture. Le API catalogo espongono `format` e sintetizzano la vecchia chiave
+soltanto in serializzazione. Gli schemi di snapshot/piano esistenti non vengono
+estesi né riscritti: sono sufficienti le definizioni interprete già congelate.
+
+`IndicatorVersion.prerequisites` è M:N direzionale con `symmetrical=False` e
+through esistente. Dimensioni richieste nella stessa riga della dipendenza,
+senza inline annidati. `ProcessingProfileVersion.input_flow_versions` riusa
+ProcessingProfileInputFlow con il vincolo di un processo per dataset logico.
+Nell'input flow è visibile la navigazione inversa ai profili autorizzati.
+Le scritture dei manager M:N vengono validate attraverso i modelli intermedi;
+bulk update e scritture che aggirano i lifecycle sono rifiutati.
+
+I valori dei prerequisiti si gestiscono nella revisione draft, con il medesimo
+servizio autorizzato del web. Lo storico tecnico e le notifiche asset sono
+raggruppati in «Storico e notifiche»; il CRUD manuale degli eventi è disabilitato.
+Il retry richiede un permesso operativo distinto e riguarda solo pending/failed
+selezionati. Le tabelle di dominio e i permessi precedenti vengono conservati.
+
+I vecchi NetexValidationProfile/SiriValidationProfile e la scheda inizializzazione
+sono rimossi. Restano asset generalizzati e relativi URL/snapshot. I file legacy
+utili devono essere recuperati e verificati prima del drop; nessuna cancellazione
+fisica è implicita. I vecchi upload path restano per le migrazioni storiche.
+
+`required` riguarda una risorsa già associata indispensabile alla lavorazione
+(XSD/mapper), rispetto a una accessoria (manuale). Non individua associazioni
+mancanti né decide il rifiuto del dataset. Config verifica lo stato attivo alla
+pubblicazione e propaga il flag; il consumer futuro gestirà risorse perse/corrotte.
+Le soglie tecniche degli asset sono settings di ambiente, documentati in .env.example.
+
+
+## Contractual evaluation configuration (032)
+
+IndicatorEvaluationThreshold and IndicatorPenalty belong to
+ContractRevisionIndicator, not to the logical contract or the global
+IndicatorVersion. Each owner can have multiple daily/monthly/custom conditions.
+EvaluationThresholdDimension and EvaluationPenaltyDimension are explicit guarded
+through models for native Django ManyToManyField relationships with
+IndicatorDimension. A penalty optionally references one threshold of the same
+owner and inherits its period/grouping. All penalties are cumulative; agreements
+and storni are external. Draft-only writes, approval locking and cloning protect
+these relationships. New snapshots use canonical-json-v3; historical data remains
+unchanged. See USAGE.md for field semantics, examples and runtime boundaries.

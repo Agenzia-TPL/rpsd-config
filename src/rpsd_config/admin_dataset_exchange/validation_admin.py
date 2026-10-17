@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from rpsd_config.admin_dataset_exchange import proxies
+from rpsd_config.admin_guidance import GuidedInlineMixin
 from rpsd_config.exchange_agreement.services.validation_bindings import (
     save_dataset_rule,
 )
@@ -89,10 +90,10 @@ class DatasetRuleAdmin(FrozenCompositionAdmin):
     list_display = (
         "dataset_specification",
         "rule_version",
-        "import_policy",
+        "failure_policy",
         "created_by",
     )
-    list_filter = ("import_policy", "dataset_specification")
+    list_filter = ("failure_policy", "dataset_specification")
     search_fields = (
         "dataset_specification__code",
         "dataset_specification__version",
@@ -118,7 +119,7 @@ class RuleVersionAdmin(admin.ModelAdmin):
         ("Identità e versione", {"fields": ("rule", "version", "name", "description")}),
         (
             "Tipo di validazione",
-            {"fields": ("validation_type", "language_version", "result_contract")},
+            {"fields": ("validation_type_version", "result_contract")},
         ),
         ("Definizione completa", {"fields": ("definition", "options")}),
         ("Processo di validazione Prefect", {"fields": ("execution_reference",)}),
@@ -142,7 +143,7 @@ class RuleVersionAdmin(admin.ModelAdmin):
         "status",
         "execution_reference",
     )
-    list_filter = ("status", "validation_type")
+    list_filter = ("status", "validation_type_version")
     search_fields = ("rule__code", "name", "definition")
     actions = ("publish_rules", "deprecate_rules", "withdraw_rules")
 
@@ -205,19 +206,24 @@ class RuleVersionAdmin(admin.ModelAdmin):
 
 class IndicatorRuleAdmin(FrozenCompositionAdmin):
     form = IndicatorRuleAdminForm
-    list_display = ("indicator_version", "dataset_version_rule", "impact")
-    list_filter = ("impact", "dataset_version_rule__import_policy")
+    list_display = (
+        "indicator_version",
+        "dataset_specification",
+        "rule_version",
+        "impact",
+    )
+    list_filter = ("impact", "dataset_specification")
     search_fields = (
         "indicator_version__code",
         "indicator_version__version",
-        "dataset_version_rule__dataset_specification__code",
-        "dataset_version_rule__rule_version__rule__code",
-        "dataset_version_rule__rule_version__version",
+        "dataset_specification__code",
+        "rule_version__rule__code",
+        "rule_version__version",
     )
     list_select_related = (
         "indicator_version__indicator",
-        "dataset_version_rule__dataset_specification__dataset",
-        "dataset_version_rule__rule_version__rule",
+        "dataset_specification__dataset",
+        "rule_version__rule",
     )
 
     @admin.display(description="Dimensioni interessate")
@@ -271,8 +277,104 @@ class ReadOnlyRuleAuditAdmin(admin.ModelAdmin):
         return False
 
 
+class FrozenCompositionInline(GuidedInlineMixin, admin.TabularInline):
+    """Edit compositions in their owning draft, never in a frozen version."""
+
+    form = CompositionAdminForm
+    extra = 0
+
+    def has_add_permission(self, request, obj=None):
+        return super().has_add_permission(request, obj) and (
+            obj is None or obj.status == "draft"
+        )
+
+    def has_change_permission(self, request, obj=None):
+        return super().has_change_permission(request, obj) and (
+            obj is None or obj.status == "draft"
+        )
+
+    def has_delete_permission(self, request, obj=None):
+        return super().has_delete_permission(request, obj) and (
+            obj is None or obj.status == "draft"
+        )
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None and obj.status != "draft":
+            return tuple(
+                field.name for field in self.model._meta.fields if not field.primary_key
+            )
+        return ()
+
+
+class IndicatorInputInline(FrozenCompositionInline):
+    model = proxies.IndicatorVersionInput
+    fk_name = "indicator_version"
+    fields = ("dataset_specification",)
+    verbose_name_plural = "Dataset richiesti"
+
+
+class DependencyInlineForm(CompositionAdminForm):
+    dimensions = forms.ModelMultipleChoiceField(
+        queryset=proxies.IndicatorDimension.objects.all(),
+        required=False,
+        label="Dimensioni richieste al prerequisito",
+        help_text=(
+            "Disaggregazioni del prerequisito necessarie al calcolo del dipendente."
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk and "dimensions" in self.fields:
+            self.fields["dimensions"].initial = self.instance.required_dimensions.all()
+
+    def _save_m2m(self):
+        super()._save_m2m()
+        if "dimensions" not in self.cleaned_data:
+            return
+        from rpsd_config.exchange_agreement.models import DependencyRequiredDimension
+
+        with transaction.atomic():
+            self.instance.check_editable()
+            self.instance.dimension_links.all().delete()
+            for dimension in self.cleaned_data["dimensions"]:
+                DependencyRequiredDimension.objects.create(
+                    dependency=self.instance, dimension=dimension
+                )
+
+
+class IndicatorDependencyInline(FrozenCompositionInline):
+    model = proxies.IndicatorVersionDependency
+    fk_name = "dependent"
+    form = DependencyInlineForm
+    fields = ("prerequisite", "dimensions")
+    verbose_name_plural = "Indicatori prerequisiti"
+
+    def get_readonly_fields(self, request, obj=None):
+        return (
+            ("prerequisite", "required_dimensions_display")
+            if obj and obj.status != "draft"
+            else ()
+        )
+
+    def get_fields(self, request, obj=None):
+        return self.get_readonly_fields(request, obj) or self.fields
+
+    @admin.display(description="Dimensioni richieste")
+    def required_dimensions_display(self, obj):
+        return ", ".join(str(d) for d in obj.required_dimensions.all()) or "—"
+
+
 def register_validation_admin(permission_mixin) -> None:
     """Register proxies using the existing platform-admin boundary."""
+    admin.site.register(
+        proxies.ValidationTypeVersionAdminProxy,
+        type(
+            "GuidedValidationTypeVersionAdmin",
+            (permission_mixin, ValidationTypeVersionAdmin),
+            {},
+        ),
+    )
     specialized = {
         "ValidationRule": RuleIdentityAdmin,
         "ValidationRuleVersion": RuleVersionAdmin,
@@ -287,6 +389,7 @@ def register_validation_admin(permission_mixin) -> None:
             "search_fields": ("code", "name"),
         },
         "IndicatorVersionInput": {
+            "get_model_perms": lambda self, request: {},
             "list_display": ("indicator_version", "dataset_specification"),
             "search_fields": (
                 "indicator_version__code",
@@ -300,6 +403,7 @@ def register_validation_admin(permission_mixin) -> None:
             ),
         },
         "IndicatorVersionDependency": {
+            "get_model_perms": lambda self, request: {},
             "list_display": ("dependent", "prerequisite"),
             "search_fields": (
                 "dependent__code",
@@ -310,6 +414,7 @@ def register_validation_admin(permission_mixin) -> None:
             "list_select_related": ("dependent__indicator", "prerequisite__indicator"),
         },
         "DependencyRequiredDimension": {
+            "get_model_perms": lambda self, request: {},
             "list_display": ("dependency", "dimension"),
             "search_fields": (
                 "dependency__dependent__code",
@@ -348,14 +453,12 @@ def register_validation_admin(permission_mixin) -> None:
     for name in (
         "ValidationRule",
         "ValidationRuleVersion",
-        "ValidationRuleStatusEvent",
         "DatasetVersionRule",
         "IndicatorDimension",
         "IndicatorVersionRule",
         "IndicatorVersionInput",
         "IndicatorVersionDependency",
         "DependencyRequiredDimension",
-        "ContractDependencyConfiguration",
     ):
         proxy = getattr(proxies, f"{name}AdminProxy")
         default = (
@@ -373,3 +476,13 @@ def register_validation_admin(permission_mixin) -> None:
         bases = (scoped_base,) if base is admin.ModelAdmin else (base, scoped_base)
         admin_class = type(f"{name}CatalogAdmin", bases, presentation.get(name, {}))
         admin.site.register(getattr(proxies, f"{name}AdminProxy"), admin_class)
+
+
+class ValidationTypeVersionAdmin(admin.ModelAdmin):
+    """Catalog values are validated against registered local capabilities."""
+
+    list_display = ("validation_type", "language_version")
+    search_fields = ("validation_type", "language_version")
+
+    def get_readonly_fields(self, request, obj=None):
+        return ("validation_type", "language_version") if obj else ()

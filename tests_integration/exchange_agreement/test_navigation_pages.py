@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.test import TestCase
 from django.urls import resolve, reverse
+from django.utils.html import escape
 
 from rpsd_config.exchange_agreement.models import (
     Agency,
@@ -513,14 +514,16 @@ class NavigationAndPagesTests(TestCase):
         self.assertEqual(allowed_agency_admin_list.status_code, 200)
         self.assertEqual(allowed_agency_admin_detail.status_code, 200)
 
+        company_count = Company.objects.count()
         denied_agency_admin_create = self.client.post(
-            list_url,
+            reverse("exchange_agreement:company-create"),
             {
                 "name": "Create denied",
                 "description": "agency-admin should not create here",
             },
         )
         self.assertEqual(denied_agency_admin_create.status_code, 403)
+        self.assertEqual(Company.objects.count(), company_count)
 
     def test_company_delete_requires_no_contracts_and_allows_agency_admin(self):
         detail_url_with_contract = reverse(
@@ -534,7 +537,7 @@ class NavigationAndPagesTests(TestCase):
         self.assertEqual(blocked_delete.status_code, 200)
         self.assertContains(
             blocked_delete,
-            "non puo' essere eliminata",
+            escape("non puo' essere eliminata"),
         )
         self.assertTrue(Company.objects.filter(pk=self.company.id).exists())
 
@@ -551,12 +554,15 @@ class NavigationAndPagesTests(TestCase):
         self.assertFalse(Company.objects.filter(pk=orphan.id).exists())
         self.assertContains(deleted, "eliminata correttamente")
 
-    def test_company_list_create_success_and_duplicate_case_insensitive(self):
+    @patch(
+        "rpsd_config.exchange_agreement.views.provision_default_m2m_principal_for_company"
+    )
+    def test_company_create_success_and_duplicate_case_insensitive(self, provision):
         self.client.force_login(self.platform_admin)
-        list_url = reverse("exchange_agreement:company-list")
+        create_url = reverse("exchange_agreement:company-create")
 
         create_response = self.client.post(
-            list_url,
+            create_url,
             {
                 "name": "Nuova Azienda",
                 "description": "Descrizione test",
@@ -565,10 +571,11 @@ class NavigationAndPagesTests(TestCase):
         )
         self.assertEqual(create_response.status_code, 200)
         self.assertContains(create_response, "Azienda creata correttamente.")
-        self.assertTrue(Company.objects.filter(name="Nuova Azienda").exists())
+        company = Company.objects.get(name="Nuova Azienda")
+        provision.assert_called_once_with(company=company, actor=self.platform_admin)
 
         duplicate_response = self.client.post(
-            list_url,
+            create_url,
             {
                 "name": "nuova azienda",
                 "description": "Dup",
@@ -582,22 +589,25 @@ class NavigationAndPagesTests(TestCase):
             1,
         )
 
-    def test_company_list_create_handles_integrity_error_race(self):
+        provision.assert_called_once()
+
+    def test_company_create_handles_integrity_error_race(self):
         self.client.force_login(self.platform_admin)
-        list_url = reverse("exchange_agreement:company-list")
+        create_url = reverse("exchange_agreement:company-create")
         original_create = Company.objects.create
 
-        def _race_side_effect(*args, **kwargs):
+        def _race_side_effect(**kwargs):
+            # Simulate a winner committed by a concurrent request before this fails.
             if not Company.objects.filter(name__iexact="Race Company").exists():
                 original_create(name="Race Company", description="Concurrent insert")
             raise IntegrityError("duplicate key value violates unique constraint")
 
         with patch(
-            "rpsd_config.exchange_agreement.views.Company.objects.create",
+            "rpsd_config.exchange_agreement.views._create_company_with_m2m_provisioning",
             side_effect=_race_side_effect,
         ):
             response = self.client.post(
-                list_url,
+                create_url,
                 {
                     "name": "Race Company",
                     "description": "First submit",

@@ -37,7 +37,17 @@ class IndicatorYamlRetirementTests(TestCase):
             connection.introspection.table_names(),
         )
         self.assertEqual(
-            set(ConfigurationAsset.AssetType.values), {"netex_xsd", "siri_profile"}
+            set(ConfigurationAsset.AssetType.values),
+            {
+                "netex_xsd",
+                "siri_profile",
+                "xsd_schema",
+                "xsd_bundle",
+                "json_schema",
+                "document",
+                "archive",
+                "other",
+            },
         )
 
     def test_yaml_upload_is_rejected_before_storage_is_contacted(self):
@@ -48,6 +58,7 @@ class IndicatorYamlRetirementTests(TestCase):
                 store_configuration_asset(
                     uploaded_file=SimpleUploadedFile("indicators.yml", b"kpi: demo"),
                     asset_type="indicator_yaml",
+                    what="indicators",
                     uploaded_by=self.actor,
                 )
             storage.assert_not_called()
@@ -73,10 +84,8 @@ class IndicatorYamlRetirementTests(TestCase):
                 )
                 self.assertContains(response, "Azione non supportata.")
             store.assert_not_called()
-        response = self.client.get(url + "?tab=inizializzazione")
+        response = self.client.get(url + "?tab=asset")
         self.assertNotContains(response, 'name="indicator_file"')
-        self.assertContains(response, "Apri catalogo indicatori")
-        self.assertContains(response, "Versioni indicatore pubblicate")
 
     def test_database_constraint_rejects_obsolete_asset_type(self):
         with self.assertRaises(IntegrityError) as error, transaction.atomic():

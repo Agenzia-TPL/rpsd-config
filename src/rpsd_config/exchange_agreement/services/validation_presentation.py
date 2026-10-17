@@ -42,7 +42,10 @@ def catalog_validation_preview(roots, *, specifications=()) -> dict:
 
 def frozen_validation_rows(snapshot: dict) -> list[dict]:
     """Render definitions from an approved v2 snapshot, never from live catalog."""
-    if snapshot.get("snapshot_schema_version") != "canonical-json-v2":
+    if snapshot.get("snapshot_schema_version") not in {
+        "canonical-json-v2",
+        "canonical-json-v3",
+    }:
         return []
     from rpsd_config.exchange_agreement.services.validation_plans import (
         validate_frozen_validation_snapshot,
@@ -78,7 +81,10 @@ def frozen_validation_rows(snapshot: dict) -> list[dict]:
 
 def frozen_indicator_value_rows(snapshot: dict) -> list[dict]:
     """Display approved parameter values and roles independently of live versions."""
-    if snapshot.get("snapshot_schema_version") != "canonical-json-v2":
+    if snapshot.get("snapshot_schema_version") not in {
+        "canonical-json-v2",
+        "canonical-json-v3",
+    }:
         return []
     roles = {v["code"]: v["role"] for v in snapshot["effective_indicators"]}
     return [

@@ -2,6 +2,9 @@
 {% load i18n %}
 {% block form_top %}
   {{ block.super }}
+  {% if config_profile_links %}<p>Profili tecnici utilizzatori: {% for profile in config_profile_links %}<a href="{{ profile.url }}">{{ profile.label }}</a>{% if not forloop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+  {% if config_event_owner_url %}<p><a href="{{ config_event_owner_url }}">Apri oggetto/versione</a></p>{% endif %}
+  {% if config_history_url %}<p><a href="{{ config_history_url }}">Consulta lo storico e le notifiche</a></p>{% endif %}
   {% if config_freeze_guidance %}<p class="config-guidance-notice">{{ config_freeze_guidance }}</p>{% endif %}
   {% if config_revision_workflow %}
     <p class="config-guidance-notice"><a href="{{ config_revision_workflow }}">{% translate "Apri il workflow web della revisione" %}</a> — {% translate "Valori modificabili solo in bozza, con i permessi del contratto; ogni dipendenza mantiene i propri valori." %}</p>

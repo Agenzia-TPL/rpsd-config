@@ -40,6 +40,7 @@ from rpsd_config.exchange_agreement.services.validation_bindings import (
     bind_indicator_rule,
 )
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
     require_catalog_admin,
     transition_validation_rule,
 )
@@ -60,14 +61,15 @@ def ensure_csv_validation_demo(*, actor) -> ProcessingProfileVersion:
             "dataset": dataset,
             "version": "001",
             "description": "Declarative CSV fixture",
-            "metadata": {"format": "csv"},
+            "format": "csv",
+            "metadata": {},
         },
     )
     bindings = {}
     for suffix, columns, policy in (
         ("identity", ["journey_id"], "reject_import"),
         ("timestamp", ["source_timestamp"], "warn"),
-        ("line", ["line"], "indicator_only"),
+        ("line", ["line"], None),
     ):
         rule, _ = ValidationRule.objects.get_or_create(
             code="demo-csv-" + suffix, defaults={"name": "CSV " + suffix}
@@ -78,8 +80,9 @@ def ensure_csv_validation_demo(*, actor) -> ProcessingProfileVersion:
             version="001",
             defaults={
                 "name": rule.name,
-                "validation_type": "csv_expression",
-                "language_version": "1",
+                "validation_type_version": get_validation_type_version(
+                    "csv_expression", "1"
+                ),
                 "definition": json.dumps(
                     {"predicate": "required_columns", "columns": columns},
                     sort_keys=True,
@@ -92,6 +95,9 @@ def ensure_csv_validation_demo(*, actor) -> ProcessingProfileVersion:
             version = transition_validation_rule(
                 version, target_status="published", actor=actor
             )
+        if suffix == "line":
+            bindings[suffix] = version
+            continue
         binding = DatasetVersionRule.objects.filter(
             dataset_specification=spec, rule_version=version
         ).first()
@@ -103,10 +109,10 @@ def ensure_csv_validation_demo(*, actor) -> ProcessingProfileVersion:
             binding = bind_dataset_rule(
                 specification=spec,
                 rule_version=version,
-                import_policy=policy,
+                failure_policy=policy,
                 actor=actor,
             )
-        elif binding.import_policy != policy:
+        elif binding.failure_policy != policy:
             raise ValidationError("CSV demo policy conflict.")
         bindings[suffix] = binding
     if spec.status == "draft":
@@ -135,7 +141,8 @@ def ensure_csv_validation_demo(*, actor) -> ProcessingProfileVersion:
         if not indicator.rule_bindings.exists():
             bind_indicator_rule(
                 indicator_version=indicator,
-                dataset_rule=bindings["line"],
+                specification=spec,
+                rule_version=bindings["line"],
                 impact="dimension",
                 dimensions=[dimension],
                 actor=actor,

@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="integrationgrant",
             constraint=models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(("valid_from__isnull", True))
                     | models.Q(("valid_to__isnull", True))
                     | models.Q(("valid_to__gte", models.F("valid_from")))
@@ -23,7 +23,9 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="integrationgrant",
             constraint=models.UniqueConstraint(
-                condition=models.Q(("data_category__isnull", True), ("status", "active")),
+                condition=models.Q(
+                    ("data_category__isnull", True), ("status", "active")
+                ),
                 fields=("principal", "contract", "action"),
                 name="uniq_active_integration_grant_no_category",
             ),
@@ -31,7 +33,9 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="integrationgrant",
             constraint=models.UniqueConstraint(
-                condition=models.Q(("data_category__isnull", False), ("status", "active")),
+                condition=models.Q(
+                    ("data_category__isnull", False), ("status", "active")
+                ),
                 fields=("principal", "contract", "action", "data_category"),
                 name="uniq_active_integration_grant_with_category",
             ),

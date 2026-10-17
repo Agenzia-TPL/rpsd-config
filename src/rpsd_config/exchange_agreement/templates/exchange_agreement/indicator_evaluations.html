@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Soglie e penali · {{ owner }}{% endblock %}
+{% block content %}
+<h1 class="h3">Parametri, soglie e penali</h1>
+<p>{{ contract.contract_code }} · {{ revision.code }} · {{ owner.processing_profile_indicator_version.indicator_version.code }}</p>
+<a href="{{ back_url }}">Torna alla revisione</a>
+<p>Configurazione contrattuale: Django non esegue i calcoli. Una modifica richiede una revisione in bozza.</p>
+{% if error_message %}<div class="alert alert-danger">{{ error_message }}</div>{% endif %}
+<section class="card my-3"><div class="card-body"><h2 class="h5">Parametri dell'indicatore</h2>
+{% if editable %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="save-parameters">{{ parameter_form.as_p }}<button class="btn btn-primary">Salva parametri</button></form>
+{% else %}<pre>{{ owner.parameters }}</pre>{% endif %}</div></section>
+<p class="alert alert-info">Le penali sono cumulative: si sommano tutte le clausole applicabili. Storni e accordi tra le parti sono esterni a RPSD.</p>
+<section class="card my-3"><div class="card-body"><h2 class="h5">Soglie</h2>
+{% if editable %}<a href="?kind=threshold">Aggiungi soglia</a>{% endif %}
+<ul>{% for row in thresholds %}<li><a href="?kind=threshold&amp;target_id={{ row.pk }}">{{ row.name }}</a> · {{ row.metric_code }} · {{ row.get_aggregation_method_display }} · violazione {{ row.get_violation_operator_display }} {{ row.limit_value }} · {{ row.get_period_type_display }} · {{ row.get_severity_display }}</li>{% empty %}<li>Nessuna soglia.</li>{% endfor %}</ul>
+<h2 class="h5">Penali</h2>{% if editable %}<a href="?kind=penalty">Aggiungi penale</a>{% endif %}
+<ul>{% for row in penalties %}<li><a href="?kind=penalty&amp;target_id={{ row.pk }}">{{ row.name }}</a> · {{ row.get_calculation_method_display }} {% if row.activation_threshold %}· attivata da {{ row.activation_threshold.name }}{% endif %}{% if row.calculation_method == 'per_unit' %} · max(0, quantità − {{ row.allowance_quantity }}) × {{ row.unit_amount }} {{ row.currency }}{% elif row.calculation_method == 'fixed_amount' %} · {{ row.fixed_amount }} {{ row.currency }} per periodo/gruppo{% endif %}</li>{% empty %}<li>Nessuna penale.</li>{% endfor %}</ul>
+</div></section>
+{% if editable or target %}<section class="card my-3"><div class="card-body"><h2 class="h5">{% if kind == 'penalty' %}Penale{% else %}Soglia{% endif %} {{ target.code }}</h2>
+<form method="post" id="evaluation-form">{% csrf_token %}<input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="target_id" value="{{ target.pk|default:'' }}"><input type="hidden" name="action" value="save-evaluation">{{ form.as_p }}{% if editable %}<button class="btn btn-primary">Salva bozza</button>{% endif %}</form>
+<h3 class="h6">Anteprima della finestra</h3><p>Date estreme incluse; N giorni significa inizio + N − 1. I periodi personalizzati non sono ricorrenti. In caso di errore l'anteprima riguarda solo i dati validati.</p><pre>{{ preview }}</pre>
+{% if target and editable %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="delete-evaluation"><input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="target_id" value="{{ target.pk }}"><button class="btn btn-outline-danger">Elimina dalla bozza</button></form>{% endif %}
+</div></section>{% endif %}
+<script>
+(function () {
+  const form = document.getElementById('evaluation-form');
+  if (!form) return;
+  function refresh(event) {
+    const kind = form.querySelector('[name="period_type"]')?.value;
+    const linked = !!form.querySelector('[name="activation_threshold"]')?.value;
+    const mode = form.querySelector('[name="calculation_method"]')?.value;
+    const custom = ['custom_range', 'custom_to_contract_end', 'custom_duration_days'].includes(kind);
+    const visibility = {
+      period_start_date: custom && !linked,
+      period_end_date: kind === 'custom_range' && !linked,
+      period_days: kind === 'custom_duration_days' && !linked,
+      period_type: !linked, evaluation_timezone: !linked, partial_period_policy: !linked,
+      group_by_dimensions: !linked,
+      fixed_amount: mode === 'fixed_amount', unit_amount: mode === 'per_unit',
+      allowance_quantity: mode === 'per_unit', quantity_metric_code: mode === 'per_unit',
+      quantity_aggregation_method: mode === 'per_unit',
+      external_execution_reference: mode === 'external', external_artifact_identifier: mode === 'external',
+      external_parameter_schema: mode === 'external', external_parameters: mode === 'external'
+    };
+    for (const [name, visible] of Object.entries(visibility)) {
+      const input = form.querySelector('[name="' + name + '"]');
+      if (input) {
+        if (!visible && event && ['period_type', 'activation_threshold', 'calculation_method'].includes(event.target.name)) {
+          if (input.multiple) Array.from(input.options).forEach(option => option.selected = false);
+          else input.value = ['external_parameter_schema', 'external_parameters'].includes(name) ? '{}' : '';
+        }
+        input.closest('p').hidden = !visible && input.getAttribute('aria-invalid') !== 'true';
+      }
+    }
+  }
+  form.addEventListener('change', refresh); refresh();
+})();
+</script>
+{% endblock %}

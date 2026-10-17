@@ -4,7 +4,7 @@ from allauth.socialaccount.models import SocialAccount
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 from django.test import RequestFactory, TestCase, override_settings
 
 from rpsd_config.admin_dataset_exchange.proxies import (
@@ -101,6 +101,7 @@ class RelationalProcessingProfileTests(TestCase):
     def _published_specification(self, dataset_code, specification_code):
         dataset = Dataset.objects.create(code=dataset_code, name=dataset_code.upper())
         specification = DatasetSpecification.objects.create(
+            format="xml",
             dataset=dataset,
             code=specification_code,
             version="001",
@@ -161,8 +162,8 @@ class RelationalProcessingProfileTests(TestCase):
 
     def test_publication_requires_published_components(self):
         profile = self._complete_profile()
-        InputFlowVersion.objects.filter(pk=self.siri_flow.pk).update(
-            status="deprecated"
+        models.QuerySet.update(
+            InputFlowVersion.objects.filter(pk=self.siri_flow.pk), status="deprecated"
         )
         with self.assertRaisesMessage(
             ProcessingProfileTransitionError,

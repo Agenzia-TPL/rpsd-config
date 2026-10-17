@@ -56,3 +56,25 @@ class ContractPublicationAdminProxy(ContractPublication):
         app_label = "admin_agreements"
         verbose_name = "Contract publication"
         verbose_name_plural = "Contract publications"
+
+
+from rpsd_config.exchange_agreement.models import (  # noqa: E402
+    IndicatorEvaluationThreshold,
+    IndicatorPenalty,
+)
+
+
+class IndicatorEvaluationThresholdAdminProxy(IndicatorEvaluationThreshold):
+    class Meta:
+        proxy = True
+        app_label = "admin_agreements"
+        verbose_name = "Soglia dell'indicatore contrattuale"
+        verbose_name_plural = "Soglie degli indicatori contrattuali"
+
+
+class IndicatorPenaltyAdminProxy(IndicatorPenalty):
+    class Meta:
+        proxy = True
+        app_label = "admin_agreements"
+        verbose_name = "Penale dell'indicatore contrattuale"
+        verbose_name_plural = "Penali degli indicatori contrattuali"

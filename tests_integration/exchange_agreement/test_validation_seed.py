@@ -20,6 +20,7 @@ from rpsd_config.exchange_agreement.services.csv_validation_seed import (
     ensure_csv_validation_demo,
 )
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
     transition_validation_rule,
 )
 from rpsd_config.exchange_agreement.services.validation_seed import (
@@ -39,8 +40,7 @@ class ValidationSeedConflictTests(TestCase):
             rule=rule,
             version="001",
             name=rule.name,
-            validation_type="xpath",
-            language_version="1.0",
+            validation_type_version=get_validation_type_version("xpath", "1.0"),
             definition="/*[not(//n:Different)]",
             options={"namespaces": {"n": "http://www.netex.org.uk/netex"}},
             execution_reference="validators/netex-demo",
@@ -68,11 +68,10 @@ class ValidationSeedConflictTests(TestCase):
             )
         }
         self.assertEqual(
-            {code: binding.import_policy for code, binding in bindings.items()},
+            {code: binding.failure_policy for code, binding in bindings.items()},
             {
                 "demo-csv-identity": "reject_import",
                 "demo-csv-timestamp": "warn",
-                "demo-csv-line": "indicator_only",
             },
         )
         indicator_binding = IndicatorVersionRule.objects.get()
@@ -81,9 +80,8 @@ class ValidationSeedConflictTests(TestCase):
             list(indicator_binding.affected_dimensions.values_list("code", flat=True)),
             ["line"],
         )
-        self.assertEqual(
-            indicator_binding.dataset_version_rule, bindings["demo-csv-line"]
-        )
+        self.assertEqual(indicator_binding.rule_version.rule.code, "demo-csv-line")
+        bindings["demo-csv-line"] = indicator_binding
         # Check fixture/config consistency, without executing an external validator.
         fixtures = Path(__file__).parent / "fixtures"
         for case, missing in (

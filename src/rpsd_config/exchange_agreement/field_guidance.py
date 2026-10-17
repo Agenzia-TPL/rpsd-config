@@ -24,8 +24,8 @@ def guide(label: str, help_text: str, group: str = "Configurazione") -> FieldGui
 
 IMPORT_POLICY_HELP = _(
     "reject_import rifiuta il file; warn mantiene l’import con un avviso; "
-    "indicator_only controlla la compatibilità con gli indicatori "
-    "selezionati e le loro dipendenze. Un errore tecnico del validatore "
+    "le regole indicatore si associano separatamente alla versione indicatore. "
+    "Un errore tecnico del validatore "
     "non equivale a una violazione dei dati."
 )
 IMPACT_HELP = _(
@@ -179,11 +179,39 @@ FIELDS = {
         "input includono quelli delle dipendenze transitive.",
         "Configurazione",
     ),
+    "format": guide(
+        "Formato del dataset",
+        "Formato dei file trasferiti: XML, CSV, Excel XLSX o TXT. Determina gli "
+        "interpreti compatibili; non è il tipo degli asset tecnici associati.",
+        "Configurazione",
+    ),
+    "validation_type_version": guide(
+        "Tipo di validazione e versione del linguaggio",
+        "Selezionare una coppia del catalogo supportato. Definisce sintassi e "
+        "compatibilità della regola, non certifica che il deployment esterno sia "
+        "disponibile. Config non esegue la validazione.",
+        "Configurazione",
+    ),
+    "profile_users": guide(
+        "Utilizzato dai profili tecnici",
+        "Versioni di profilo che selezionano questo processo. I collegamenti ai "
+        "profili autorizzati sono disponibili sopra; modificare la composizione "
+        "dalla bozza del profilo, non da questa sezione inversa.",
+    ),
+    "required_dimensions_display": guide(
+        "Dimensioni richieste",
+        "Disaggregazioni del prerequisito necessarie all'indicatore dipendente.",
+    ),
+    "owner_link": guide(
+        "Oggetto/versione",
+        "Configurazione cui si riferisce l'evento; il collegamento è mostrato "
+        "solo se l'utente può consultarne il dettaglio.",
+        "Audit e provenienza",
+    ),
     "metadata": guide(
         "Metadati della specifica",
-        "Oggetto JSON. format dichiara xml, csv, xlsx o txt e determina gli "
-        "interpreti compatibili. NeTEx e SIRI inferiscono xml se assente; per gli "
-        "altri dataset dichiararlo esplicitamente.",
+        "Oggetto JSON facoltativo per informazioni aggiuntive, ad esempio la "
+        "provenienza. Per il formato usare il campo dedicato, non la chiave format.",
         "Configurazione",
     ),
     "formula_description": guide(
@@ -202,7 +230,9 @@ FIELDS = {
     "output_schema": guide(
         "Schema output",
         "Oggetto JSON che descrive il risultato del processo di calcolo; non è un "
-        "risultato già calcolato.",
+        "risultato già calcolato. schema_version=2 dichiara metrics con unità, grana, "
+        "dimensioni e aggregazioni ammesse per le soglie; penalty_executor è una "
+        "capability tecnica versionata.",
         "Schemi e configurazione",
     ),
     "parameter_schema": guide(
@@ -210,7 +240,10 @@ FIELDS = {
         "Descrive i valori ammessi per questa versione: schema_version=1, "
         "properties, required, allow_extra e tipi scalari "
         "string/boolean/integer/number. {} non impone vincoli sui parametri. I "
-        "valori sono nella revisione, separati per ogni dipendenza.",
+        "valori sono nella revisione, separati per ogni dipendenza. schema_version=2 "
+        "aggiunge liste omogenee con items/min_items/max_items/unique_items e "
+        "reference_namespace per gli ID tecnici. Non inferisce i numeri pubblici "
+        "delle linee.",
         "Schemi e configurazione",
     ),
     "execution_engine": guide(
@@ -280,10 +313,12 @@ FIELDS = {
     ),
     "required": guide(
         "Asset obbligatorio",
-        "Indica che questa risorsa è necessaria alla configurazione della specifica. "
-        "Non è una politica di rifiuto del dataset: quella appartiene "
-        "all’associazione della regola.",
-        "Configurazione",
+        "Risorsa già associata indispensabile alle lavorazioni che la utilizzano "
+        "(es. XSD o mapper); un manuale può essere accessorio. Non individua "
+        "associazioni mancanti e non decide il rifiuto del dataset. Config richiede "
+        "un asset attivo per pubblicare la specifica e trasmette il flag al "
+        "consumer; i controlli runtime su file persi o corrotti spettano al "
+        "sistema esecutivo e non sono eseguiti qui.",
     ),
     "rule": guide(
         "Regola logica",
@@ -334,14 +369,7 @@ FIELDS = {
         "parzialità dipende dalle entità restituite.",
         "Definizione della regola",
     ),
-    "import_policy": FieldGuide(_("Politica di import"), IMPORT_POLICY_HELP),
-    "dataset_version_rule": guide(
-        "Regola applicabile al dataset",
-        "Selezionare l’associazione fra versione del dataset e versione della "
-        "regola, con la sua politica di import. L’indicatore non punta direttamente "
-        "alla regola e non modifica tale politica.",
-        "Configurazione",
-    ),
+    "failure_policy": FieldGuide(_("Politica di import"), IMPORT_POLICY_HELP),
     "impact": FieldGuide(_("Impatto del KO sull’indicatore"), IMPACT_HELP),
     "dimensions": FieldGuide(_("Dimensioni interessate"), DIMENSIONS_HELP),
     "dependent": guide(
@@ -717,14 +745,16 @@ FIELDS = {
     ),
     "asset_type": guide(
         "Tipo di asset",
-        "netex_xsd o siri_profile. L’asset contiene configurazione tecnica; i file "
-        "di indicatore non appartengono a questo catalogo.",
+        "Schema XSD, bundle XSD, schema JSON, documento, archivio o altro file "
+        "tecnico. NeTEx/SIRI restano tipi di compatibilità. Non è un conferimento "
+        "TPL né un file esecutivo dell’indicatore.",
         "Identità e versione",
     ),
     "what": guide(
-        "Codice tecnico dell’asset",
-        "Identità tecnica dell’asset (es. netex-ita): insieme alla versione "
-        "identifica il bundle nel descrittore xsd_bundle.",
+        "Codice asset",
+        "Codice scelto esplicitamente, indipendente da filename e dataset "
+        "(es. netex-ita-lev5). Tipo, codice e versione identificano il file; "
+        "asset_code nel descrittore XSD usa questo codice.",
         "Identità e versione",
     ),
     "storage_url": guide(
@@ -747,9 +777,8 @@ FIELDS = {
     ),
     "original_filename": guide(
         "Nome originale del file",
-        "Nome registrato all’upload: NeTEx usa netex.xsd/netex.zip; SIRI usa il nome "
-        "canonico della categoria (es. siri-vm.xsd). Non determina "
-        "il checksum.",
+        "Nome libero registrato all’upload, distinto dal codice asset. "
+        "Non determina la versione né il checksum.",
         "Storage e bundle",
     ),
     "content_type": guide(
@@ -930,6 +959,18 @@ OVERRIDES = {
         "hanno un proprio stato editoriale.",
         "Stato e validità",
     ),
+    ("ConfigurationAsset", "new_version"): guide(
+        "Nuova versione",
+        "Apri il caricamento con tipo e codice già selezionati; il nuovo file "
+        "riceve una versione distinta senza sostituire il contenuto precedente.",
+        "Identità e versione",
+    ),
+    ("ConfigurationAsset", "dataset_links"): guide(
+        "Versioni dataset associate",
+        "Specifiche che usano questa versione esatta dell’asset, con il ruolo "
+        "assegnato in ciascuna associazione. L’attivazione non cambia questi usi.",
+        "Associazioni",
+    ),
     ("ConfigurationAsset", "status"): guide(
         "Stato dell’asset",
         "stored, active o archived: ciclo della risorsa di configurazione, distinto "
@@ -941,18 +982,6 @@ OVERRIDES = {
         "pending, published o failed: stato dell’evento nel trasporto. Non è l’esito "
         "del validator.",
         "Audit e provenienza",
-    ),
-    ("NetexValidationProfile", "file"): guide(
-        "File del profilo NeTEx",
-        "Schema XSD singolo del profilo file. Per schemi con include/import usare il "
-        "bundle XSD versionato e la sua associazione alla specifica.",
-        "Documenti",
-    ),
-    ("SiriValidationProfile", "file"): guide(
-        "File del profilo SIRI",
-        "File .xsd o .xml della categoria SIRI selezionata; distinto dalla "
-        "definizione di una regola condivisa.",
-        "Documenti",
     ),
 }
 
@@ -1001,10 +1030,69 @@ LIBRARY_FIELD_NOTES = {
 }
 
 
+EVALUATION_LABELS = {
+    "contract_revision_indicator": "Indicatore della revisione",
+    "metric_code": "Metrica valutata",
+    "quantity_metric_code": "Quantità economica",
+    "aggregation_method": "Aggregazione",
+    "quantity_aggregation_method": "Aggregazione della quantità",
+    "group_by_dimensions": "Raggruppamento per dimensioni",
+    "violation_operator": "Condizione di violazione",
+    "limit_value": "Valore limite",
+    "severity": "Livello di segnalazione",
+    "missing_data_policy": "Gestione dati mancanti",
+    "period_type": "Periodo di valutazione",
+    "period_start_date": "Data iniziale inclusa",
+    "period_end_date": "Data finale inclusa",
+    "period_days": "Numero di giorni",
+    "evaluation_timezone": "Fuso orario",
+    "partial_period_policy": "Gestione dei periodi parziali",
+    "activation_threshold": "Soglia di attivazione",
+    "calculation_method": "Modalità di quantificazione",
+    "allowance_quantity": "Franchigia",
+    "fixed_amount": "Importo fisso",
+    "unit_amount": "Importo unitario",
+    "currency": "Valuta",
+    "maximum_amount": "Massimale per applicazione",
+    "amount_rounding_mode": "Arrotondamento finale",
+    "external_execution_reference": "Riferimento esecutore esterno",
+    "external_artifact_identifier": "Versione del codice esterno",
+    "external_parameter_schema": "Schema parametri dell'esecutore",
+    "external_parameters": "Parametri dell'esecutore",
+}
+
+
 def field_guide(model: type, name: str) -> FieldGuide | None:
     """Resolve explicit semantics for a concrete model or a proxy."""
     model_name = model._meta.concrete_model.__name__
     info = OVERRIDES.get((model_name, name), FIELDS.get(name))
+    if info is None and model_name in {
+        "IndicatorEvaluationThreshold",
+        "IndicatorPenalty",
+    }:
+        from django.core.exceptions import FieldDoesNotExist
+
+        try:
+            field = model._meta.get_field(name)
+        except FieldDoesNotExist:
+            pass
+        else:
+            if field.help_text:
+                info = guide(
+                    EVALUATION_LABELS.get(
+                        name, str(field.verbose_name).replace("_", " ").capitalize()
+                    ),
+                    str(field.help_text),
+                )
+    if model_name == "ContractRevisionIndicator" and name == "evaluation_links":
+        info = guide(
+            "Soglie e penali",
+            (
+                "Apri gli editor delle condizioni dell'indicatore "
+                "della revisione; solo le bozze nel tuo perimetro "
+                "sono modificabili."
+            ),
+        )
     note = LIBRARY_FIELD_NOTES.get(model_name, {}).get(name)
     if name == "configuration_asset":
         note = _(

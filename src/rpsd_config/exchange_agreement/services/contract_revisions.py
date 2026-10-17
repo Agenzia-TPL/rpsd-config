@@ -275,7 +275,9 @@ def _build_base_revision_snapshot(revision: ContractConfigurationRevision) -> di
             "processing_profile_input_flow__input_flow_version__dataset_specification",
         )
         .prefetch_related(
-            "processing_profile_input_flow__input_flow_version__dataset_specification__asset_links__configuration_asset"
+            "processing_profile_input_flow__input_flow_version__d"
+            "ataset_specification__asset_links__configuration_ass"
+            "et"
         )
         .order_by(
             "processing_profile_input_flow__dataset__code",
@@ -712,6 +714,32 @@ def create_revision_draft(
             processing_profile_indicator_version=profile_indicator,
         )
 
+    if replaces_revision is not None:
+        from rpsd_config.exchange_agreement.services.indicator_evaluations import (
+            clone_evaluations,
+        )
+
+        for source in replaces_revision.indicator_configurations.select_related(
+            "processing_profile_indicator_version__indicator_version"
+        ):
+            link = locked_profile.indicator_version_links.filter(
+                indicator_version_id=source.processing_profile_indicator_version.indicator_version_id
+            ).first()
+            if link is None:
+                continue
+            target, _ = revision.indicator_configurations.get_or_create(
+                processing_profile_indicator_version=link
+            )
+            for field in (
+                "parameters",
+                "aggregation",
+                "thresholds",
+                "penalties",
+            ):
+                setattr(target, field, getattr(source, field))
+            target.save()
+            clone_evaluations(source, target, actor=actor)
+
     return revision
 
 
@@ -818,21 +846,31 @@ def replace_draft_configuration(
         raise ContractRevisionValidationError(resolution.issues)
 
     locked.input_selections.all().delete()
-    locked.indicator_configurations.all().delete()
+    requested_profile_ids = {
+        item["profile_indicator"].pk for item in resolved_configurations
+    }
+    existing_configs = {
+        item.processing_profile_indicator_version_id: item
+        for item in locked.indicator_configurations.all()
+    }
+    locked.indicator_configurations.exclude(
+        processing_profile_indicator_version_id__in=requested_profile_ids
+    ).delete()
     for profile_input in resolution.selected_inputs:
         ContractInputSelection.objects.create(
             revision=locked,
             processing_profile_input_flow=profile_input,
         )
     for item in resolved_configurations:
-        ContractRevisionIndicator.objects.create(
+        config = existing_configs.get(
+            item["profile_indicator"].pk
+        ) or ContractRevisionIndicator(
             revision=locked,
             processing_profile_indicator_version=item["profile_indicator"],
-            thresholds=item["thresholds"],
-            aggregation=item["aggregation"],
-            penalties=item["penalties"],
-            parameters=item["parameters"],
         )
+        for config_field in ("thresholds", "aggregation", "penalties", "parameters"):
+            setattr(config, config_field, item[config_field])
+        config.save()
     # Selection changes remove configurations for dependencies no longer in
     # the effective graph. Applicable values remain owned by this draft.
     from rpsd_config.exchange_agreement.services.indicator_dependencies import (

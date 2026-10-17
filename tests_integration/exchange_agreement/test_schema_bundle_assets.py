@@ -30,6 +30,7 @@ from rpsd_config.exchange_agreement.services.validation_bindings import (
     bind_dataset_rule,
 )
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
     transition_validation_rule,
 )
 
@@ -57,9 +58,11 @@ class SchemaBundleAssetTests(TestCase):
         self.asset = store_configuration_asset(
             uploaded_file=SimpleUploadedFile("netex.zip", self.content),
             asset_type="netex_xsd",
+            what="netex",
             uploaded_by=self.actor,
         ).asset
         self.spec = DatasetSpecification.objects.create(
+            format="xml",
             dataset=Dataset.objects.create(code="netex", name="NeTEx"),
             code="netex_v001",
             version="001",
@@ -77,9 +80,8 @@ class SchemaBundleAssetTests(TestCase):
             rule=rule,
             version="1",
             name="Bundle check",
-            validation_type="xsd_bundle",
+            validation_type_version=get_validation_type_version("xsd_bundle", "1.0"),
             definition=json.dumps(descriptor),
-            language_version="1.0",
             result_contract="structured_report",
             execution_reference="validators/xsd",
         )
@@ -91,7 +93,7 @@ class SchemaBundleAssetTests(TestCase):
         return bind_dataset_rule(
             specification=self.spec,
             rule_version=rule,
-            import_policy="reject_import",
+            failure_policy="reject_import",
             actor=self.actor,
         )
 

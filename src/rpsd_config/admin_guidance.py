@@ -74,8 +74,8 @@ LABEL_RELATIONS = {
     "DatasetVersionRule": ("dataset_specification", "rule_version__rule"),
     "IndicatorVersionRule": (
         "indicator_version",
-        "dataset_version_rule__dataset_specification",
-        "dataset_version_rule__rule_version__rule",
+        "dataset_specification",
+        "rule_version__rule",
     ),
     "IndicatorVersionInput": ("indicator_version", "dataset_specification"),
     "IndicatorVersionDependency": ("dependent", "prerequisite"),
@@ -100,10 +100,13 @@ LABEL_RELATIONS = {
 def relation_label(obj: models.Model) -> str:
     """Describe association endpoints locally instead of changing model __str__."""
     model_name = obj._meta.concrete_model.__name__
+    if model_name == "ContractRevisionIndicator":
+        version_code = obj.processing_profile_indicator_version.indicator_version.code
+        return f"{obj.revision.code}: {version_code}"
     if model_name == "DatasetVersionRule":
         return (
             f"{obj.dataset_specification.code} → {obj.rule_version} "
-            f"[{obj.import_policy}]"
+            f"[{obj.failure_policy}]"
         )
     if model_name == "IndicatorVersionDependency":
         return f"{obj.dependent.code} → {obj.prerequisite.code}"
@@ -118,7 +121,10 @@ def relation_label(obj: models.Model) -> str:
 
 
 def guided_form(
-    form: type[forms.ModelForm], model: type[models.Model]
+    form: type[forms.ModelForm],
+    model: type[models.Model],
+    *,
+    extra_fields: tuple[str, ...] = (),
 ) -> type[forms.ModelForm]:
     """Populate Meta as well as fields: Django reads Meta for readonly rendering."""
     form._meta = copy(form._meta)
@@ -135,7 +141,7 @@ def guided_form(
                 field.queryset = field.queryset.select_related(*paths)
                 field.label_from_instance = relation_label
     names = {f.name for f in model._meta.fields} | set(form.base_fields)
-    names |= {"created_at_human", "updated_at_human", "dimensions"}
+    names |= {"created_at_human", "updated_at_human", "dimensions"} | set(extra_fields)
     for name in names:
         info = field_guide(model, name)
         if info is None:
@@ -240,7 +246,6 @@ class GuidedAdminMixin(GuidanceMixin):
         if (
             obj is not None
             and self.model._meta.concrete_model.__name__ == "ConfigurationAsset"
-            and obj.bundle_manifest
         ):
             from rpsd_config.exchange_agreement.models import BUNDLE_IDENTITY_FIELDS
 
@@ -251,7 +256,11 @@ class GuidedAdminMixin(GuidanceMixin):
         self, request: HttpRequest, obj: models.Model | None = None, **kwargs
     ) -> type[forms.ModelForm]:
         """Supply labels and help even for fields omitted from the editable form."""
-        return guided_form(super().get_form(request, obj, **kwargs), self.model)
+        return guided_form(
+            super().get_form(request, obj, **kwargs),
+            self.model,
+            extra_fields=self.get_readonly_fields(request, obj),
+        )
 
     def get_list_display(self, request: HttpRequest) -> tuple:
         """Translate headers without mutating Django's global model metadata."""
@@ -320,6 +329,30 @@ class GuidedAdminMixin(GuidanceMixin):
     ) -> TemplateResponse:
         """Link to the existing revision workflow only inside its authorized scope."""
         model_name = self.model._meta.concrete_model.__name__
+        if obj:
+            from rpsd_config.admin_audit import proxies as audit
+
+            event_name = (
+                "ConfigurationAssetEvent"
+                if model_name == "ConfigurationAsset"
+                else model_name + "StatusEvent"
+            )
+            proxy = getattr(audit, event_name + "AdminProxy", None)
+            event_admin = self.admin_site._registry.get(proxy)
+            if event_admin and event_admin.has_view_permission(request):
+                from django.utils.text import camel_case_to_spaces
+
+                owner = (
+                    "asset"
+                    if model_name == "ConfigurationAsset"
+                    else camel_case_to_spaces(model_name).replace(" ", "_")
+                )
+                if model_name == "ValidationRuleVersion":
+                    owner = "rule_version"
+                context["config_history_url"] = (
+                    reverse(f"admin:admin_audit_{proxy._meta.model_name}_changelist")
+                    + f"?{owner}__id__exact={obj.pk}"
+                )
         revision = None
         if obj is not None:
             if model_name == "ContractConfigurationRevision":
@@ -374,5 +407,9 @@ class GuidedInlineMixin(GuidanceMixin):
     ) -> type[BaseInlineFormSet]:
         """Supply Meta labels/help for readonly inline headers as well as inputs."""
         formset = super().get_formset(request, obj, **kwargs)
-        formset.form = guided_form(formset.form, self.model)
+        formset.form = guided_form(
+            formset.form,
+            self.model,
+            extra_fields=self.get_readonly_fields(request, obj),
+        )
         return formset

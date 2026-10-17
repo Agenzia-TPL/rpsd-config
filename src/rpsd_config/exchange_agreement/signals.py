@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests  # noqa: F401  # kept for optional HTTP publish fallback
 from django.db import transaction
-from django.db.models.signals import post_save
+from django.db.models.signals import post_migrate, post_save
 from django.dispatch import receiver
 
 from rpsd_config.admin_agreements.proxies import ContractAdminProxy
@@ -50,3 +50,21 @@ def notify_new_contract(sender, instance, created, **kwargs):
     # TODO: replace the debug print with PubSub-based signaling only.
     print(f"[Contract created] {payload}")
     transaction.on_commit(lambda: _executor.submit(_publish_contract_event, payload))
+
+
+@receiver(post_migrate)
+def seed_supported_validation_types(sender, using="default", **kwargs):
+    """Restore fixed catalog values after migrate/flush, including test databases."""
+    if sender.label != "exchange_agreement":
+        return
+    from django.db import connections
+
+    from rpsd_config.exchange_agreement.services.validation_catalog import (
+        ensure_validation_type_catalog,
+    )
+
+    if (
+        "exchange_agreement_validationtypeversion"
+        in connections[using].introspection.table_names()
+    ):
+        ensure_validation_type_catalog(using=using)

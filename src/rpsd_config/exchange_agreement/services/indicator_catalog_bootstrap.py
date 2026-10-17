@@ -4,12 +4,10 @@
 
 from dataclasses import dataclass
 
-from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from rpsd_config.exchange_agreement.models import (
     DatasetSpecification,
-    DatasetVersionRule,
     Indicator,
     IndicatorVersion,
     ValidationRule,
@@ -20,6 +18,9 @@ from rpsd_config.exchange_agreement.services.dataset_catalog_bootstrap import (
 )
 from rpsd_config.exchange_agreement.services.indicator_catalog import (
     publish_indicator_version,
+)
+from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
 )
 
 
@@ -70,7 +71,6 @@ def ensure_commercial_speed_example(*, actor) -> IndicatorVersion:
 
     ensure_initial_dataset_catalog()
     from rpsd_config.exchange_agreement.services.validation_bindings import (
-        bind_dataset_rule,
         bind_indicator_rule,
     )
     from rpsd_config.exchange_agreement.services.validation_catalog import (
@@ -98,8 +98,7 @@ def ensure_commercial_speed_example(*, actor) -> IndicatorVersion:
             version="001",
             defaults={
                 "name": definition.name,
-                "validation_type": "xpath",
-                "language_version": "1.0",
+                "validation_type_version": get_validation_type_version("xpath", "1.0"),
                 "definition": "/*[not(" + definition.path + ")]",
                 "options": {"namespaces": {prefix: definition.namespace}},
                 "execution_reference": "fixture-validators/"
@@ -110,19 +109,7 @@ def ensure_commercial_speed_example(*, actor) -> IndicatorVersion:
             rule_version = transition_validation_rule(
                 rule_version, target_status="published", actor=actor
             )
-        binding = DatasetVersionRule.objects.filter(
-            dataset_specification=specification, rule_version=rule_version
-        ).first()
-        if binding is None:
-            binding = bind_dataset_rule(
-                specification=specification,
-                rule_version=rule_version,
-                import_policy="indicator_only",
-                actor=actor,
-            )
-        elif binding.import_policy != "indicator_only":
-            raise ValidationError("Commercial speed seed policy conflict.")
-        bindings.append(binding)
+        bindings.append((specification, rule_version))
 
     indicator, _created = Indicator.objects.update_or_create(
         code="commercial-speed",
@@ -158,11 +145,14 @@ def ensure_commercial_speed_example(*, actor) -> IndicatorVersion:
         },
     )
     if version.status == IndicatorVersion.Status.DRAFT:
-        for binding in bindings:
-            if not version.rule_bindings.filter(dataset_version_rule=binding).exists():
+        for specification, rule_version in bindings:
+            if not version.rule_bindings.filter(
+                dataset_specification=specification, rule_version=rule_version
+            ).exists():
                 bind_indicator_rule(
                     indicator_version=version,
-                    dataset_rule=binding,
+                    specification=specification,
+                    rule_version=rule_version,
                     impact="calculation",
                     dimensions=[],
                     actor=actor,

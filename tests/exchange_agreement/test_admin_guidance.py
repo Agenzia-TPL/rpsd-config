@@ -33,6 +33,7 @@ from rpsd_config.exchange_agreement.services.validation_registry import (
 
 CONFIG_APPS = {
     "admin_dataset_exchange",
+    "admin_audit",
     "admin_agreements",
     "admin_stakeholders",
     "admin_service_net",

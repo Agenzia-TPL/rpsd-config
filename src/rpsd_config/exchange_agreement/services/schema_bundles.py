@@ -12,11 +12,9 @@ import zipfile
 from pathlib import PurePosixPath
 from xml.etree import ElementTree
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 
-MAX_FILES = 4096
-MAX_TOTAL_BYTES = 128 * 1024 * 1024
-MAX_FILE_BYTES = 8 * 1024 * 1024
 XSD_NAMESPACE = "{http://www.w3.org/2001/XMLSchema}"
 
 
@@ -46,7 +44,7 @@ def validate_bundle_manifest(manifest: dict) -> None:
         or not isinstance(manifest["bundle_sha256"], str)
         or not re.fullmatch(r"[a-f0-9]{64}", manifest["bundle_sha256"])
         or not isinstance(manifest["files"], list)
-        or not 0 < len(manifest["files"]) <= MAX_FILES
+        or not 0 < len(manifest["files"]) <= settings.CONFIG_ASSETS_XSD_MAX_FILES
     ):
         raise ValidationError("Invalid bundle manifest.", code="invalid_schema_bundle")
     validate_bundle_path(manifest["entrypoint"])
@@ -59,7 +57,7 @@ def validate_bundle_manifest(manifest: dict) -> None:
             or not isinstance(item["sha256"], str)
             or not re.fullmatch(r"[a-f0-9]{64}", item["sha256"])
             or type(item["size_bytes"]) is not int
-            or not 0 <= item["size_bytes"] <= MAX_FILE_BYTES
+            or not 0 <= item["size_bytes"] <= settings.CONFIG_ASSETS_XSD_MAX_FILE_BYTES
         ):
             raise ValidationError(
                 "Invalid bundle file metadata.", code="invalid_schema_bundle"
@@ -71,7 +69,7 @@ def validate_bundle_manifest(manifest: dict) -> None:
         paths != sorted(set(paths))
         or manifest["entrypoint"] not in paths
         or not manifest["entrypoint"].endswith(".xsd")
-        or total > MAX_TOTAL_BYTES
+        or total > settings.CONFIG_ASSETS_XSD_MAX_TOTAL_BYTES
     ):
         raise ValidationError(
             "Inconsistent bundle manifest.", code="invalid_schema_bundle"
@@ -96,11 +94,21 @@ def validate_bundle_rule_asset(specification, rule) -> None:
             "configuration_asset"
         ).filter(
             role="validation_schema",
+            configuration_asset__asset_type__in=[
+                "xsd_bundle",
+                "netex_xsd",
+                "siri_profile",
+            ],
             configuration_asset__what=descriptor["asset_code"],
             configuration_asset__version=int(descriptor["asset_version"]),
         )
     ]
-    if len(assets) != 1 or not assets[0].bundle_manifest:
+    assets = [asset for asset in assets if asset.bundle_manifest]
+    if len(assets) > 1:
+        raise ValidationError(
+            "Ambiguous schema bundle reference.", code="ambiguous_asset"
+        )
+    if not assets:
         raise ValidationError(
             "The rule requires a linked schema bundle.", code="missing_asset"
         )
@@ -119,19 +127,28 @@ def validate_bundle_rule_asset(specification, rule) -> None:
 
 def inspect_schema_bundle(content: bytes, *, entrypoint: str = "") -> dict:
     """Resolve includes/imports within a checksummed archive manifest."""
-    if not isinstance(content, bytes) or len(content) > MAX_TOTAL_BYTES:
+    if (
+        not isinstance(content, bytes)
+        or len(content) > settings.CONFIG_ASSETS_MAX_UPLOAD_BYTES
+    ):
         raise ValidationError(
-            "Schema archive exceeds limits.", code="invalid_schema_bundle"
+            f"Schema archive exceeds {settings.CONFIG_ASSETS_MAX_UPLOAD_BYTES} bytes.",
+            code="invalid_schema_bundle",
         )
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as archive:
             entries = [entry for entry in archive.infolist() if not entry.is_dir()]
             if (
                 not entries
-                or len(archive.infolist()) > MAX_FILES
-                or sum(e.file_size for e in entries) > MAX_TOTAL_BYTES
+                or len(archive.infolist()) > settings.CONFIG_ASSETS_XSD_MAX_FILES
+                or sum(e.file_size for e in entries)
+                > settings.CONFIG_ASSETS_XSD_MAX_TOTAL_BYTES
             ):
-                raise ValidationError("Schema archive exceeds the configured limits.")
+                raise ValidationError(
+                    "Schema archive exceeds configured limits: "
+                    f"{settings.CONFIG_ASSETS_XSD_MAX_FILES} entries, "
+                    f"{settings.CONFIG_ASSETS_XSD_MAX_TOTAL_BYTES} total bytes."
+                )
             files = {}
             for entry in entries:
                 validate_bundle_path(entry.filename)
@@ -144,9 +161,13 @@ def inspect_schema_bundle(content: bytes, *, entrypoint: str = "") -> dict:
                     or entry.filename in files
                     or stat.S_IFMT(entry.external_attr >> 16) not in (0, stat.S_IFREG)
                     or entry.flag_bits & 1
-                    or entry.file_size > MAX_FILE_BYTES
                 ):
                     raise ValidationError("Unsafe or duplicate schema archive path.")
+                if entry.file_size > settings.CONFIG_ASSETS_XSD_MAX_FILE_BYTES:
+                    raise ValidationError(
+                        "Schema entry exceeds "
+                        f"{settings.CONFIG_ASSETS_XSD_MAX_FILE_BYTES} bytes."
+                    )
                 files[entry.filename] = archive.read(entry)
             if not entrypoint and "manifest.json" in files:
                 descriptor = json.loads(files["manifest.json"])

@@ -2,11 +2,9 @@
 # SPDX-License-Identifier: EUPL-1.2
 from rpsd_config.exchange_agreement.models import (
     ConfigurationAsset,
-    ConfigurationAssetEvent,
     ContractDependencyConfiguration,
     Dataset,
     DatasetSpecification,
-    DatasetSpecificationStatusEvent,
     DatasetVersionRule,
     DependencyRequiredDimension,
     Indicator,
@@ -15,18 +13,12 @@ from rpsd_config.exchange_agreement.models import (
     IndicatorVersionDependency,
     IndicatorVersionInput,
     IndicatorVersionRule,
-    IndicatorVersionStatusEvent,
     InputFlowVersion,
-    InputFlowVersionStatusEvent,
-    NetexValidationProfile,
     OrchestrationFlowVersion,
-    OrchestrationFlowVersionStatusEvent,
     ProcessingProfileVersion,
-    ProcessingProfileVersionStatusEvent,
-    SiriValidationProfile,
     ValidationRule,
-    ValidationRuleStatusEvent,
     ValidationRuleVersion,
+    ValidationTypeVersion,
 )
 
 
@@ -46,14 +38,6 @@ class DatasetSpecificationAdminProxy(DatasetSpecification):
         verbose_name_plural = "Dataset specifications"
 
 
-class DatasetSpecificationStatusEventAdminProxy(DatasetSpecificationStatusEvent):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Dataset specification status event"
-        verbose_name_plural = "Dataset specification status events"
-
-
 class IndicatorAdminProxy(Indicator):
     class Meta:
         proxy = True
@@ -70,28 +54,12 @@ class IndicatorVersionAdminProxy(IndicatorVersion):
         verbose_name_plural = "Indicator versions"
 
 
-class IndicatorVersionStatusEventAdminProxy(IndicatorVersionStatusEvent):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Indicator version status event"
-        verbose_name_plural = "Indicator version status events"
-
-
 class InputFlowVersionAdminProxy(InputFlowVersion):
     class Meta:
         proxy = True
         app_label = "admin_dataset_exchange"
         verbose_name = "Input flow version"
         verbose_name_plural = "Input flow versions"
-
-
-class InputFlowVersionStatusEventAdminProxy(InputFlowVersionStatusEvent):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Input flow version status event"
-        verbose_name_plural = "Input flow version status events"
 
 
 class OrchestrationFlowVersionAdminProxy(OrchestrationFlowVersion):
@@ -102,16 +70,6 @@ class OrchestrationFlowVersionAdminProxy(OrchestrationFlowVersion):
         verbose_name_plural = "Orchestration flow versions"
 
 
-class OrchestrationFlowVersionStatusEventAdminProxy(
-    OrchestrationFlowVersionStatusEvent
-):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Orchestration flow version status event"
-        verbose_name_plural = "Orchestration flow version status events"
-
-
 class ProcessingProfileVersionAdminProxy(ProcessingProfileVersion):
     class Meta:
         proxy = True
@@ -120,46 +78,12 @@ class ProcessingProfileVersionAdminProxy(ProcessingProfileVersion):
         verbose_name_plural = "Processing profile versions"
 
 
-class ProcessingProfileVersionStatusEventAdminProxy(
-    ProcessingProfileVersionStatusEvent
-):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Processing profile version status event"
-        verbose_name_plural = "Processing profile version status events"
-
-
-class NetexValidationProfileAdminProxy(NetexValidationProfile):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Netex validation profile"
-        verbose_name_plural = "Netex validation profiles"
-
-
-class SiriValidationProfileAdminProxy(SiriValidationProfile):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "SIRI validation profile"
-        verbose_name_plural = "SIRI validation profiles"
-
-
 class ConfigurationAssetAdminProxy(ConfigurationAsset):
     class Meta:
         proxy = True
         app_label = "admin_dataset_exchange"
         verbose_name = "Configuration asset"
         verbose_name_plural = "Configuration assets"
-
-
-class ConfigurationAssetEventAdminProxy(ConfigurationAssetEvent):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "Configuration asset event"
-        verbose_name_plural = "Configuration asset events"
 
 
 class ValidationRuleAdminProxy(ValidationRule):
@@ -174,13 +98,6 @@ class ValidationRuleVersionAdminProxy(ValidationRuleVersion):
         proxy = True
         app_label = "admin_dataset_exchange"
         verbose_name = "ValidationRuleVersion"
-
-
-class ValidationRuleStatusEventAdminProxy(ValidationRuleStatusEvent):
-    class Meta:
-        proxy = True
-        app_label = "admin_dataset_exchange"
-        verbose_name = "ValidationRuleStatusEvent"
 
 
 class DatasetVersionRuleAdminProxy(DatasetVersionRule):
@@ -230,3 +147,22 @@ class ContractDependencyConfigurationAdminProxy(ContractDependencyConfiguration)
         proxy = True
         app_label = "admin_dataset_exchange"
         verbose_name = "ContractDependencyConfiguration"
+
+
+class ValidationTypeVersionAdminProxy(ValidationTypeVersion):
+    class Meta:
+        proxy = True
+        app_label = "admin_dataset_exchange"
+        verbose_name = "Tipo e versione del linguaggio"
+        verbose_name_plural = "Tipi e versioni dei linguaggi"
+
+
+from rpsd_config.admin_audit.proxies import (  # noqa: E402, F401
+    ConfigurationAssetEventAdminProxy,
+    DatasetSpecificationStatusEventAdminProxy,
+    IndicatorVersionStatusEventAdminProxy,
+    InputFlowVersionStatusEventAdminProxy,
+    OrchestrationFlowVersionStatusEventAdminProxy,
+    ProcessingProfileVersionStatusEventAdminProxy,
+    ValidationRuleStatusEventAdminProxy,
+)

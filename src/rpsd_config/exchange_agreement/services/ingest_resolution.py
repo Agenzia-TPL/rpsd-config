@@ -64,6 +64,8 @@ def _require_text_fields(value: dict, *, fields: tuple[str, ...], label: str) ->
 
 def resolve_current_contract_configuration(
     contract: Contract,
+    *,
+    allow_evaluations: bool = False,
 ) -> CurrentContractConfiguration:
     """Resolve and integrity-check today's approved contract snapshot."""
 
@@ -108,7 +110,7 @@ def resolve_current_contract_configuration(
         ) from exc
     if (
         revision.snapshot_schema_version
-        not in {"canonical-json-v1", "canonical-json-v2"}
+        not in {"canonical-json-v1", "canonical-json-v2", "canonical-json-v3"}
         or snapshot.get("snapshot_schema_version") != revision.snapshot_schema_version
         or not revision.snapshot_checksum
         or digest != revision.snapshot_checksum
@@ -117,6 +119,18 @@ def resolve_current_contract_configuration(
             "configuration_invariant_violation",
             "Current contract configuration failed integrity checks",
         )
+
+    if revision.snapshot_schema_version == "canonical-json-v3":
+        if not allow_evaluations:
+            raise IngestResolutionError(
+                "unsupported_evaluation_configuration",
+                "This configuration requires the v4 evaluation-aware API",
+            )
+        from rpsd_config.exchange_agreement.services.indicator_evaluations import (
+            validate_frozen_evaluations,
+        )
+
+        validate_frozen_evaluations(snapshot)
 
     contract_snapshot = _require_mapping(
         snapshot.get("contract"), label="contract metadata"
@@ -148,11 +162,15 @@ def resolve_current_contract_configuration(
 def resolve_current_ingest_configuration(
     contract: Contract,
     data_category: str,
+    *,
+    allow_evaluations: bool = False,
 ) -> CurrentIngestConfiguration:
     """Resolve today's approved input without accepting a client-supplied date."""
 
     category = (data_category or "").strip().lower()
-    current = resolve_current_contract_configuration(contract)
+    current = resolve_current_contract_configuration(
+        contract, allow_evaluations=allow_evaluations
+    )
     snapshot = current.snapshot
 
     inputs = snapshot.get("inputs")

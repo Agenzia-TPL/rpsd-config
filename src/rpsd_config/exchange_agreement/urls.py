@@ -3,6 +3,8 @@
 from django.contrib import admin
 from django.urls import path
 
+from rpsd_config.exchange_agreement.evaluation_views import indicator_evaluations_page
+
 from .technical_catalog_views import (
     technical_catalog_detail_page,
     technical_catalog_index_page,
@@ -43,6 +45,14 @@ admin.site.index_title = "Admin"
 
 
 urlpatterns = [
+    path(
+        (
+            "me/contracts/<str:contract_code>/revisions/<int:revi"
+            "sion_id>/indicators/<int:owner_id>/evaluations/"
+        ),
+        indicator_evaluations_page,
+        name="indicator-evaluations",
+    ),
     path("invite/<uuid:token>/", invitation_landing, name="invitation-landing"),
     path("onboarding/callback/", onboarding_callback, name="onboarding-callback"),
     path("me/", user_area, name="user-area"),

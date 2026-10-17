@@ -30,13 +30,20 @@ def validate_technical_contract(value, *, field_name: str) -> dict:
     if not isinstance(value, dict):
         raise ValidationError(f"{field_name} must be a JSON object.")
     allowed = {"schema_version", "identifier", "description"}
+    is_evaluation_output = (
+        field_name == "output_schema" and value.get("schema_version") == 2
+    )
+    if is_evaluation_output:
+        allowed.update({"metrics", "penalty_executor"})
     unknown = sorted(set(value) - allowed)
     if unknown:
         raise ValidationError(
             f"{field_name} contains unknown keys: {', '.join(unknown)}."
         )
     schema_version = value.get("schema_version", 1)
-    if schema_version != 1:
+    if type(schema_version) is not int or (
+        schema_version != 1 and not is_evaluation_output
+    ):
         raise ValidationError(f"Unsupported {field_name} schema_version.")
     identifier = value.get("identifier")
     if (
@@ -50,11 +57,46 @@ def validate_technical_contract(value, *, field_name: str) -> dict:
     description = value.get("description", "")
     if not isinstance(description, str):
         raise ValidationError(f"{field_name}.description must be a string.")
-    return {
-        "schema_version": 1,
+    result = {
+        "schema_version": schema_version,
         "identifier": identifier.strip(),
         "description": description.strip(),
     }
+    if is_evaluation_output:
+        from rpsd_config.exchange_agreement.services.evaluation_schema import (
+            validate_metrics,
+        )
+
+        validate_metrics(value.get("metrics"))
+        result["metrics"] = value["metrics"]
+        if "penalty_executor" in value:
+            from rpsd_config.exchange_agreement.services.parameter_schema import (
+                validate_parameter_schema,
+            )
+
+            executor = value["penalty_executor"]
+            if (
+                not isinstance(executor, dict)
+                or set(executor)
+                != {
+                    "execution_reference",
+                    "artifact_identifier",
+                    "parameter_schema",
+                    "result_contract",
+                }
+                or executor["result_contract"] != "monetary-report-v1"
+            ):
+                raise ValidationError("Invalid penalty executor contract.")
+            if not isinstance(
+                executor["execution_reference"], str
+            ) or not CONTRACT_IDENTIFIER_RE.fullmatch(executor["execution_reference"]):
+                raise ValidationError("Provide a stable penalty execution reference.")
+            validate_artifact_identifier(executor["artifact_identifier"])
+            if not executor["parameter_schema"]:
+                raise ValidationError("Declare an explicit executor parameter schema.")
+            validate_parameter_schema(executor["parameter_schema"])
+            result["penalty_executor"] = executor
+    return result
 
 
 def validate_execution_reference_fields(

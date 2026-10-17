@@ -247,8 +247,8 @@ Un tipo ignoto o opzioni incompatibili bloccano la pubblicazione.
 
 Una regola si associa a una **versione di dataset**, non al dataset logico.
 La stessa versione di regola può essere riusata su più specifiche, se il suo
-interprete supporta il formato dichiarato dalla specifica (`metadata.format`).
-Per NeTEx e SIRI VM/ET il formato XML è riconosciuto anche senza tale metadato.
+interprete supporta il formato dichiarato dalla specifica (campo obbligatorio «Formato del dataset»). `metadata` contiene soltanto
+informazioni aggiuntive facoltative; non inserirvi la chiave `format`.
 
 Ogni associazione dataset/regola ha una politica:
 
@@ -256,9 +256,9 @@ Ogni associazione dataset/regola ha una politica:
 |---|---|---|
 | `reject_import` | Sempre per quel dataset | Il futuro validator deve rifiutare il trasferimento. |
 | `warn` | Sempre per quel dataset | Il trasferimento può essere accettato con un warning. |
-| `indicator_only` | Se richiesta dagli indicatori effettivi | Il giudizio riguarda gli indicatori che consumano la regola. |
 
-Il collegamento a una versione di indicatore specifica la conseguenza distinta:
+Il requisito indicatore collega direttamente indicatore-versione, specifica dataset
+e regola-versione, senza passare dalla politica del dataset. Specifica la conseguenza:
 `calculation` esclude le entità non conformi dal calcolo;
 `dimension` conserva la possibilità del totale ma perde le disaggregazioni
 indicate. Per `dimension` occorre almeno una dimensione; `calculation` non
@@ -273,11 +273,9 @@ l'ultima versione e non considera facoltativo un dataset privo di regole.
 Il superamento dei controlli di un trasferimento non attesta la disponibilità
 degli altri input necessari al calcolo.
 
-Le regole base si modificano solo mentre la specifica è in bozza. Su una
-specifica pubblicata si possono aggiungere nuove applicazioni `indicator_only`
-con regole pubblicate; le righe già pubblicate restano congelate. Questa
-aggiunta non altera gli snapshot dei contratti già approvati. I collegamenti,
-gli impatti e le dimensioni di un indicatore si modificano solo in bozza.
+Le regole dataset si modificano soltanto nella bozza della specifica.
+I requisiti indicatore si modificano nella bozza dell'indicatore, senza alterare
+le specifiche pubblicate né gli snapshot dei contratti già approvati.
 L'autore e la data di creazione delle applicazioni sono conservati; i codici
 delle dimensioni restano stabili.
 
@@ -513,7 +511,9 @@ con il checksum esatto. Un asset diverso, una versione ritirata o una
 composizione pubblicata incompleta/differente producono un errore, senza
 completamenti silenziosi. La seconda esecuzione conserva le versioni pubblicate.
 
-NX-000 usa `reject_import`; gli XPath usano `indicator_only`. «Bloccante» nel
+NX-000 è una regola dataset con `reject_import`; i 13 XPath sono requisiti
+associati direttamente alla versione indicatore. Nel piano pubblico sono
+rappresentati dal marker di compatibilità `indicator_only`. «Bloccante» nel
 foglio significa impatto `calculation` sull’indicatore, non rifiuto del dataset.
 Le altre regole hanno impatto `dimension`, con tutte le dimensioni della riga.
 NX-006 dichiara anche il namespace `xs`; le versioni 1.0/2.0/3.1 sono conservate.
@@ -551,8 +551,8 @@ Queste operazioni sono riservate agli amministratori di piattaforma.
 
 Nei collegamenti al dataset, «Blocco dell’import» (`reject_import`) e «Avviso
 dataset» (`warn`) indicano controlli da applicare a ogni trasferimento di quel
-dataset. «Compatibilità» (`indicator_only`) indica controlli richiesti dagli
-indicatori effettivi. Nei collegamenti agli indicatori, `calculation` significa
+dataset. I requisiti indicatore sono configurati separatamente e sono inclusi
+solo per gli indicatori effettivi del contratto. Nei collegamenti agli indicatori, `calculation` significa
 che le entità non conformi non contribuiscono al calcolo; `dimension` indica
 la perdita delle disaggregazioni selezionate. L’impatto sull’indicatore non
 modifica la politica di import del dataset.
@@ -807,3 +807,226 @@ It refuses inconsistent or duplicate selections. Do not reset or reseed the
 application database to apply it; test the migration and retain a backup before
 rollout. Returning to an older binary after the drop requires a matching database
 restore. Existing API and snapshot schema versions are unchanged.
+
+## Asset tecnici dataset generalizzati (feature 030)
+
+Nella Configurazione Piattaforma aprire **Asset tecnici dataset** (`?tab=asset`).
+Scegliere tipo, codice esplicito, etichetta e file. Il codice (massimo 64 caratteri,
+lettere minuscole/numeri/trattini/underscore, primo carattere alfanumerico) è
+indipendente dal nome originale e dal dataset. Il limite upload predefinito è 128 MiB, configurabile in ambiente.
+
+Tipi: schema XSD singolo, bundle XSD ZIP, schema JSON, documento, archivio o altro
+file tecnico. Gli archivi generici sono byte opachi; soltanto i bundle XSD e
+gli ZIP dei tipi di compatibilità NeTEx/SIRI producono un manifest XSD. Config
+controlla la sintassi JSON, non esegue il JSON Schema contro un dataset.
+
+Nel dettaglio della specifica dataset in bozza scegliere **Aggiungi asset**,
+ruolo e obbligatorietà. È possibile condividere lo stesso asset tra più
+versioni dataset. Il file non è un conferimento TPL né un documento contrattuale.
+
+Anche l'admin Django **Configuration assets** offre un upload guidato. I
+metadati di storage e integrità sono generati e restano in sola lettura; si
+modifica l'etichetta oppure si carica una nuova versione. Attivazione e
+archiviazione passano dalle azioni dedicate. La versione attiva è preferita per
+nuovi usi e non sostituisce le versioni già associate o congelate nei contratti.
+
+La chiave API `what` resta il codice dell'asset. Il segmento storicamente
+chiamato `dataset_code` in `/v3/validation-assets/{asset_type}/{dataset_code}/{version}/download`
+risolve quel codice asset; le URL precedenti rimangono valide. I byte sono
+conservati tramite `rpsd-storage`, gli eventi notificati tramite `rpsd-transport`.
+
+Per esempi ripetibili, eseguire esplicitamente nel runtime Config:
+
+```bash
+uv run manage seed_dataset_asset_examples --actor dummy_admin
+```
+
+Il comando crea tre risorse deterministiche (bundle XSD, istruzioni TXT e
+colonne CSV) condivise da due specifiche dataset demo in bozza. Non azzera dati,
+non crea contratti e non pubblica specifiche o runtime. Riuso di contenuto
+identico verificato; un conflitto richiede revisione esplicita e non viene
+sovrascritto. Il comando non viene eseguito automaticamente dal bootstrap.
+
+La migrazione `0049_generalize_configuration_assets` conserva identità e
+riferimenti esistenti. Codici legacy vuoti/non validi producono un errore con
+gli ID da revisionare, senza assegnare automaticamente nuove identità. Dopo
+l'introduzione di asset di tipi generici, il vecchio binario non è compatibile:
+il rollback richiede DB/storage coerenti o una correzione in avanti.
+
+## Raffinamenti del modello e dell'admin (031)
+
+Le versioni regola selezionano un solo «Tipo di validazione e versione del
+linguaggio» dal catalogo Django precaricato (sette coppie). Definizione, opzioni,
+formato e risultato continuano a essere controllati dal registry; Config non
+verifica che i deployment esterni siano disponibili. API e snapshot mantengono
+le chiavi tecniche tipo/versione, senza esporre ID locali del catalogo.
+
+Nella versione indicatore gestire «Dataset richiesti» e «Indicatori prerequisiti»,
+con le dimensioni richieste nella riga del prerequisito. Le relazioni usano M:N
+Django attraverso le tabelle esistenti. Nel processo di input consultare i profili
+utilizzatori; la composizione si modifica dalla bozza del profilo.
+
+Nella revisione contrattuale gestire «Valori degli indicatori prerequisiti»:
+valori indipendenti da quelli dell'indicatore padre, solo per prerequisiti effettivi.
+Occorre poter preparare quel contratto; il solo ruolo platform admin non basta.
+Dopo approvazione o ritiro, valori e composizioni restano consultabili e congelati.
+
+Gli eventi sono nel gruppo admin «Storico e notifiche». Sono consultabili per
+periodo/stato/autore ove presenti, con ricerca per codice e navigazione all'oggetto.
+Non si creano, modificano o cancellano manualmente. «Ritenta invio» richiede il
+permesso `admin_audit.retry_configurationassetevent` (oltre alla consultazione)
+e tratta soltanto le notifiche pending/failed selezionate. Con publisher spento
+non invia e lo segnala. I retry conservano ID/payload e possono richiedere una
+consegna ripetuta se una precedente conferma è andata persa.
+
+Il flag «Asset obbligatorio» riguarda una risorsa già associata, indispensabile
+alla lavorazione (es. XSD/mapper), rispetto a un manuale accessorio. Non scopre
+associazioni mancanti e non imposta la politica di rifiuto del conferimento.
+Config oggi controlla lo stato attivo alla pubblicazione della specifica e
+propaga il flag nel piano; i controlli runtime di recuperabilità/integrità e
+l'eventuale blocco della lavorazione spettano al futuro consumer.
+
+Le soglie tecniche si configurano in `.env` e sono descritte in `.env.example`:
+
+| Impostazione | Default | Unità |
+| --- | ---: | --- |
+| CONFIG_ASSETS_MAX_UPLOAD_BYTES | 134217728 | byte caricati |
+| CONFIG_ASSETS_XSD_MAX_TOTAL_BYTES | 134217728 | byte totali decompressi del bundle |
+| CONFIG_ASSETS_XSD_MAX_FILE_BYTES | 8388608 | byte per elemento del bundle |
+| CONFIG_ASSETS_XSD_MAX_FILES | 4096 | elementi nell'archivio ZIP |
+
+Devono essere interi positivi. Sono limiti delle risorse del deployment, non dati
+di dominio: per questo non esiste una tabella modificabile nell'admin. Riavviare
+Config dopo una modifica. L'admin mostra i valori effettivi; eventuali limiti di
+proxy/webserver possono essere inferiori. Ridurre le soglie può rendere non più
+utilizzabili bundle precedentemente ammessi: pianificare la variazione rispetto
+agli asset esistenti. Gli archivi generici non subiscono ispezione XSD.
+
+I profili NeTEx/SIRI legacy e la scheda inizializzazione sono dismessi. I bookmark
+`?tab=inizializzazione` portano agli asset; i quattro POST legacy restituiscono
+400 senza effetti. Prima del drop, inventariare con
+`uv run manage recover_legacy_validation_profiles`; se necessario eseguire con
+`--apply` per recuperare i byte nel catalogo asset. Il recupero riusa contenuti
+identici e non elimina i file originali né cambia le associazioni pubblicate.
+La migrazione rifiuta il drop se un file non è verificabile nell'asset collegato.
+Dopo il drop, il rollback richiede un ripristino DB coerente, non il solo binario.
+Non è necessario eseguire reset o seed sul database applicativo per aggiornare.
+
+## Indicator parameters, evaluation thresholds and penalties (032)
+
+In a contract revision, open **Parametri, soglie e penali** for the selected
+indicator. The technical IndicatorVersion declares the accepted parameters and
+output metrics. Each contract revision supplies its own parameter values;
+changing the included lines does not require another technical indicator version.
+Parameters schema v1 remains readable. Schema v2 adds homogeneous scalar arrays,
+min_items/max_items/unique_items and an optional reference_namespace describing
+technical IDs. Numeric v2 parameters can use finite decimal strings, avoiding
+floating-point serialization. Public line labels are not inferred from technical IDs.
+
+Soglie and Penali are child records of ContractRevisionIndicator. Django admin
+lists them in Agreements; contextual links are in the revision's indicator inline.
+The admin add pages require `?owner_id=<revision-indicator-id>` and enforce both
+Django permissions and contract scope. Web/admin use the same forms and services.
+Only draft revisions can change; approved and withdrawn content is readonly.
+
+A threshold selects an output metric, its supported aggregation, grouping,
+violation operator, decimal limit, severity and missing-data policy. The
+operator describes a violation: maximum 3 means `> 3`, from 10 inclusive means
+`>= 10`. Missing results are never silently treated as zero. `average` is
+permitted only when advertised by the metric; no automatic average of averages.
+
+Periods are daily, ISO weekly, monthly, yearly, whole contract, or one custom
+window. All dates are inclusive and use an explicit IANA timezone:
+
+- custom_range: X through Y; X=Y is a single day;
+- custom_to_contract_end: Z through the known contract end;
+- custom_duration_days: K for N calendar days; last day is K + N - 1.
+
+For example, 2026-10-10 for 3 days ends on 2026-10-12. N is a positive integer;
+custom periods are not recurring jobs. Contract-wide/to-end windows need a known
+end before approval. The snapshot freezes resolved dates and their contract
+source. A later extension does not reinterpret historical snapshots. The explicit
+partial-period choice is either evaluate_partial (same limit, no proration) or
+complete_only (not evaluable when the revision covers only part of the window).
+A runtime must stop attributing data to a revision at the next effective revision;
+no implicit carry-over of occurrences between snapshots is allowed.
+
+All penalties are **cumulative**. Daily and monthly clauses may both apply;
+storni and negotiated agreements are outside RPSD. Supported configurations:
+
+- fixed_amount: one fixed amount per applicable group/period;
+- per_unit: max(0, aggregated quantity - allowance_quantity) × unit_amount;
+- external: a versioned executor advertised in the published output contract.
+
+Per-application maximum_amount is applied before final commercial ROUND_HALF_UP
+rounding to EUR cents. Quantities, coefficients and limits have six decimal
+places. The maximum is not a shared annual/contract cap. With an activation
+threshold, the penalty inherits period, timezone and dimensions. Without one,
+its own context is required. A different economic metric must support the same
+grouping. A linked threshold cannot be deleted until its penalties are changed
+or removed in the draft. Cloning remaps every threshold reference.
+
+Output schema v2 uses `metrics` with code, numeric type, unit, grain, dimensions
+and supported aggregations. count_distinct also requires distinct_key. External
+penalty configuration is allowed only when the exact technical version declares
+penalty_executor with execution_reference, artifact_identifier, parameter_schema
+and result_contract=`monetary-report-v1`. The agency cannot substitute arbitrary
+execution code or a different schema. Saving/approving never contacts Prefect.
+
+### Snapshots and runtime API
+
+Existing canonical-json-v1/v2 snapshots and their checksums are preserved. New
+rules or parameter/output schemas v2 produce canonical-json-v3 with
+`evaluation_configurations`, decimal strings, local rule codes, resolved contexts
+and `penalty_combination_policy: cumulative`. The validation-aware consumer uses:
+
+```text
+GET /exchange_agreement/api/m2m/v4/contracts/{contract_code}/validation-plan?data_category=netex
+```
+
+Authentication/grant and current-date rules match v3. A v3 snapshot is exported
+as validation-plan-v2, with its frozen evaluation configurations. The v4 endpoint
+also accepts canonical-json-v2 and returns validation-plan-v1. Legacy v1 has no
+frozen validation definitions and is not promoted to an executable plan.
+Old v1/v2/v3 ingest/validation consumers receive 409
+`unsupported_evaluation_configuration` on a v3 snapshot rather than a payload
+that silently drops economic clauses. API publication/snapshot downloads remain
+verbatim historical documents. Consumers must check schema versions and retain
+snapshot checksum/plan digest for every job and retry.
+
+Config stores configuration only. The external runtime must report the metric,
+period/group, threshold violations, clause code, measured/admissible quantity,
+raw/capped/rounded amount, currency, snapshot checksum and job/attempt identity.
+It must distinguish missing/partial/provisional/error results from conforming
+results, avoid duplicate charges on retries, and handle corrected/late data.
+`monetary-report-v1` is a handoff contract, not evidence of a deployed executor.
+
+### Inventory, examples and upgrade
+
+```bash
+uv run manage inventory_indicator_evaluations
+uv run manage inventory_indicator_evaluations --check
+uv run manage seed_indicator_evaluation_demo --actor YOUR_PLATFORM_ADMIN
+```
+
+The inventory is read-only and works before the new evaluation tables exist.
+Non-empty legacy economic JSON is reported for explicit mapping, never guessed
+or cleared. Old JSON columns remain for historical compatibility; ordinary
+admin/web write paths use child tables and reject economic JSON changes.
+Legacy dependency JSON is reported too; technical prerequisites do not inherit
+penalties. Standard existing seeds remain compatible and write empty economic
+JSON, while the new additive command supplies the complete typed examples.
+
+The evaluation seed creates a published technical profile and two **draft** demo
+contracts with different line lists, daily/monthly thresholds, all three custom
+windows, and fixed/per-unit examples. Dates are explicit (2026), not today-based.
+Re-running verifies definitions and refuses conflicts rather than overwriting
+approved or divergent data. It does not deploy processes or approve contracts.
+No seed or reset is implicit in migration/startup.
+
+Before rollout, back up the DB, inventory legacy values and test migrations
+0055/0056 plus Agreements proxy migration 0009 on a restored copy. Verify old
+row digests and snapshot checksums, then use `uv run manage migrate --noinput`.
+Rollback requires a matching binary/DB restoration plan: downgrading code alone
+cannot make v3 snapshots readable to old runtime consumers. Do not drop the new
+tables once they contain contractual data without a reviewed preservation plan.

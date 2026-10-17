@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Lifecycle, serialization and runtime projection for registered flow versions."""
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from rpsd_config.exchange_agreement.models import (
@@ -71,7 +71,9 @@ def transition_input_flow_version(
                 "published_by_id": actor.pk if getattr(actor, "pk", None) else None,
             }
         )
-    InputFlowVersion.objects.filter(pk=locked.pk).update(**update_fields)
+    models.QuerySet.update(
+        InputFlowVersion.objects.filter(pk=locked.pk), **update_fields
+    )
     InputFlowVersionStatusEvent.objects.create(
         input_flow_version=locked,
         from_status=source_status,
@@ -107,7 +109,9 @@ def transition_orchestration_flow_version(
                 "published_by_id": actor.pk if getattr(actor, "pk", None) else None,
             }
         )
-    OrchestrationFlowVersion.objects.filter(pk=locked.pk).update(**update_fields)
+    models.QuerySet.update(
+        OrchestrationFlowVersion.objects.filter(pk=locked.pk), **update_fields
+    )
     OrchestrationFlowVersionStatusEvent.objects.create(
         orchestration_flow_version=locked,
         from_status=source_status,

@@ -1,6 +1,5 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -27,7 +26,14 @@ def _scope(*, platform_admin: bool = True) -> AgencyScope:
 class NavigationContextTests(SimpleTestCase):
     def setUp(self):
         self.factory = RequestFactory()
-        self.user = SimpleNamespace(is_authenticated=True, is_superuser=False)
+        self.user = get_user_model()(username="navigation-user")
+        self.membership_filter = self.enterContext(
+            patch(
+                "rpsd_config.server.context_processors.ContractMembership.objects.filter"
+            )
+        )
+        self.membership_exists = self.membership_filter.return_value.exists
+        self.membership_exists.return_value = False
 
     def _request(self, name: str, *args):
         path = reverse(name, args=args)
@@ -106,9 +112,7 @@ class NavigationContextTests(SimpleTestCase):
     def test_non_admin_does_not_see_company_or_configuration_items(self):
         nav = self._context("exchange_agreement:user-area", platform_admin=False)
 
-        visible_sections = {
-            item["section"] for item in nav["items"] if item["visible"]
-        }
+        visible_sections = {item["section"] for item in nav["items"] if item["visible"]}
         self.assertEqual(visible_sections, {"user", "agencies"})
 
     def test_user_area_is_last_navigation_item(self):
@@ -116,8 +120,21 @@ class NavigationContextTests(SimpleTestCase):
 
         self.assertEqual(
             [item["section"] for item in nav["items"]],
-            ["agencies", "companies", "configuration", "user"],
+            ["agencies", "contracts", "companies", "configuration", "user"],
         )
+
+    def test_contracts_navigation_visibility_follows_membership(self):
+        for has_membership in (False, True):
+            with self.subTest(has_membership=has_membership):
+                self.membership_exists.return_value = has_membership
+                nav = self._context("exchange_agreement:user-contracts")
+                contracts_item = next(
+                    item for item in nav["items"] if item["section"] == "contracts"
+                )
+                self.assertEqual(contracts_item["visible"], has_membership)
+                self.assertEqual(nav["can_view_contracts"], has_membership)
+                self.assertTrue(contracts_item["active"])
+                self.membership_filter.assert_called_with(user=self.user)
 
     def test_local_icon_sprite_is_discoverable(self):
         self.assertIsNotNone(finders.find("icons/rpsd-icons.svg"))

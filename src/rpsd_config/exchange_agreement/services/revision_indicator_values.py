@@ -52,11 +52,14 @@ def save_revision_indicator_values(revision, *, version_code: str, values: dict,
             "The indicator does not belong to the effective revision."
         )
     fields = ("parameters", "thresholds", "aggregation", "penalties")
-    if not isinstance(values, dict) or set(values) != set(fields):
-        raise ValidationError("Provide all four configuration objects.")
-    for field in fields:
-        validate_business_configuration(values[field], field_name=field)
-    validate_indicator_parameters(version.parameter_schema, values["parameters"])
+    if (
+        not isinstance(values, dict)
+        or not {"parameters", "aggregation"} <= set(values)
+        or set(values) - set(fields)
+    ):
+        raise ValidationError(
+            "Provide parameters and aggregation configuration objects."
+        )
     config = selected.get(version.pk)
     if config is None:
         config = ContractDependencyConfiguration.objects.filter(
@@ -64,6 +67,17 @@ def save_revision_indicator_values(revision, *, version_code: str, values: dict,
         ).first() or ContractDependencyConfiguration(
             revision=locked, indicator_version=version
         )
+    values = dict(values)
+    for field in ("thresholds", "penalties"):
+        old = getattr(config, field)
+        if field in values and values[field] != old:
+            raise ValidationError(
+                "Economic JSON is read-only; use relational evaluation conditions."
+            )
+        values[field] = old
+    for field in fields:
+        validate_business_configuration(values[field], field_name=field)
+    validate_indicator_parameters(version.parameter_schema, values["parameters"])
     for field in fields:
         setattr(config, field, values[field])
     config.save()
@@ -105,12 +119,7 @@ def revision_indicator_value_rows(revision) -> list[dict]:
                             sort_keys=True,
                         ),
                     }
-                    for field in (
-                        "parameters",
-                        "thresholds",
-                        "aggregation",
-                        "penalties",
-                    )
+                    for field in ("parameters", "aggregation")
                 ],
             }
         )

@@ -36,9 +36,10 @@
     </a>
   </li>
   <li class="nav-item">
-    <a class="nav-link {% if active_tab == 'inizializzazione' %}active{% endif %}" href="?tab=inizializzazione">
-      Inizializzazione sistema
-    </a>
+
+  </li>
+  <li class="nav-item">
+    <a class="nav-link {% if active_tab == 'asset' %}active{% endif %}" href="?tab=asset">Asset tecnici dataset</a>
   </li>
   <li class="nav-item">
     <a class="nav-link {% if active_tab == 'flussi' %}active{% endif %}" href="?tab=flussi">
@@ -131,6 +132,8 @@
       </div>
     </div>
   </div>
+{% elif active_tab == "asset" %}
+  {% include "exchange_agreement/includes/configuration_assets.html" %}
 {% elif active_tab == "flussi" %}
   <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
@@ -141,209 +144,6 @@
       </p>
       <a class="btn btn-primary" href="{% url 'exchange_agreement:technical-catalog-index' %}">Apri cataloghi tecnici</a>
       <a class="btn btn-outline-secondary" href="{% url 'admin:index' %}">Django admin (fallback)</a>
-    </div>
-  </div>
-{% else %}
-  <div class="card border-0 shadow-sm mb-3">
-    <div class="card-body">
-      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-        <h2 class="h5 mb-0">Stato inizializzazione sistema</h2>
-        {% if initialization_summary.initialized %}
-          <span class="badge text-bg-success">Sistema inizializzato</span>
-        {% else %}
-          <span class="badge text-bg-danger">Sistema non inizializzato</span>
-        {% endif %}
-      </div>
-      <div class="row g-2 mt-1">
-        <div class="col-md-4">
-          <div class="small text-body-secondary">Netex attivi</div>
-          <div class="fw-semibold">{{ initialization_summary.netex_active_count }}</div>
-        </div>
-        <div class="col-md-4">
-          <div class="small text-body-secondary">SIRI attivi</div>
-          <div class="fw-semibold">{{ initialization_summary.siri_active_count }}</div>
-        </div>
-        <div class="col-md-4">
-          <div class="small text-body-secondary">Versioni indicatore pubblicate</div>
-          <div class="fw-semibold">{{ initialization_summary.indicator_published_count }}</div>
-        </div>
-      </div>
-      {% if initialization_summary.siri_duplicate_active_types %}
-        <div class="alert alert-warning mt-3 mb-0 py-2">
-          Tipi SIRI con duplicati attivi:
-          <strong>{{ initialization_summary.siri_duplicate_active_types|join:", " }}</strong>
-        </div>
-      {% endif %}
-    </div>
-  </div>
-
-  <div class="row g-3">
-    <div class="col-12 col-xl-4">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body">
-          <h2 class="h5 mb-3">Profilo Netex (.xsd)</h2>
-          <form method="post" enctype="multipart/form-data" class="row g-2 mb-3">
-            {% csrf_token %}
-            <input type="hidden" name="tab" value="inizializzazione">
-            <input type="hidden" name="action" value="upload-netex">
-            <div class="col-12">
-              <label class="form-label" for="netex_label">Etichetta (opzionale)</label>
-              <input class="form-control" id="netex_label" name="netex_label" type="text" value="{{ upload_form_values.netex_label }}">
-            </div>
-            <div class="col-12">
-              <label class="form-label" for="netex_file">File .xsd</label>
-              <input class="form-control" id="netex_file" name="netex_file" type="file" accept=".xsd" required>
-            </div>
-            <div class="col-12">
-              <div class="form-check">
-                <input class="form-check-input" id="netex_is_active" name="netex_is_active" type="checkbox" {% if upload_form_values.netex_is_active %}checked{% endif %}>
-                <label class="form-check-label" for="netex_is_active">Attiva subito</label>
-              </div>
-            </div>
-            <div class="col-12">
-              <button class="btn btn-primary w-100" type="submit">Carica profilo Netex</button>
-            </div>
-          </form>
-
-          <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-              <thead>
-                <tr>
-                  <th>Profilo</th>
-                  <th>Attivo</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for profile in netex_profiles %}
-                  <tr>
-                    <td>
-                      <div>{{ profile.label|default:"(senza etichetta)" }}</div>
-                      <div class="small text-body-secondary"><code>{{ profile.file.name }}</code></div>
-                    </td>
-                    <td>
-                      {% if profile.is_active %}
-                        <span class="badge text-bg-success">Attivo</span>
-                      {% else %}
-                        <span class="badge text-bg-secondary">Non attivo</span>
-                      {% endif %}
-                    </td>
-                    <td class="text-end">
-                      <form method="post">
-                        {% csrf_token %}
-                        <input type="hidden" name="tab" value="inizializzazione">
-                        <input type="hidden" name="action" value="set-netex-active">
-                        <input type="hidden" name="profile_id" value="{{ profile.id }}">
-                        <input type="hidden" name="set_active" value="{% if profile.is_active %}0{% else %}1{% endif %}">
-                        <button class="btn btn-sm {% if profile.is_active %}btn-outline-secondary{% else %}btn-outline-primary{% endif %}" type="submit">
-                          {% if profile.is_active %}Disattiva{% else %}Attiva{% endif %}
-                        </button>
-                      </form>
-                    </td>
-                  </tr>
-                {% empty %}
-                  <tr>
-                    <td colspan="3" class="text-body-secondary">Nessun profilo Netex caricato.</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-12 col-xl-4">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body">
-          <h2 class="h5 mb-3">Profili SIRI</h2>
-          <form method="post" enctype="multipart/form-data" class="row g-2 mb-3">
-            {% csrf_token %}
-            <input type="hidden" name="tab" value="inizializzazione">
-            <input type="hidden" name="action" value="upload-siri">
-            <div class="col-12">
-              <label class="form-label" for="siri_type">Tipo profilo</label>
-              <select class="form-select" id="siri_type" name="siri_type" required>
-                {% for value, label in siri_type_choices %}
-                  <option value="{{ value }}" {% if upload_form_values.siri_type == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-12">
-              <label class="form-label" for="siri_label">Etichetta (opzionale)</label>
-              <input class="form-control" id="siri_label" name="siri_label" type="text" value="{{ upload_form_values.siri_label }}">
-            </div>
-            <div class="col-12">
-              <label class="form-label" for="siri_file">File .xsd / .xml</label>
-              <input class="form-control" id="siri_file" name="siri_file" type="file" accept=".xsd,.xml" required>
-            </div>
-            <div class="col-12">
-              <div class="form-check">
-                <input class="form-check-input" id="siri_is_active" name="siri_is_active" type="checkbox" {% if upload_form_values.siri_is_active %}checked{% endif %}>
-                <label class="form-check-label" for="siri_is_active">Attiva subito</label>
-              </div>
-            </div>
-            <div class="col-12">
-              <button class="btn btn-primary w-100" type="submit">Carica profilo SIRI</button>
-            </div>
-          </form>
-
-          <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-              <thead>
-                <tr>
-                  <th>Tipo / profilo</th>
-                  <th>Attivo</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for profile in siri_profiles %}
-                  <tr>
-                    <td>
-                      <div><span class="badge text-bg-light border">{{ profile.profile_type }}</span> {{ profile.label|default:"(senza etichetta)" }}</div>
-                      <div class="small text-body-secondary"><code>{{ profile.file.name }}</code></div>
-                    </td>
-                    <td>
-                      {% if profile.is_active %}
-                        <span class="badge text-bg-success">Attivo</span>
-                      {% else %}
-                        <span class="badge text-bg-secondary">Non attivo</span>
-                      {% endif %}
-                    </td>
-                    <td class="text-end">
-                      <form method="post">
-                        {% csrf_token %}
-                        <input type="hidden" name="tab" value="inizializzazione">
-                        <input type="hidden" name="action" value="set-siri-active">
-                        <input type="hidden" name="profile_id" value="{{ profile.id }}">
-                        <input type="hidden" name="set_active" value="{% if profile.is_active %}0{% else %}1{% endif %}">
-                        <button class="btn btn-sm {% if profile.is_active %}btn-outline-secondary{% else %}btn-outline-primary{% endif %}" type="submit">
-                          {% if profile.is_active %}Disattiva{% else %}Attiva{% endif %}
-                        </button>
-                      </form>
-                    </td>
-                  </tr>
-                {% empty %}
-                  <tr>
-                    <td colspan="3" class="text-body-secondary">Nessun profilo SIRI caricato.</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-12 col-xl-4">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body">
-          <h2 class="h5 mb-3">Catalogo indicatori</h2>
-          <p>Definisci e pubblica le versioni degli indicatori nel catalogo tecnico.</p>
-          <a class="btn btn-primary" href="{% url 'exchange_agreement:technical-catalog-list' catalog_slug='indicators' %}">Apri catalogo indicatori</a>
-        </div>
-      </div>
     </div>
   </div>
 {% endif %}

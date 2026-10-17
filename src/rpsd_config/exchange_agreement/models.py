@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2025-2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
+import re
 import uuid
 from datetime import date, timedelta
 from pathlib import Path
@@ -203,41 +204,44 @@ BUNDLE_IDENTITY_FIELDS = {
     "storage_url",
     "storage_provider",
     "storage_key",
+    "content_type",
 }
 
 
 class ConfigurationAssetQuerySet(models.QuerySet):
-    """Preserve bundle identity while allowing activation and event updates."""
+    """Preserve file identity while allowing activation and event updates."""
 
     def update(self, **kwargs):
-        if BUNDLE_IDENTITY_FIELDS.intersection(kwargs) and (
-            self.exclude(bundle_manifest={}).exists() or kwargs.get("bundle_manifest")
-        ):
+        if BUNDLE_IDENTITY_FIELDS.intersection(kwargs):
             raise ValidationError(
-                "Schema bundle identity is immutable.", code="immutable_schema_bundle"
+                "Asset identity and content are immutable.",
+                code="immutable_schema_bundle",
             )
         return super().update(**kwargs)
 
     def bulk_update(self, objs, fields, batch_size=None):
         if BUNDLE_IDENTITY_FIELDS.intersection(fields):
             raise ValidationError(
-                "Bulk bundle metadata updates are unsupported.",
+                "Bulk asset metadata updates are unsupported.",
                 code="immutable_schema_bundle",
             )
         return super().bulk_update(objs, fields, batch_size=batch_size)
 
     def bulk_create(self, objs, **kwargs):
-        objs = list(objs)
-        if any(obj.bundle_manifest for obj in objs):
-            raise ValidationError("Store schema bundles through the upload service.")
-        return super().bulk_create(objs, **kwargs)
+        raise ValidationError("Store assets through validated per-object writes.")
 
 
 class ConfigurationAsset(TimeStampedModel):
     objects = ConfigurationAssetQuerySet.as_manager()
 
     class AssetType(models.TextChoices):
-        NETEX_XSD = "netex_xsd", _("NeTEx XSD")
+        XSD_SCHEMA = "xsd_schema", _("Schema XSD")
+        XSD_BUNDLE = "xsd_bundle", _("Bundle XSD")
+        JSON_SCHEMA = "json_schema", _("Schema JSON")
+        DOCUMENT = "document", _("Documento")
+        ARCHIVE = "archive", _("Archivio generico")
+        OTHER = "other", _("Altro file tecnico")
+        NETEX_XSD = "netex_xsd", _("NeTEx XSD (compatibilità)")
         SIRI_PROFILE = "siri_profile", _("SIRI profile")
 
     class Status(models.TextChoices):
@@ -246,6 +250,9 @@ class ConfigurationAsset(TimeStampedModel):
         ARCHIVED = "archived", _("Archived")
 
     ASSET_TYPE_EXTENSIONS = {
+        AssetType.XSD_SCHEMA: {"xsd"},
+        AssetType.XSD_BUNDLE: {"zip"},
+        AssetType.JSON_SCHEMA: {"json"},
         AssetType.NETEX_XSD: {"xsd", "zip"},
         AssetType.SIRI_PROFILE: {"xsd", "xml", "zip"},
     }
@@ -255,7 +262,11 @@ class ConfigurationAsset(TimeStampedModel):
         choices=AssetType.choices,
         db_index=True,
     )
-    what = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    what = models.CharField(
+        max_length=64,
+        db_index=True,
+        validators=[RegexValidator(r"^[a-z0-9][a-z0-9_-]{0,63}$")],
+    )
     label = models.CharField(max_length=128, blank=True, default="")
     version = models.PositiveIntegerField(default=1)
     status = models.CharField(
@@ -308,7 +319,18 @@ class ConfigurationAsset(TimeStampedModel):
                 name="uniq_active_config_asset_type_what",
             ),
             models.CheckConstraint(
-                condition=models.Q(asset_type__in=["netex_xsd", "siri_profile"]),
+                condition=models.Q(
+                    asset_type__in=[
+                        "xsd_schema",
+                        "xsd_bundle",
+                        "json_schema",
+                        "document",
+                        "archive",
+                        "other",
+                        "netex_xsd",
+                        "siri_profile",
+                    ]
+                ),
                 name="config_asset_supported_dataset_type",
             ),
         ]
@@ -325,51 +347,67 @@ class ConfigurationAsset(TimeStampedModel):
 
     def __str__(self) -> str:
         target = self.what or self.asset_type
-        return f"{target} v{self.version} ({self.status})"
+        return (
+            f"{target} · {self.get_asset_type_display()} · "
+            f"v{self.version} ({self.status})"
+        )
 
     @classmethod
     def normalize_what_from_filename(cls, filename: str) -> str:
         return Path(filename or "").name.rsplit(".", 1)[0].strip().lower()
 
     @classmethod
-    def validate_filename_for_type(cls, asset_type: str, filename: str) -> str:
-        name = Path(filename or "").name.strip()
-        suffix = Path(name).suffix.lower().lstrip(".")
-        if not name or not suffix:
-            raise ValidationError(_("Asset filename must include an extension."))
-        allowed = cls.ASSET_TYPE_EXTENSIONS.get(asset_type)
-        if allowed is None or suffix not in allowed:
-            raise ValidationError(_("Asset filename extension is not supported."))
+    def validate_asset_code(cls, code: str) -> str:
+        """Validate an explicit stable code usable in API paths."""
+        if not isinstance(code, str) or not re.fullmatch(
+            r"[a-z0-9][a-z0-9_-]{0,63}", code
+        ):
+            raise ValidationError("Invalid asset code.", code="invalid_asset_code")
+        return code
 
-        what = cls.normalize_what_from_filename(name)
-        if asset_type == cls.AssetType.NETEX_XSD and name.lower() not in {
-            "netex.xsd",
-            "netex.zip",
-        }:
-            raise ValidationError(
-                _("NeTEx validation asset must be named netex.xsd or netex.zip.")
-            )
-        if asset_type == cls.AssetType.SIRI_PROFILE and what not in {
-            item for item in CANONICAL_VALIDATION_WHATS if item.startswith("siri-")
-        }:
-            raise ValidationError(
-                _("SIRI asset filename must use a canonical name like siri-pt.xsd.")
-            )
-        return what
+    @classmethod
+    def validate_filename_for_type(cls, asset_type: str, filename: str) -> str:
+        """Check a safe filename and type-specific extension, not its identity."""
+        name = filename or ""
+        if (
+            not name
+            or name in {".", ".."}
+            or len(name) > 255
+            or "/" in name
+            or "\\" in name
+            or any(ord(char) < 32 for char in name)
+        ):
+            raise ValidationError("Invalid asset filename.")
+        if asset_type not in cls.AssetType.values:
+            raise ValidationError("Unsupported asset type.")
+        allowed = cls.ASSET_TYPE_EXTENSIONS.get(asset_type)
+        if allowed is not None and Path(name).suffix.lower().lstrip(".") not in allowed:
+            raise ValidationError("Asset filename extension is not supported.")
+        return name
 
     def clean(self):
         super().clean()
         errors = {}
         try:
-            expected_what = self.validate_filename_for_type(
-                self.asset_type,
-                self.original_filename,
-            )
-            if self.what and self.what != expected_what:
-                errors["what"] = _("what does not match the canonical filename stem.")
-            self.what = expected_what
+            self.validate_filename_for_type(self.asset_type, self.original_filename)
         except ValidationError as exc:
             errors["original_filename"] = exc.messages
+        try:
+            self.validate_asset_code(self.what)
+        except ValidationError as exc:
+            errors["what"] = exc.messages
+        if self.version < 1:
+            errors["version"] = "Asset version must be positive."
+        if self.asset_type == self.AssetType.XSD_BUNDLE and not self.bundle_manifest:
+            errors["bundle_manifest"] = "An XSD bundle requires a manifest."
+        if self.bundle_manifest and self.asset_type not in {
+            self.AssetType.XSD_BUNDLE,
+            self.AssetType.NETEX_XSD,
+            self.AssetType.SIRI_PROFILE,
+        }:
+            errors["bundle_manifest"] = (
+                "This asset type cannot contain an XSD manifest."
+            )
 
         if self.bundle_manifest:
             from rpsd_config.exchange_agreement.services.schema_bundles import (
@@ -384,11 +422,11 @@ class ConfigurationAsset(TimeStampedModel):
                 errors["bundle_manifest"] = exc.messages
         if self.pk:
             original = type(self).objects.get(pk=self.pk)
-            if original.bundle_manifest and any(
+            if any(
                 getattr(self, field) != getattr(original, field)
                 for field in BUNDLE_IDENTITY_FIELDS
             ):
-                errors["bundle_manifest"] = _("Schema bundle identity is immutable.")
+                errors["what"] = _("Asset identity and content are immutable.")
 
         if self.is_active:
             self.status = self.Status.ACTIVE
@@ -453,93 +491,6 @@ class ConfigurationAssetEvent(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.event_type} asset={self.asset_id} ({self.status})"
-
-
-class NetexValidationProfile(TimeStampedModel):
-    label = models.CharField(max_length=128, blank=True, default="")
-    file = models.FileField(
-        upload_to=netex_profile_upload_path,
-        max_length=512,
-        validators=[FileExtensionValidator(allowed_extensions=["xsd"])],
-        help_text="Validation profile file (.xsd).",
-    )
-    is_active = models.BooleanField(default=False, db_index=True)
-    configuration_asset = models.ForeignKey(
-        ConfigurationAsset,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="netex_profiles",
-    )
-
-    class Meta:
-        verbose_name = "Netex validation profile"
-        verbose_name_plural = "Netex validation profiles"
-        ordering = ["-created_at", "-id"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["is_active"],
-                condition=models.Q(is_active=True),
-                name="uniq_active_netex_validation_profile",
-            )
-        ]
-
-    def __str__(self) -> str:
-        if self.label:
-            return self.label
-        return Path(self.file.name).name
-
-
-class SiriValidationProfile(TimeStampedModel):
-    class ProfileType(models.TextChoices):
-        PT = "siri-pt", _("SIRI PT")
-        ET = "siri-et", _("SIRI ET")
-        ST = "siri-st", _("SIRI ST")
-        CT = "siri-ct", _("SIRI CT")
-        CM = "siri-cm", _("SIRI CM")
-        GM = "siri-gm", _("SIRI GM")
-        FM = "siri-fm", _("SIRI FM")
-        SX = "siri-sx", _("SIRI SX")
-        VM = "siri-vm", _("SIRI VM")
-        SM = "siri-sm", _("SIRI SM")
-
-    profile_type = models.CharField(
-        max_length=32,
-        choices=ProfileType.choices,
-        default=ProfileType.PT,
-    )
-    label = models.CharField(max_length=128, blank=True, default="")
-    file = models.FileField(
-        upload_to=siri_profile_upload_path,
-        max_length=512,
-        validators=[FileExtensionValidator(allowed_extensions=["xsd", "xml"])],
-        help_text="SIRI validation profile file (.xsd/.xml).",
-    )
-    is_active = models.BooleanField(default=False, db_index=True)
-    configuration_asset = models.ForeignKey(
-        ConfigurationAsset,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="siri_profiles",
-    )
-
-    class Meta:
-        verbose_name = "SIRI validation profile"
-        verbose_name_plural = "SIRI validation profiles"
-        ordering = ["profile_type", "-created_at", "-id"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["profile_type"],
-                condition=models.Q(is_active=True),
-                name="uniq_active_siri_profile_by_type",
-            )
-        ]
-
-    def __str__(self) -> str:
-        if self.label:
-            return f"{self.profile_type} - {self.label}"
-        return f"{self.profile_type} - {Path(self.file.name).name}"
 
 
 # -----------------------------------------------
@@ -747,6 +698,25 @@ class Dataset(TimeStampedModel):
         return super().save(*args, **kwargs)
 
 
+class CatalogVersionQuerySet(models.QuerySet):
+    """Require validated saves and audited lifecycle services for technical versions."""
+
+    def update(self, **kwargs):
+        raise ValidationError("Use validated saves or the audited lifecycle service.")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError("Bulk catalog updates bypass lifecycle validation.")
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValidationError("Create catalog versions through validated saves.")
+
+    @transaction.atomic
+    def delete(self):
+        if self.select_for_update().exclude(status="draft").exists():
+            raise ValidationError("Only draft versions can be deleted.")
+        return super().delete()
+
+
 class DatasetSpecification(TimeStampedModel):
     """Versioned technical specification of a logical dataset."""
 
@@ -756,6 +726,15 @@ class DatasetSpecification(TimeStampedModel):
         DEPRECATED = "deprecated", _("Deprecated")
         WITHDRAWN = "withdrawn", _("Withdrawn")
 
+    class Format(models.TextChoices):
+        XML = "xml", "XML"
+        CSV = "csv", "CSV"
+        XLSX = "xlsx", "Excel (XLSX)"
+        TXT = "txt", "Text (TXT)"
+
+    format = models.CharField(
+        max_length=8, choices=Format.choices, verbose_name="Formato del dataset"
+    )
     dataset = models.ForeignKey(
         Dataset,
         on_delete=models.PROTECT,
@@ -785,6 +764,8 @@ class DatasetSpecification(TimeStampedModel):
         related_name="dataset_specifications",
         blank=True,
     )
+
+    objects = CatalogVersionQuerySet.as_manager()
 
     class Meta:
         verbose_name = "Dataset specification"
@@ -818,9 +799,23 @@ class DatasetSpecification(TimeStampedModel):
         if not isinstance(self.metadata, dict):
             errors["metadata"] = _("Metadata must be a JSON object.")
 
+        if isinstance(self.metadata, dict) and "format" in self.metadata:
+            errors["metadata"] = _("Use the dedicated dataset format field.")
+
+        if self._state.adding and (
+            self.status != self.Status.DRAFT
+            or self.published_at is not None
+            or self.published_by_id is not None
+        ):
+            errors["status"] = _("New catalog versions must start as draft.")
         if self.pk:
             original = type(self).objects.filter(pk=self.pk).first()
             if original is not None:
+                if (
+                    self.published_at != original.published_at
+                    or self.published_by_id != original.published_by_id
+                ):
+                    errors["published_at"] = _("Use the audited lifecycle service.")
                 if self.status != original.status:
                     errors["status"] = _(
                         "Use the dataset specification lifecycle service to "
@@ -833,6 +828,7 @@ class DatasetSpecification(TimeStampedModel):
                         "version",
                         "description",
                         "metadata",
+                        "format",
                     )
                     changed = [
                         field
@@ -847,7 +843,10 @@ class DatasetSpecification(TimeStampedModel):
         if errors:
             raise ValidationError(errors)
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        if self.pk:
+            type(self).objects.select_for_update().get(pk=self.pk)
         self.full_clean()
         return super().save(*args, **kwargs)
 
@@ -859,7 +858,22 @@ class DatasetSpecification(TimeStampedModel):
         return super().delete(*args, **kwargs)
 
 
+class DatasetSpecificationAssetQuerySet(models.QuerySet):
+    """Require validated per-object writes under the specification lock."""
+
+    def update(self, **kwargs):
+        raise ValidationError("Use per-object asset association writes.")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError("Use per-object asset association writes.")
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValidationError("Use per-object asset association writes.")
+
+
 class DatasetSpecificationAsset(models.Model):
+    objects = DatasetSpecificationAssetQuerySet.as_manager()
+
     class Role(models.TextChoices):
         VALIDATION_SCHEMA = "validation_schema", _("Validation schema")
         CONSTRAINT = "constraint", _("Constraint")
@@ -897,7 +911,6 @@ class DatasetSpecificationAsset(models.Model):
     def clean(self):
         super().clean()
         specification = self.dataset_specification
-        asset = self.configuration_asset
         current_status = specification.status
         if specification.pk:
             current_status = DatasetSpecification.objects.values_list(
@@ -907,28 +920,41 @@ class DatasetSpecificationAsset(models.Model):
             raise ValidationError(
                 _("Assets can be changed only while the specification is draft.")
             )
-        if asset.what != specification.dataset.code:
-            raise ValidationError(
-                {
-                    "configuration_asset": _(
-                        "Asset what must match the logical dataset code."
-                    )
-                }
+        if self.pk:
+            original_id = (
+                type(self)
+                .objects.values_list("dataset_specification_id", flat=True)
+                .get(pk=self.pk)
             )
+            if original_id != self.dataset_specification_id:
+                raise ValidationError(
+                    "An asset association cannot move to another specification."
+                )
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        if self.dataset_specification_id:
+            DatasetSpecification.objects.select_for_update().get(
+                pk=self.dataset_specification_id
+            )
         self.full_clean()
         return super().save(*args, **kwargs)
 
+    @transaction.atomic
     def delete(self, *args, **kwargs):
-        current_status = DatasetSpecification.objects.values_list(
-            "status", flat=True
-        ).get(pk=self.dataset_specification_id)
-        if current_status != DatasetSpecification.Status.DRAFT:
-            raise ValidationError(
-                _("Assets can be changed only while the specification is draft.")
-            )
         return super().delete(*args, **kwargs)
+
+
+@receiver(pre_delete, sender=DatasetSpecificationAsset)
+def protect_dataset_asset_association(sender, instance, **kwargs):
+    """Protect frozen composition during queryset and cascading deletes."""
+    specification = DatasetSpecification.objects.select_for_update().get(
+        pk=instance.dataset_specification_id
+    )
+    if specification.status != DatasetSpecification.Status.DRAFT:
+        raise ValidationError(
+            "Assets can be changed only while the specification is draft."
+        )
 
 
 class DatasetSpecificationStatusEvent(models.Model):
@@ -1055,6 +1081,22 @@ class IndicatorVersion(TimeStampedModel):
         PREFECT = EXECUTION_PREFECT, _("Prefect")
         DBT = EXECUTION_DBT, _("dbt")
         EXTERNAL = EXECUTION_EXTERNAL, _("External")
+
+    input_specifications = models.ManyToManyField(
+        "DatasetSpecification",
+        through="IndicatorVersionInput",
+        through_fields=("indicator_version", "dataset_specification"),
+        related_name="requiring_indicator_versions",
+        blank=True,
+    )
+    prerequisites = models.ManyToManyField(
+        "self",
+        through="IndicatorVersionDependency",
+        through_fields=("dependent", "prerequisite"),
+        symmetrical=False,
+        related_name="dependent_versions",
+        blank=True,
+    )
 
     indicator = models.ForeignKey(
         Indicator,
@@ -1361,9 +1403,20 @@ class FlowCatalogVersionBase(TimeStampedModel):
             errors["status"] = _(
                 "New flow versions must start as draft and use the lifecycle service."
             )
+        if self._state.adding and (
+            self.status != self.Status.DRAFT
+            or self.published_at is not None
+            or self.published_by_id is not None
+        ):
+            errors["status"] = _("New catalog versions must start as draft.")
         if self.pk:
             original = type(self).objects.filter(pk=self.pk).first()
             if original is not None:
+                if (
+                    self.published_at != original.published_at
+                    or self.published_by_id != original.published_by_id
+                ):
+                    errors["published_at"] = _("Use the audited lifecycle service.")
                 if self.status != original.status:
                     errors["status"] = _(
                         "Use the flow catalog lifecycle service to change status."
@@ -1379,7 +1432,10 @@ class FlowCatalogVersionBase(TimeStampedModel):
         if errors:
             raise ValidationError(errors)
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        if self.pk:
+            type(self).objects.select_for_update().get(pk=self.pk)
         self.full_clean()
         return super().save(*args, **kwargs)
 
@@ -1400,6 +1456,8 @@ class InputFlowVersion(FlowCatalogVersionBase):
         on_delete=models.PROTECT,
         related_name="input_flow_versions",
     )
+
+    objects = CatalogVersionQuerySet.as_manager()
 
     class Meta:
         verbose_name = "Input flow version"
@@ -1423,6 +1481,8 @@ class InputFlowVersion(FlowCatalogVersionBase):
 
 
 class OrchestrationFlowVersion(FlowCatalogVersionBase):
+    objects = CatalogVersionQuerySet.as_manager()
+
     class Meta:
         verbose_name = "Orchestration flow version"
         verbose_name_plural = "Orchestration flow versions"
@@ -1520,6 +1580,23 @@ class ProcessingProfileVersion(TimeStampedModel):
     )
     published_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
+    indicator_versions = models.ManyToManyField(
+        "IndicatorVersion",
+        through="ProcessingProfileIndicatorVersion",
+        through_fields=("processing_profile_version", "indicator_version"),
+        related_name="allowing_profile_versions",
+        blank=True,
+    )
+    input_flow_versions = models.ManyToManyField(
+        "InputFlowVersion",
+        through="ProcessingProfileInputFlow",
+        through_fields=("processing_profile_version", "input_flow_version"),
+        related_name="using_profile_versions",
+        blank=True,
+    )
+
+    objects = CatalogVersionQuerySet.as_manager()
+
     class Meta:
         verbose_name = "Processing profile version"
         verbose_name_plural = "Processing profile versions"
@@ -1551,9 +1628,20 @@ class ProcessingProfileVersion(TimeStampedModel):
                 "New processing profile versions must start as draft and use "
                 "the lifecycle service."
             )
+        if self._state.adding and (
+            self.status != self.Status.DRAFT
+            or self.published_at is not None
+            or self.published_by_id is not None
+        ):
+            errors["status"] = _("New catalog versions must start as draft.")
         if self.pk:
             original = type(self).objects.filter(pk=self.pk).first()
             if original is not None:
+                if (
+                    self.published_at != original.published_at
+                    or self.published_by_id != original.published_by_id
+                ):
+                    errors["published_at"] = _("Use the audited lifecycle service.")
                 if self.status != original.status:
                     errors["status"] = _(
                         "Use the processing profile lifecycle service to change status."
@@ -1577,7 +1665,10 @@ class ProcessingProfileVersion(TimeStampedModel):
         if errors:
             raise ValidationError(errors)
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        if self.pk:
+            type(self).objects.select_for_update().get(pk=self.pk)
         self.full_clean()
         return super().save(*args, **kwargs)
 
@@ -1590,6 +1681,37 @@ class ProcessingProfileVersion(TimeStampedModel):
         if current_status != self.Status.DRAFT:
             raise ValidationError(_("Only draft processing profiles can be deleted."))
         return super().delete(*args, **kwargs)
+
+
+class ProfileCompositionQuerySet(models.QuerySet):
+    """Keep ORM relation writes validated and serialized with profile publication."""
+
+    def update(self, **kwargs):
+        raise ValidationError("Use validated profile composition saves.")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError("Use validated profile composition saves.")
+
+    @transaction.atomic
+    def bulk_create(self, objs, **kwargs):
+        if kwargs.get("ignore_conflicts") or kwargs.get("update_conflicts"):
+            raise ValidationError(
+                "Conflict-skipping composition writes are unsupported."
+            )
+        objs = list(objs)
+        for obj in objs:
+            obj.save(using=self.db, force_insert=True)
+        return objs
+
+    @transaction.atomic
+    def delete(self):
+        for obj in self.select_for_update():
+            owner = ProcessingProfileVersion.objects.select_for_update().get(
+                pk=obj.processing_profile_version_id
+            )
+            if owner.status != "draft":
+                raise ValidationError("Published profile composition is immutable.")
+        return super().delete()
 
 
 class ProcessingProfileInputFlow(models.Model):
@@ -1608,6 +1730,8 @@ class ProcessingProfileInputFlow(models.Model):
         on_delete=models.PROTECT,
         related_name="processing_profile_input_links",
     )
+
+    objects = ProfileCompositionQuerySet.as_manager()
 
     class Meta:
         verbose_name = "Processing profile input flow"
@@ -1690,6 +1814,8 @@ class ProcessingProfileIndicatorVersion(models.Model):
         related_name="processing_profile_links",
     )
     proposed_by_default = models.BooleanField(default=False)
+
+    objects = ProfileCompositionQuerySet.as_manager()
 
     class Meta:
         verbose_name = "Processing profile indicator version"
@@ -1912,7 +2038,7 @@ class Contract(TimeStampedModel):
                 name="unique_contract_version_per_lot_pair",
             ),
             models.CheckConstraint(
-                check=models.Q(end_date__gte=models.F("start_date"))
+                condition=models.Q(end_date__gte=models.F("start_date"))
                 | models.Q(end_date__isnull=True),
                 name="contract_date_range_ok",
             ),
@@ -2269,8 +2395,23 @@ class ContractPublication(TimeStampedModel):
         return f"{self.contract.contract_code} v{self.publication_version}"
 
 
+class RevisionDeletionQuerySet(models.QuerySet):
+    @transaction.atomic
+    def delete(self):
+        counts = {}
+        total = 0
+        for row in self.select_for_update().order_by("pk"):
+            deleted, details = row.delete()
+            total += deleted
+            for key, value in details.items():
+                counts[key] = counts.get(key, 0) + value
+        return total, counts
+
+
 class ContractConfigurationRevision(TimeStampedModel):
     """Complete temporal snapshot of a contract's technical configuration."""
+
+    objects = RevisionDeletionQuerySet.as_manager()
 
     SNAPSHOT_SCHEMA_VERSION = "canonical-json-v1"
 
@@ -2418,6 +2559,7 @@ class ContractConfigurationRevision(TimeStampedModel):
             if self.snapshot_schema_version not in {
                 "canonical-json-v1",
                 "canonical-json-v2",
+                "canonical-json-v3",
             }:
                 errors["snapshot_schema_version"] = _(
                     "Unsupported revision snapshot schema version."
@@ -2465,12 +2607,19 @@ class ContractConfigurationRevision(TimeStampedModel):
         self.full_clean()
         return super().save(*args, **kwargs)
 
+    @transaction.atomic
     def delete(self, *args, **kwargs):
         status = self.status
         if self.pk:
-            status = type(self).objects.values_list("status", flat=True).get(pk=self.pk)
+            status = (
+                type(self)
+                .objects.select_for_update()
+                .values_list("status", flat=True)
+                .get(pk=self.pk)
+            )
         if status != self.Status.DRAFT:
             raise ValidationError(_("Only draft revisions can be deleted."))
+        self.indicator_configurations.all().delete()
         return super().delete(*args, **kwargs)
 
 
@@ -2600,6 +2749,22 @@ class ContractRevisionIndicatorQuerySet(models.QuerySet):
     def bulk_update(self, objs, fields, batch_size=None):
         raise ValidationError("Update revision indicators through validated saves.")
 
+    @transaction.atomic
+    def delete(self):
+        rows = list(self.select_related("revision").order_by("revision_id", "pk"))
+        for row in rows:
+            revision = ContractConfigurationRevision.objects.select_for_update().get(
+                pk=row.revision_id
+            )
+            if revision.status != "draft":
+                raise ValidationError(
+                    "Only draft indicator configurations can be deleted."
+                )
+        IndicatorPenalty.objects.filter(
+            contract_revision_indicator_id__in=[r.pk for r in rows]
+        ).delete()
+        return super().delete()
+
 
 class ContractRevisionIndicator(models.Model):
     """Select a profile-approved indicator version for one contract revision."""
@@ -2727,6 +2892,7 @@ class ContractRevisionIndicator(models.Model):
                 raise ValidationError(
                     _("Indicators can be changed only while the revision is draft.")
                 )
+            self.evaluation_penalties.all().delete()
             return super().delete(*args, **kwargs)
 
 
@@ -2878,7 +3044,7 @@ class IntegrationGrant(TimeStampedModel):
         verbose_name_plural = "Integration grants"
         constraints = [
             models.CheckConstraint(
-                check=(
+                condition=(
                     models.Q(valid_from__isnull=True)
                     | models.Q(valid_to__isnull=True)
                     | models.Q(valid_to__gte=models.F("valid_from"))
@@ -3326,7 +3492,7 @@ class ContractInvitation(TimeStampedModel):
         verbose_name_plural = "Contract invitations"
         constraints = [
             models.CheckConstraint(
-                check=models.Q(
+                condition=models.Q(
                     role_to_assign__in=[
                         ContractMembership.Role.CONTRACT_EDITOR,
                         ContractMembership.Role.CONTRACT_READER,
@@ -3449,4 +3615,41 @@ from rpsd_config.exchange_agreement.validation_models import (  # noqa: E402, F4
     ValidationRule,
     ValidationRuleStatusEvent,
     ValidationRuleVersion,
+    ValidationTypeVersion,
+)
+
+
+@receiver(pre_delete)
+def protect_catalog_and_profile_deletion(sender, instance, **kwargs):
+    """Cover cascades and bulk collectors in addition to instance methods."""
+    if isinstance(
+        instance,
+        (
+            DatasetSpecification,
+            InputFlowVersion,
+            OrchestrationFlowVersion,
+            ProcessingProfileVersion,
+        ),
+    ):
+        if (
+            type(instance).objects.select_for_update().get(pk=instance.pk).status
+            != "draft"
+        ):
+            raise ValidationError("Only draft catalog versions can be deleted.")
+    if isinstance(
+        instance, (ProcessingProfileInputFlow, ProcessingProfileIndicatorVersion)
+    ):
+        owner = ProcessingProfileVersion.objects.select_for_update().get(
+            pk=instance.processing_profile_version_id
+        )
+        if owner.status != "draft":
+            raise ValidationError("Published profile composition is immutable.")
+
+
+# Register revision-owned evaluations after both domain and rule catalogs exist.
+from rpsd_config.exchange_agreement.evaluation_models import (  # noqa: E402, F401
+    EvaluationPenaltyDimension,
+    EvaluationThresholdDimension,
+    IndicatorEvaluationThreshold,
+    IndicatorPenalty,
 )

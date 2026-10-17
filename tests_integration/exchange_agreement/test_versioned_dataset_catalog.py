@@ -44,6 +44,7 @@ class VersionedDatasetCatalogTests(TestCase):
         version: str = "001",
     ) -> DatasetSpecification:
         return DatasetSpecification.objects.create(
+            format="xml",
             dataset=self.dataset,
             code=code,
             version=version,
@@ -54,6 +55,7 @@ class VersionedDatasetCatalogTests(TestCase):
     def _active_asset(self) -> ConfigurationAsset:
         return ConfigurationAsset.objects.create(
             asset_type=ConfigurationAsset.AssetType.SIRI_PROFILE,
+            what="siri-vm",
             label="SIRI VM schema",
             version=1,
             status=ConfigurationAsset.Status.ACTIVE,
@@ -150,10 +152,11 @@ class VersionedDatasetCatalogTests(TestCase):
             asset.delete()
         self.assertEqual(specification.assets.get(), asset)
 
-    def test_asset_must_match_logical_dataset(self):
+    def test_asset_code_is_independent_of_logical_dataset(self):
         specification = self._specification()
         asset = ConfigurationAsset.objects.create(
             asset_type=ConfigurationAsset.AssetType.NETEX_XSD,
+            what="netex",
             version=1,
             status=ConfigurationAsset.Status.ACTIVE,
             is_active=True,
@@ -163,12 +166,12 @@ class VersionedDatasetCatalogTests(TestCase):
             checksum_sha256="b" * 64,
         )
 
-        with self.assertRaises(ValidationError):
-            DatasetSpecificationAsset.objects.create(
-                dataset_specification=specification,
-                configuration_asset=asset,
-                role=DatasetSpecificationAsset.Role.VALIDATION_SCHEMA,
-            )
+        link = DatasetSpecificationAsset.objects.create(
+            dataset_specification=specification,
+            configuration_asset=asset,
+            role=DatasetSpecificationAsset.Role.VALIDATION_SCHEMA,
+        )
+        self.assertEqual(link.configuration_asset, asset)
 
     def test_bootstrap_is_idempotent_and_does_not_duplicate_versions(self):
         first = ensure_initial_dataset_catalog()

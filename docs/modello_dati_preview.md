@@ -1,10 +1,9 @@
-# Anteprima del modello dati Config — 12 ottobre 2026
+# Anteprima del modello dati Config — 15 ottobre 2026
 
 Sorgente: [`modello_dati.mmd`](./modello_dati.mmd). Descrizione e vincoli:
 [`modello_dati.md`](./modello_dati.md). In VS Code usare “Markdown: Open Preview”.
 
-Il diagramma mostra il dominio tecnico/contrattuale. Audit, accessi, membership, inviti, documenti amministrativi e profili
-di validazione della configurazione piattaforma sono omessi. Le dipendenze sono dirette da `dependent` verso `prerequisite`;
+Il diagramma mostra il dominio tecnico/contrattuale. Audit, accessi, membership, inviti, documenti amministrativi sono omessi. Le dipendenze sono dirette da `dependent` verso `prerequisite`;
 le due FK sono mostrate separatamente. Le relazioni M:N hanno tabelle ponte.
 Il bundle XSD è metadata di un asset, non una tabella autonoma.
 
@@ -47,12 +46,13 @@ erDiagram
         bigint id PK
         bigint dataset_id FK
         string code UK
+        string format
         json metadata
     }
     CONFIGURATION_ASSET {
         bigint id PK
         string asset_type
-        string what
+        string what "codice asset esplicito"
         int version
         string checksum_sha256
         json bundle_manifest
@@ -61,20 +61,26 @@ erDiagram
         bigint id PK
         bigint dataset_specification_id FK
         bigint configuration_asset_id FK
+        string role
+        boolean required
     }
     VALIDATION_RULE {
         bigint id PK
         string code UK
         string name
     }
+    VALIDATION_TYPE_VERSION {
+        bigint id PK
+        string validation_type
+        string language_version
+    }
     VALIDATION_RULE_VERSION {
         bigint id PK
         bigint rule_id FK
         string version
         string name
-        string validation_type
+        bigint validation_type_version_id FK
         string definition
-        string language_version
         json options
         string result_contract
         string execution_reference
@@ -84,7 +90,7 @@ erDiagram
         bigint id PK
         bigint dataset_specification_id FK
         bigint rule_version_id FK
-        string import_policy
+        string failure_policy
     }
     INDICATOR {
         bigint id PK
@@ -117,7 +123,8 @@ erDiagram
     INDICATOR_VERSION_RULE {
         bigint id PK
         bigint indicator_version_id FK
-        bigint dataset_version_rule_id FK
+        bigint dataset_specification_id FK
+        bigint rule_version_id FK
         string impact
     }
     INDICATOR_VERSION_RULE_DIMENSION {
@@ -227,13 +234,15 @@ erDiagram
     DATASET_SPECIFICATION ||--o{ DATASET_SPECIFICATION_ASSET : dataset_specification
     CONFIGURATION_ASSET ||--o{ DATASET_SPECIFICATION_ASSET : configuration_asset
     VALIDATION_RULE ||--o{ VALIDATION_RULE_VERSION : rule
+    VALIDATION_TYPE_VERSION ||--o{ VALIDATION_RULE_VERSION : validation_type_version
     DATASET_SPECIFICATION ||--o{ DATASET_VERSION_RULE : dataset_specification
     VALIDATION_RULE_VERSION ||--o{ DATASET_VERSION_RULE : rule_version
     INDICATOR ||--o{ INDICATOR_VERSION : indicator
     INDICATOR_VERSION ||--o{ INDICATOR_VERSION_INPUT : indicator_version
     DATASET_SPECIFICATION ||--o{ INDICATOR_VERSION_INPUT : dataset_specification
     INDICATOR_VERSION ||--o{ INDICATOR_VERSION_RULE : indicator_version
-    DATASET_VERSION_RULE ||--o{ INDICATOR_VERSION_RULE : dataset_version_rule
+    DATASET_SPECIFICATION ||--o{ INDICATOR_VERSION_RULE : dataset_specification
+    VALIDATION_RULE_VERSION ||--o{ INDICATOR_VERSION_RULE : rule_version
     INDICATOR_VERSION_RULE ||--o{ INDICATOR_VERSION_RULE_DIMENSION : binding
     INDICATOR_DIMENSION ||--o{ INDICATOR_VERSION_RULE_DIMENSION : dimension
     INDICATOR_VERSION ||--o{ INDICATOR_VERSION_DEPENDENCY : dependent
@@ -260,3 +269,17 @@ erDiagram
     CONTRACT o|--o{ CONTRACT : replaced_by
     CONTRACT_CONFIGURATION_REVISION o|--o{ CONTRACT_CONFIGURATION_REVISION : replaces_revision
 ```
+
+
+## Contractual evaluation configuration (032)
+
+IndicatorEvaluationThreshold and IndicatorPenalty belong to
+ContractRevisionIndicator, not to the logical contract or the global
+IndicatorVersion. Each owner can have multiple daily/monthly/custom conditions.
+EvaluationThresholdDimension and EvaluationPenaltyDimension are explicit guarded
+through models for native Django ManyToManyField relationships with
+IndicatorDimension. A penalty optionally references one threshold of the same
+owner and inherits its period/grouping. All penalties are cumulative; agreements
+and storni are external. Draft-only writes, approval locking and cloning protect
+these relationships. New snapshots use canonical-json-v3; historical data remains
+unchanged. See USAGE.md for field semantics, examples and runtime boundaries.

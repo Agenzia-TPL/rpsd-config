@@ -46,6 +46,7 @@
     {% if catalog_slug == "dataset-specifications" %}
       <section class="card border-0 shadow-sm mb-3"><div class="card-body">
         <h2 class="h5">Asset della specifica</h2>
+        <p class="small text-body-secondary">Obbligatorio indica che l'asset già associato è indispensabile alla lavorazione (es. XSD o mapper), rispetto a un manuale accessorio. Non individua associazioni mancanti e non decide il rifiuto del dataset. Config controlla che sia attivo alla pubblicazione e trasmette il flag; i futuri controlli runtime su risorse perse o corrotte spettano al sistema esecutivo.</p>
         <div class="list-group mb-3">
           {% for link in asset_links %}<div class="list-group-item d-flex justify-content-between"><span>{{ link.configuration_asset }} · {{ link.get_role_display }} {% if link.required %}<span class="badge text-bg-primary">obbligatorio</span>{% endif %}<br><small><code>sha256:{{ link.configuration_asset.checksum_sha256 }}</code></small></span>{% if is_editable %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="remove-asset"><input type="hidden" name="link_id" value="{{ link.id }}"><button class="btn btn-outline-danger btn-sm">Rimuovi</button></form>{% endif %}</div>{% empty %}<p class="text-body-secondary">Nessun asset associato.</p>{% endfor %}
         </div>
@@ -78,7 +79,7 @@
     {% if rule_definition %}<section class="card mb-3"><div class="card-body"><h2 class="h5">Definizione completa</h2><pre class="text-wrap">{{ rule_definition }}</pre><p>Questo è il controllo configurato. L’esito sarà prodotto dal validator esterno sul file trasferito.</p></div></section>{% endif %}
     {% if catalog_slug == "indicator-versions" %}
     <section class="card mb-3"><div class="card-body"><h2 class="h5">Regole e input dichiarati</h2>
-    <ul>{% for binding in indicator_bindings %}<li>{{ binding.dataset_version_rule.rule_version }} · {{ binding.dataset_version_rule.dataset_specification.code }} · {{ binding.get_impact_display }}{% for dimension in binding.affected_dimensions.all %} · {{ dimension.name }}{% endfor %}</li>{% empty %}<li>Nessuna regola diretta.</li>{% endfor %}</ul>
+    <ul>{% for binding in indicator_bindings %}<li>{{ binding.rule_version }} · {{ binding.dataset_specification.code }} · {{ binding.get_impact_display }}{% for dimension in binding.affected_dimensions.all %} · {{ dimension.name }}{% endfor %}</li>{% empty %}<li>Nessuna regola diretta.</li>{% endfor %}</ul>
     <ul>{% for input in declared_inputs %}<li>{{ input.dataset_specification.code }}</li>{% endfor %}</ul>
     <p><a href="{% url 'exchange_agreement:technical-catalog-list' 'indicator-rule-bindings' %}">Gestisci i requisiti</a> · <a href="{% url 'exchange_agreement:technical-catalog-list' 'indicator-inputs' %}">Gestisci gli input</a> · <a href="{% url 'exchange_agreement:technical-catalog-list' 'indicator-dependencies' %}">Gestisci le dipendenze</a></p>
     <h3 class="h6">Indicatori effettivi e dipendenze</h3>{% if closure_error %}<p class="text-danger">{{ closure_error }}</p>{% endif %}<ul>{% for version in indicator_closure.versions %}<li>{{ version.code }}</li>{% endfor %}</ul>

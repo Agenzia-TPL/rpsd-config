@@ -33,6 +33,7 @@ from rpsd_config.server.keycloak_admin import (
     KeycloakAdminService,
 )
 
+from .asset_forms import ConfigurationAssetUploadForm
 from .models import (
     Agency,
     AgencyInvitation,
@@ -45,12 +46,9 @@ from .models import (
     ContractConfigurationRevision,
     ContractInvitation,
     ContractMembership,
-    IndicatorVersion,
     IntegrationPrincipal,
     Lot,
-    NetexValidationProfile,
     ProcessingProfileIndicatorVersion,
-    SiriValidationProfile,
 )
 from .rbac import resolve_user_agency_scope
 from .services.agency_bootstrap import (
@@ -842,61 +840,6 @@ def _build_platform_user_rows() -> tuple[list[dict], dict]:
         counters["superuser"] += int(bool(user.is_superuser))
 
     return rows, counters
-
-
-def _build_initialization_state() -> dict:
-    netex_profiles = list(
-        NetexValidationProfile.objects.all().order_by("-created_at", "-id")
-    )
-    siri_profiles = list(
-        SiriValidationProfile.objects.all().order_by(
-            "profile_type", "-created_at", "-id"
-        )
-    )
-    configuration_assets = list(
-        ConfigurationAsset.objects.all().order_by(
-            "asset_type",
-            "what",
-            "-version",
-            "-created_at",
-        )
-    )
-
-    netex_active_count = sum(1 for profile in netex_profiles if profile.is_active)
-    siri_active_count = sum(1 for profile in siri_profiles if profile.is_active)
-    indicator_published_count = IndicatorVersion.objects.filter(
-        status=IndicatorVersion.Status.PUBLISHED
-    ).count()
-
-    active_siri_by_type: dict[str, int] = {}
-    for profile in siri_profiles:
-        if profile.is_active:
-            active_siri_by_type[profile.profile_type] = (
-                active_siri_by_type.get(profile.profile_type, 0) + 1
-            )
-    siri_duplicate_active_types = sorted(
-        profile_type for profile_type, count in active_siri_by_type.items() if count > 1
-    )
-
-    initialized = (
-        netex_active_count == 1
-        and siri_active_count >= 1
-        and not siri_duplicate_active_types
-        and indicator_published_count >= 1
-    )
-
-    return {
-        "netex_profiles": netex_profiles,
-        "siri_profiles": siri_profiles,
-        "configuration_assets": configuration_assets,
-        "summary": {
-            "netex_active_count": netex_active_count,
-            "siri_active_count": siri_active_count,
-            "indicator_published_count": indicator_published_count,
-            "siri_duplicate_active_types": siri_duplicate_active_types,
-            "initialized": initialized,
-        },
-    }
 
 
 def _normalize_boolean_flag(value: str) -> bool:
@@ -2385,9 +2328,7 @@ def contract_revision_detail_page(
                         field: json.loads(request.POST.get(field, "{}"))
                         for field in (
                             "parameters",
-                            "thresholds",
                             "aggregation",
-                            "penalties",
                         )
                     }
                 except (ValueError, TypeError) as exc:
@@ -2570,161 +2511,55 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             "Solo platform admin o superuser possono accedere alla configurazione."
         )
 
-    allowed_tabs = {"globali", "utenti", "inizializzazione", "flussi"}
+    allowed_tabs = {"globali", "utenti", "flussi", "asset"}
     active_tab = (
         (request.POST.get("tab") or request.GET.get("tab") or "globali").strip().lower()
     )
+    if request.method == "GET" and active_tab == "inizializzazione":
+        return redirect(request.path + "?tab=asset")
+    if request.method == "POST" and request.POST.get("action") in {
+        "upload-netex",
+        "upload-siri",
+        "set-netex-active",
+        "set-siri-active",
+    }:
+        return HttpResponse(
+            "Legacy initialization actions have been removed.", status=400
+        )
     if active_tab not in allowed_tabs:
         active_tab = "globali"
 
+    asset_form = ConfigurationAssetUploadForm(
+        request.POST
+        if request.method == "POST"
+        and request.POST.get("action") == "upload-config-asset"
+        else None,
+        request.FILES
+        if request.method == "POST"
+        and request.POST.get("action") == "upload-config-asset"
+        else None,
+        initial={
+            "asset_type": request.GET.get("asset_type", "other"),
+            "what": request.GET.get("what", ""),
+        },
+    )
     result_context = {
         "error_message": "",
         "success_message": "",
         "active_tab": active_tab,
-        "upload_form_values": {
-            "netex_label": "",
-            "netex_is_active": False,
-            "siri_label": "",
-            "siri_type": SiriValidationProfile.ProfileType.PT,
-            "siri_is_active": False,
-        },
+        "asset_upload_form": asset_form,
     }
 
     if request.method == "POST":
         action = (request.POST.get("action") or "").strip()
-        result_context["upload_form_values"] = {
-            "netex_label": request.POST.get("netex_label", "").strip(),
-            "netex_is_active": _normalize_boolean_flag(
-                request.POST.get("netex_is_active", "")
-            ),
-            "siri_label": request.POST.get("siri_label", "").strip(),
-            "siri_type": request.POST.get(
-                "siri_type",
-                SiriValidationProfile.ProfileType.PT,
-            ).strip(),
-            "siri_is_active": _normalize_boolean_flag(
-                request.POST.get("siri_is_active", "")
-            ),
-        }
         try:
-            if action == "upload-netex":
-                uploaded_file = request.FILES.get("netex_file")
-                if uploaded_file is None:
-                    raise ValidationError("Seleziona un file Netex (.xsd).")
-                set_active = result_context["upload_form_values"]["netex_is_active"]
-                stored = store_configuration_asset(
-                    uploaded_file=uploaded_file,
-                    asset_type=ConfigurationAsset.AssetType.NETEX_XSD,
-                    label=result_context["upload_form_values"]["netex_label"],
-                    activate=set_active,
-                    uploaded_by=request.user,
-                )
-                with transaction.atomic():
-                    if set_active:
-                        NetexValidationProfile.objects.filter(is_active=True).update(
-                            is_active=False
-                        )
-                    profile = NetexValidationProfile(
-                        label=result_context["upload_form_values"]["netex_label"],
-                        file=uploaded_file,
-                        is_active=set_active,
-                        configuration_asset=stored.asset,
+            if action == "upload-config-asset":
+                if asset_form.is_valid():
+                    store_configuration_asset(
+                        **asset_form.cleaned_data, uploaded_by=request.user
                     )
-                    profile.full_clean()
-                    profile.save()
-                result_context["success_message"] = (
-                    "Profilo Netex caricato correttamente."
-                )
-                result_context["upload_form_values"]["netex_label"] = ""
-                result_context["upload_form_values"]["netex_is_active"] = False
-
-            elif action == "upload-siri":
-                uploaded_file = request.FILES.get("siri_file")
-                if uploaded_file is None:
-                    raise ValidationError("Seleziona un file profilo SIRI (.xsd/.xml).")
-                siri_type = result_context["upload_form_values"]["siri_type"]
-                if siri_type not in {
-                    choice[0] for choice in SiriValidationProfile.ProfileType.choices
-                }:
-                    raise ValidationError("Tipo profilo SIRI non valido.")
-                filename_what = ConfigurationAsset.validate_filename_for_type(
-                    ConfigurationAsset.AssetType.SIRI_PROFILE,
-                    uploaded_file.name,
-                )
-                if filename_what != siri_type:
-                    raise ValidationError(
-                        "Il nome file deve corrispondere al tipo SIRI selezionato."
-                    )
-                set_active = result_context["upload_form_values"]["siri_is_active"]
-                stored = store_configuration_asset(
-                    uploaded_file=uploaded_file,
-                    asset_type=ConfigurationAsset.AssetType.SIRI_PROFILE,
-                    label=result_context["upload_form_values"]["siri_label"],
-                    activate=set_active,
-                    uploaded_by=request.user,
-                )
-                with transaction.atomic():
-                    if set_active:
-                        SiriValidationProfile.objects.filter(
-                            profile_type=siri_type,
-                            is_active=True,
-                        ).update(is_active=False)
-                    profile = SiriValidationProfile(
-                        profile_type=siri_type,
-                        label=result_context["upload_form_values"]["siri_label"],
-                        file=uploaded_file,
-                        is_active=set_active,
-                        configuration_asset=stored.asset,
-                    )
-                    profile.full_clean()
-                    profile.save()
-                result_context["success_message"] = (
-                    "Profilo SIRI caricato correttamente."
-                )
-                result_context["upload_form_values"]["siri_label"] = ""
-                result_context["upload_form_values"]["siri_is_active"] = False
-
-            elif action == "set-netex-active":
-                profile_id = int(request.POST.get("profile_id", "0"))
-                set_active = _normalize_boolean_flag(request.POST.get("set_active", ""))
-                profile = NetexValidationProfile.objects.filter(pk=profile_id).first()
-                if profile is None:
-                    raise ValidationError("Profilo Netex non trovato.")
-                with transaction.atomic():
-                    if set_active:
-                        NetexValidationProfile.objects.filter(is_active=True).exclude(
-                            pk=profile.pk
-                        ).update(is_active=False)
-                    profile.is_active = set_active
-                    profile.save(update_fields=["is_active", "updated_at"])
-                if set_active and profile.configuration_asset_id:
-                    activate_configuration_asset(
-                        asset=profile.configuration_asset,
-                        actor=request.user,
-                    )
-                result_context["success_message"] = "Stato profilo Netex aggiornato."
-
-            elif action == "set-siri-active":
-                profile_id = int(request.POST.get("profile_id", "0"))
-                set_active = _normalize_boolean_flag(request.POST.get("set_active", ""))
-                profile = SiriValidationProfile.objects.filter(pk=profile_id).first()
-                if profile is None:
-                    raise ValidationError("Profilo SIRI non trovato.")
-                with transaction.atomic():
-                    if set_active:
-                        SiriValidationProfile.objects.filter(
-                            profile_type=profile.profile_type,
-                            is_active=True,
-                        ).exclude(pk=profile.pk).update(is_active=False)
-                    profile.is_active = set_active
-                    profile.save(update_fields=["is_active", "updated_at"])
-                if set_active and profile.configuration_asset_id:
-                    activate_configuration_asset(
-                        asset=profile.configuration_asset,
-                        actor=request.user,
-                    )
-                result_context["success_message"] = "Stato profilo SIRI aggiornato."
-
+                    result_context["success_message"] = "Asset tecnico caricato."
+                    result_context["asset_upload_form"] = ConfigurationAssetUploadForm()
             elif action == "set-config-asset-active":
                 asset_id = int(request.POST.get("asset_id", "0"))
                 asset = ConfigurationAsset.objects.filter(pk=asset_id).first()
@@ -2755,7 +2590,15 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             )
 
     platform_users, platform_user_summary = _build_platform_user_rows()
-    initialization_state = _build_initialization_state()
+    asset_rows = ConfigurationAsset.objects.prefetch_related(
+        "dataset_specification_links__dataset_specification"
+    ).order_by("asset_type", "what", "-version")
+    asset_type_filter = request.GET.get("asset_type", "")
+    asset_code_filter = request.GET.get("asset_code", "")
+    if asset_type_filter:
+        asset_rows = asset_rows.filter(asset_type=asset_type_filter)
+    if asset_code_filter:
+        asset_rows = asset_rows.filter(what__icontains=asset_code_filter)
 
     return render(
         request,
@@ -2768,12 +2611,10 @@ def platform_configuration_page(request: HttpRequest) -> HttpResponse:
             ],
             "platform_users": platform_users,
             "platform_user_summary": platform_user_summary,
-            "netex_profiles": initialization_state["netex_profiles"],
-            "siri_profiles": initialization_state["siri_profiles"],
-            "configuration_assets": initialization_state["configuration_assets"],
+            "configuration_assets": asset_rows,
+            "asset_type_filter": asset_type_filter,
+            "asset_code_filter": asset_code_filter,
             "configuration_asset_type_choices": ConfigurationAsset.AssetType.choices,
-            "initialization_summary": initialization_state["summary"],
-            "siri_type_choices": SiriValidationProfile.ProfileType.choices,
             **result_context,
         },
     )

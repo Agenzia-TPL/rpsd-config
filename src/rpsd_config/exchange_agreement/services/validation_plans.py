@@ -159,6 +159,26 @@ def build_validation_snapshot(revision, base: dict) -> dict:
                 }
             )
     result["validation_rules"] = [rule_catalog[key] for key in sorted(rule_catalog)]
+    from rpsd_config.exchange_agreement.services.indicator_evaluations import (
+        evaluation_snapshot,
+    )
+
+    evaluations = evaluation_snapshot(revision)
+    has_new_schemas = any(
+        v.parameter_schema.get("schema_version") == 2
+        or v.output_schema.get("schema_version") == 2
+        for v in closure["versions"]
+    )
+    if evaluations or has_new_schemas:
+        if any(
+            c["thresholds"] or c["penalties"]
+            for c in result["indicator_configurations"]
+        ):
+            raise ValidationError(
+                "Resolve legacy economic JSON before approving an evaluation snapshot."
+            )
+        result["snapshot_schema_version"] = "canonical-json-v3"
+        result["evaluation_configurations"] = evaluations
     return result
 
 
@@ -296,7 +316,7 @@ def validate_frozen_validation_snapshot(snapshot: dict) -> None:
         fail()
 
 
-def validation_plan_from_resolution(resolution) -> dict:
+def validation_plan_from_resolution(resolution, *, allow_evaluations=False) -> dict:
     """Project a dataset subset from the approved snapshot, never from live rules."""
     from rpsd_config.exchange_agreement.services.contract_revisions import (
         canonical_snapshot_checksum,
@@ -305,7 +325,10 @@ def validation_plan_from_resolution(resolution) -> dict:
         IngestResolutionError,
     )
 
-    if resolution.snapshot_schema_version != SCHEMA_VERSION:
+    allowed_versions = (
+        {SCHEMA_VERSION, "canonical-json-v3"} if allow_evaluations else {SCHEMA_VERSION}
+    )
+    if resolution.snapshot_schema_version not in allowed_versions:
         raise IngestResolutionError(
             "validation_plan_not_available",
             "Adopt a target revision before requesting validation rules",
@@ -361,6 +384,16 @@ def validation_plan_from_resolution(resolution) -> dict:
         "scope": "transfer",
         "orchestration_flow": copy.deepcopy(snapshot["orchestration_flow"]),
     }
+    if resolution.snapshot_schema_version == "canonical-json-v3":
+        from rpsd_config.exchange_agreement.services.indicator_evaluations import (
+            validate_frozen_evaluations,
+        )
+
+        validate_frozen_evaluations(snapshot)
+        plan["schema_version"] = "validation-plan-v2"
+        plan["evaluation_configurations"] = copy.deepcopy(
+            snapshot["evaluation_configurations"]
+        )
     # Digest of the response without its own digest; distinct from full snapshot.
     plan["plan_digest"] = canonical_snapshot_checksum(plan)
     return plan

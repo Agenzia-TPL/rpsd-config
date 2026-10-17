@@ -27,6 +27,7 @@ from rpsd_config.exchange_agreement.services.indicator_catalog import (
 )
 from rpsd_config.exchange_agreement.services.schema_bundles import verify_schema_bundle
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
     transition_validation_rule,
 )
 
@@ -74,9 +75,8 @@ class AdminGuidanceRenderingTests(TestCase):
             rule=ValidationRule.objects.create(code="guide-escape", name="Guide"),
             version="1",
             name="Guide",
-            validation_type="xpath",
+            validation_type_version=get_validation_type_version("xpath", "1.0"),
             definition="//n:Line[@id='<script>alert(1)</script>']",
-            language_version="1.0",
             options={"namespaces": {"n": "urn:netex"}},
             execution_reference="validators/default",
         )
@@ -126,7 +126,7 @@ class AdminGuidanceRenderingTests(TestCase):
         self.assertContains(response, "Linea UI")
         self.assertContains(response, "Dimensioni interessate")
         self.assertContains(response, "disaggregazioni perse")
-        self.assertContains(response, "non modifica tale politica")
+        self.assertContains(response, "L’impatto non cambia la politica di import")
         self.assertEqual(
             self.client.post(path, {"impact": "calculation"}).status_code, 403
         )
@@ -139,7 +139,7 @@ class AdminGuidanceRenderingTests(TestCase):
         ).first()
         response = self.client.get(admin_path("DatasetVersionRule", binding.pk))
         self.assertContains(response, "Politica di import")
-        self.assertContains(response, "indicator_only controlla la compatibilità")
+        self.assertContains(response, "regole indicatore si associano separatamente")
         dependency = IndicatorVersionDependency.objects.first()
         response = self.client.get(
             admin_path("IndicatorVersionDependency", dependency.pk)
@@ -195,9 +195,20 @@ class AdminGuidanceRenderingTests(TestCase):
                 "penalties": {},
             },
         )
-        path = admin_path("ContractDependencyConfiguration", values.pk)
+        path = reverse(
+            "admin:admin_agreements_contractconfigurationrevisionadminproxy_change",
+            args=[self.revision.pk],
+        )
         self.assertContains(
-            self.client.get(path), "Apri il workflow web della revisione"
+            self.client.get(path), "Valori degli indicatori prerequisiti"
+        )
+        from rpsd_config.admin_agreements.admin import ContractDependencyValuesInline
+        from rpsd_config.admin_agreements.proxies import (
+            ContractConfigurationRevisionAdminProxy,
+        )
+
+        inline = ContractDependencyValuesInline(
+            ContractConfigurationRevisionAdminProxy, admin.site
         )
         actor = get_user_model().objects.create_user(
             username="guide-platform", is_staff=True
@@ -208,14 +219,11 @@ class AdminGuidanceRenderingTests(TestCase):
             uid="guide-platform-uid",
             extra_data={"id_token": {"groups": ["/rpsd/admin"]}},
         )
-        self.client.force_login(actor)
-        response = self.client.get(path)
-        self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Apri il workflow web della revisione")
-        self.assertContains(response, "indipendenti da quelli dell’indicatore padre")
-        self.assertEqual(
-            self.client.post(path, {"parameters": '{"forged":true}'}).status_code, 403
-        )
+        request = RequestFactory().get("/admin/")
+        request.user = actor
+        self.assertFalse(inline.has_change_permission(request, self.revision))
+        values.refresh_from_db()
+        self.assertEqual(values.parameters, {})
 
     def test_binding_columns_do_not_add_per_row_relation_queries(self):
         request = RequestFactory().get("/admin/")

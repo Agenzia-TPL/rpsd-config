@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: EUPL-1.2
 from datetime import datetime
 
+from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models.expressions import DatabaseDefault
+from django.forms.models import BaseInlineFormSet
 from django.utils import timezone
 from django.utils.formats import date_format
 
@@ -13,8 +16,10 @@ from rpsd_config.admin_guidance import GuidedAdminMixin, GuidedInlineMixin
 from rpsd_config.exchange_agreement.models import (
     Contract,
     ContractConfigurationRevisionStatusEvent,
+    ContractDependencyConfiguration,
     ContractInputSelection,
     ContractRevisionIndicator,
+    IndicatorVersion,
     ProcessingProfileIndicatorVersion,
     ProcessingProfileInputFlow,
     ProcessingProfileVersion,
@@ -298,17 +303,50 @@ class ContractInputSelectionInline(GuidedInlineMixin, admin.TabularInline):
 class ContractRevisionIndicatorInline(GuidedInlineMixin, admin.TabularInline):
     model = ContractRevisionIndicator
     extra = 0
+    exclude = ("thresholds", "penalties")
+    readonly_fields = ("evaluation_links",)
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = super().get_readonly_fields(request, obj)
+        if obj and obj.status != "draft":
+            return (*fields, "thresholds", "penalties")
+        return fields
+
+    @admin.display(description="Soglie e penali")
+    def evaluation_links(self, obj):
+        from django.urls import reverse
+        from django.utils.html import format_html
+
+        if not obj.pk:
+            return "Salva prima la selezione dell'indicatore."
+        return format_html(
+            '<a href="{}?owner_id={}">Nuova soglia</a> · '
+            '<a href="{}?owner_id={}">Nuova penale</a> · '
+            '<a href="{}">Configurazione completa</a>',
+            reverse(
+                "admin:admin_agreements_indicatorevaluationthresholdadminproxy_add"
+            ),
+            obj.pk,
+            reverse("admin:admin_agreements_indicatorpenaltyadminproxy_add"),
+            obj.pk,
+            reverse(
+                "exchange_agreement:indicator-evaluations",
+                args=[obj.revision.contract.contract_code, obj.revision_id, obj.pk],
+            ),
+        )
 
     def get_formset(self, request, obj=None, **kwargs):
-        self.revision_profile_id = obj.processing_profile_version_id if obj else None
-        return super().get_formset(request, obj, **kwargs)
-
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if db_field.name == "processing_profile_indicator_version":
-            kwargs["queryset"] = ProcessingProfileIndicatorVersion.objects.filter(
-                processing_profile_version_id=getattr(self, "revision_profile_id", None)
+        formset = super().get_formset(request, obj, **kwargs)
+        name = "processing_profile_indicator_version"
+        if name in formset.form.base_fields:
+            formset.form.base_fields[
+                name
+            ].queryset = ProcessingProfileIndicatorVersion.objects.filter(
+                processing_profile_version_id=obj.processing_profile_version_id
+                if obj
+                else None
             )
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+        return formset
 
     def has_add_permission(self, request, obj=None):
         return bool(obj is None or obj.status == obj.Status.DRAFT)
@@ -318,6 +356,155 @@ class ContractRevisionIndicatorInline(GuidedInlineMixin, admin.TabularInline):
 
     def has_delete_permission(self, request, obj=None):
         return bool(obj is None or obj.status == obj.Status.DRAFT)
+
+
+class DependencyValuesForm(forms.ModelForm):
+    """Validate the same parameter schema as the web value editor."""
+
+    class Meta:
+        model = ContractDependencyConfiguration
+        fields = (
+            "indicator_version",
+            "parameters",
+            "aggregation",
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk and "indicator_version" in self.fields:
+            self.fields["indicator_version"].disabled = True
+
+    def clean(self):
+        values = super().clean()
+        version = values.get("indicator_version")
+        if version and "parameters" in values:
+            from rpsd_config.exchange_agreement.services.parameter_schema import (
+                validate_indicator_parameters,
+            )
+
+            validate_indicator_parameters(
+                version.parameter_schema, values["parameters"]
+            )
+        return values
+
+
+class DependencyValuesFormSet(BaseInlineFormSet):
+    """Delegate each write to the existing authorized domain service."""
+
+    def save(self, commit=True):
+        from rpsd_config.exchange_agreement.services import (
+            contract_revision_permissions,
+        )
+        from rpsd_config.exchange_agreement.services.revision_indicator_values import (
+            save_revision_indicator_values,
+        )
+
+        with transaction.atomic():
+            revision = (
+                type(self.instance).objects.select_for_update().get(pk=self.instance.pk)
+            )
+            contract_revision_permissions.require_revision_preparer(
+                user=self.actor, contract=revision.contract
+            )
+            if revision.status != "draft":
+                raise ValidationError("Approved revision values are immutable.")
+            saved = []
+            self.new_objects, self.changed_objects, self.deleted_objects = [], [], []
+            for form in self.forms:
+                if not form.cleaned_data or not form.has_changed():
+                    continue
+                if form.cleaned_data.get("DELETE"):
+                    if form.instance.pk:
+                        self.deleted_objects.append(form.instance)
+                        form.instance.delete()
+                    continue
+                config = save_revision_indicator_values(
+                    revision,
+                    version_code=form.cleaned_data["indicator_version"].code,
+                    values={
+                        field: form.cleaned_data[field]
+                        for field in (
+                            "parameters",
+                            "aggregation",
+                        )
+                    },
+                    actor=self.actor,
+                )
+                if form.instance.pk:
+                    self.changed_objects.append((config, form.changed_data))
+                else:
+                    self.new_objects.append(config)
+                saved.append(config)
+            return saved
+
+
+class ContractDependencyValuesInline(GuidedInlineMixin, admin.TabularInline):
+    model = ContractDependencyConfiguration
+    form = DependencyValuesForm
+    formset = DependencyValuesFormSet
+    verbose_name_plural = "Valori degli indicatori prerequisiti"
+    extra = 0
+
+    def _editable(self, request, obj):
+        from rpsd_config.exchange_agreement.services import (
+            contract_revision_permissions,
+        )
+
+        return bool(
+            obj
+            and obj.status == "draft"
+            and contract_revision_permissions.can_prepare_contract_revision(
+                user=request.user, contract=obj.contract
+            )
+        )
+
+    def has_add_permission(self, request, obj=None):
+        return self._editable(request, obj)
+
+    def has_change_permission(self, request, obj=None):
+        return self._editable(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return self._editable(request, obj)
+
+    def has_view_permission(self, request, obj=None):
+        from rpsd_config.exchange_agreement.services import (
+            contract_revision_permissions,
+        )
+
+        return bool(
+            obj
+            and contract_revision_permissions.can_prepare_contract_revision(
+                user=request.user, contract=obj.contract
+            )
+        )
+
+    def get_readonly_fields(self, request, obj=None):
+        return () if self._editable(request, obj) else self.form.Meta.fields
+
+    def get_formset(self, request, obj=None, **kwargs):
+        from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+            resolve_indicator_closure,
+        )
+
+        formset = super().get_formset(request, obj, **kwargs)
+
+        class ScopedFormSet(formset):
+            actor = request.user
+
+        if obj and "indicator_version" in ScopedFormSet.form.base_fields:
+            roots = [
+                c.processing_profile_indicator_version.indicator_version
+                for c in obj.indicator_configurations.select_related(
+                    "processing_profile_indicator_version__indicator_version"
+                )
+            ]
+            closure = resolve_indicator_closure(roots)
+            ids = {v.pk for v in closure["versions"]} - closure["root_ids"]
+            ScopedFormSet.form.base_fields[
+                "indicator_version"
+            ].queryset = IndicatorVersion.objects.filter(pk__in=ids)
+        return ScopedFormSet
 
 
 class ContractConfigurationRevisionStatusEventInline(
@@ -378,6 +565,7 @@ class ContractConfigurationRevisionAdmin(
     inlines = (
         ContractInputSelectionInline,
         ContractRevisionIndicatorInline,
+        ContractDependencyValuesInline,
         ContractConfigurationRevisionStatusEventInline,
     )
     actions = ("approve_selected", "withdraw_selected")
@@ -505,3 +693,6 @@ class ContractPublicationAdmin(GuidedAdminMixin, admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+from rpsd_config.admin_agreements import evaluation_admin  # noqa: E402, F401

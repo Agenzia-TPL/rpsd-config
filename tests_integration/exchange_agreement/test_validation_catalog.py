@@ -9,6 +9,7 @@ from django.test import TestCase
 from rpsd_config.exchange_agreement.models import ValidationRule, ValidationRuleVersion
 from rpsd_config.exchange_agreement.services.validation_catalog import (
     delete_validation_rule_version,
+    get_validation_type_version,
     save_validation_rule,
     save_validation_rule_version,
     transition_validation_rule,
@@ -29,9 +30,8 @@ class ValidationCatalogTests(TestCase):
             rule=self.rule,
             version="001",
             name="DayType reference",
-            validation_type="xpath",
+            validation_type_version=get_validation_type_version("xpath", "1.0"),
             definition="//n:DayTypeRef[not(@ref = //n:DayType/@id)]",
-            language_version="1.0",
             options={"namespaces": {"n": "http://www.netex.org.uk/netex"}},
             execution_reference="validators/netex-default",
         )
@@ -194,7 +194,7 @@ class ValidationCatalogTests(TestCase):
             rule=self.rule,
             version="002",
             name="Incomplete draft",
-            validation_type="xpath",
+            validation_type_version=get_validation_type_version("xpath", "1.0"),
         )
         delete_validation_rule_version(draft, actor=self.admin)
         self.assertEqual(self.rule.versions.count(), 1)

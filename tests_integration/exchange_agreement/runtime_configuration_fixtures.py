@@ -73,6 +73,7 @@ def install_approved_runtime_configuration(
         )
         specification = publish_dataset_specification(
             DatasetSpecification.objects.create(
+                format="xml",
                 dataset=dataset,
                 code=item.specification_code,
                 version=item.specification_version,

@@ -6,10 +6,9 @@ import io
 import json
 import stat
 import zipfile
-from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from rpsd_config.exchange_agreement.services.parameter_schema import (
     validate_indicator_parameters,
@@ -145,9 +144,7 @@ class SchemaBundleTests(SimpleTestCase):
 
     def test_limits_and_malformed_manifest(self):
         content = self.bundle({"root.xsd": "schema"})
-        with patch(
-            "rpsd_config.exchange_agreement.services.schema_bundles.MAX_FILE_BYTES", 1
-        ):
+        with override_settings(CONFIG_ASSETS_XSD_MAX_FILE_BYTES=1):
             with self.assertRaises(ValidationError):
                 inspect_schema_bundle(content)
         for manifest in ("not json", "[]", '{"entrypoint":"../root.xsd"}'):

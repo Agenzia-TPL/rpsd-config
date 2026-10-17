@@ -453,3 +453,18 @@ For bug reports, questions, and feature requests, please open an issue on the
 - [Diagram preview](docs/modello_dati_preview.md)
 
 The current model documentation is maintained in this repository’s `docs/` directory.
+
+### Asset tecnici dataset — feature 030
+
+Asset riusabili con codice esplicito e tipi generici, upload guidato nell'admin
+e nella UI platform, associazioni a specifiche draft e download con integrità.
+Identità e contenuto sono immutabili; nuove versioni non aggiornano gli snapshot
+precedenti. Dettagli e comando demo in [USAGE.md](USAGE.md).
+
+### Revisione del modello e admin — feature 031
+
+Formato dataset esplicito, catalogo delle coppie tipo/versione di validazione,
+regole dataset separate dai requisiti indicatore e relazioni M:N native con through.
+Gli editor sono contestuali, lo storico è nel gruppo «Storico e notifiche» e i
+limiti asset sono configurabili in ambiente. I profili legacy NeTEx/SIRI sono
+rimossi; vedere [USAGE.md](USAGE.md) per recupero file e aggiornamento senza reset.

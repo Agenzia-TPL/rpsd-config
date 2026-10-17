@@ -38,8 +38,11 @@
     </section>
 
 
+    {% for selection in revision.indicator_configurations.all %}
+    <p><a href="{% url 'exchange_agreement:indicator-evaluations' contract.contract_code revision.pk selection.pk %}">Parametri, soglie e penali · {{ selection.processing_profile_indicator_version.indicator_version.code }}</a></p>
+    {% endfor %}
     {% for row in indicator_value_rows %}
-    <section class="card mb-3"><div class="card-body"><h2 class="h5">{{ row.code }} · {{ row.role }}</h2><p>Parametri, soglie, aggregazioni e penalità appartengono a questa revisione. Le dipendenze hanno valori propri.</p>
+    <section class="card mb-3"><div class="card-body"><h2 class="h5">{{ row.code }} · {{ row.role }}</h2><p>Parametri e aggregazioni appartengono a questa revisione. Soglie e penali si gestiscono nella pagina dedicata; le dipendenze hanno parametri propri.</p>
     <form method="post">{% csrf_token %}<input type="hidden" name="action" value="save-indicator-values"><input type="hidden" name="indicator_version_code" value="{{ row.code }}">
     {% for value in row.values %}<label class="form-label d-block" for="{{ row.code }}_{{ value.name }}">{{ value.name }}</label><textarea id="{{ row.code }}_{{ value.name }}" name="{{ value.name }}" class="form-control mb-2" {% if not can_edit_indicator_values %}readonly{% endif %}>{{ value.json }}</textarea>{% endfor %}
     {% if can_edit_indicator_values %}<button class="btn btn-outline-primary">Salva valori dell’indicatore</button>{% endif %}</form></div></section>

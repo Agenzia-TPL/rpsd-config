@@ -126,7 +126,7 @@ def validation_execution_manifest() -> dict:
     """List published references and capability requirements; no network access."""
     versions = (
         ValidationRuleVersion.objects.filter(status="published")
-        .select_related("rule")
+        .select_related("rule", "validation_type_version")
         .order_by("rule__code", "version")
     )
     return {
@@ -134,3 +134,29 @@ def validation_execution_manifest() -> dict:
         "capabilities": capability_manifest(),
         "rules": [serialize_validation_rule(v) for v in versions],
     }
+
+
+def get_validation_type_version(validation_type: str, language_version: str):
+    """Resolve an existing supported catalog pair without implicit registration."""
+    from rpsd_config.exchange_agreement.models import ValidationTypeVersion
+
+    try:
+        return ValidationTypeVersion.objects.get(
+            validation_type=validation_type, language_version=language_version
+        )
+    except ValidationTypeVersion.DoesNotExist as exc:
+        raise ValidationError(
+            "Select a registered validation type/language pair."
+        ) from exc
+
+
+def ensure_validation_type_catalog(*, using: str = "default") -> None:
+    """Seed the supported definition pairs idempotently, independently of runtime."""
+    from rpsd_config.exchange_agreement.models import ValidationTypeVersion
+    from rpsd_config.exchange_agreement.services.validation_registry import CAPABILITIES
+
+    for capability in CAPABILITIES.values():
+        for version in capability.language_versions:
+            ValidationTypeVersion.objects.using(using).get_or_create(
+                validation_type=capability.validation_type, language_version=version
+            )

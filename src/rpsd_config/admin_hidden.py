@@ -20,8 +20,6 @@ from rpsd_config.exchange_agreement.models import (
     IntegrationGrant,
     IntegrationPrincipal,
     Lot,
-    NetexValidationProfile,
-    SiriValidationProfile,
 )
 
 
@@ -69,16 +67,6 @@ class IndicatorHidden(_HiddenAdmin):
     search_fields = ("code", "name")
 
 
-@admin.register(NetexValidationProfile)
-class NetexValidationProfileHidden(_HiddenAdmin):
-    search_fields = ("label", "file")
-
-
-@admin.register(SiriValidationProfile)
-class SiriValidationProfileHidden(_HiddenAdmin):
-    search_fields = ("profile_type", "label", "file")
-
-
 @admin.register(ConfigurationAsset)
 class ConfigurationAssetHidden(_HiddenAdmin):
     search_fields = ("label", "original_filename", "storage_url")
@@ -87,6 +75,18 @@ class ConfigurationAssetHidden(_HiddenAdmin):
 @admin.register(ConfigurationAssetEvent)
 class ConfigurationAssetEventHidden(_HiddenAdmin):
     search_fields = ("event_type", "routing_key", "last_error")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_readonly_fields(self, request, obj=None):
+        return tuple(field.name for field in self.model._meta.fields)
 
 
 @admin.register(Contract)

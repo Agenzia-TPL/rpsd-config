@@ -3,7 +3,7 @@
 """Lifecycle, compatibility checks and projections for processing profiles."""
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from rpsd_config.exchange_agreement.models import (
@@ -170,7 +170,9 @@ def transition_processing_profile(
             }
         )
 
-    ProcessingProfileVersion.objects.filter(pk=locked.pk).update(**update_fields)
+    models.QuerySet.update(
+        ProcessingProfileVersion.objects.filter(pk=locked.pk), **update_fields
+    )
     ProcessingProfileVersionStatusEvent.objects.create(
         processing_profile_version=locked,
         from_status=source_status,

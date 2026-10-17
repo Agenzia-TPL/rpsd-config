@@ -19,6 +19,7 @@ from rpsd_config.admin_dataset_exchange.proxies import (
 )
 from rpsd_config.exchange_agreement.models import ValidationRule, ValidationRuleVersion
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
     save_validation_rule_version,
     transition_validation_rule,
 )
@@ -31,9 +32,8 @@ def make_rule_version() -> ValidationRuleVersion:
         rule=rule,
         version="001",
         name="Reference check",
-        validation_type="xpath",
+        validation_type_version=get_validation_type_version("xpath", "1.0"),
         definition="//n:DayTypeRef[not(@ref = //n:DayType/@id)]",
-        language_version="1.0",
         options={"namespaces": {"n": "urn:netex"}},
         execution_reference="validators/netex-default",
     )
@@ -178,7 +178,7 @@ class RulePublicationConcurrencyTests(TransactionTestCase):
             dataset=Dataset.objects.create(code="netex", name="NeTEx"),
             code="concurrent-netex_001",
             version="001",
-            metadata={"format": "xml"},
+            format="xml",
         )
         barrier = Barrier(2)
 
@@ -196,7 +196,7 @@ class RulePublicationConcurrencyTests(TransactionTestCase):
                     bind_dataset_rule(
                         specification=local_spec,
                         rule_version=local_rule,
-                        import_policy="reject_import",
+                        failure_policy="reject_import",
                         actor=local_actor,
                     )
                     return "created"

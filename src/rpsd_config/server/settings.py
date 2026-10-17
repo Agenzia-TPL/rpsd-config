@@ -118,6 +118,7 @@ class GeneralSettings(BaseSettings):
         "rpsd_config.admin_stakeholders",
         "rpsd_config.admin_agreements",
         "rpsd_config.admin_dataset_exchange",
+        "rpsd_config.admin_audit",
         #        "rpsd_config.admin_service_net",
     ]
 
@@ -362,7 +363,12 @@ class AppSettings(BaseSettings):
     M2M_API_CLIENT_ID_CLAIM: str = Field(default="azp")
     M2M_API_CLOCK_SKEW_SECONDS: int = Field(default=30)
 
-    # Platform configuration assets.
+    # Platform configuration assets: deployment resource limits, not domain data.
+    CONFIG_ASSETS_MAX_UPLOAD_BYTES: int = Field(default=134217728, gt=0)
+    CONFIG_ASSETS_XSD_MAX_TOTAL_BYTES: int = Field(default=134217728, gt=0)
+    CONFIG_ASSETS_XSD_MAX_FILE_BYTES: int = Field(default=8388608, gt=0)
+    CONFIG_ASSETS_XSD_MAX_FILES: int = Field(default=4096, gt=0)
+
     CONFIG_ASSETS_STORAGE_PROVIDER: str = Field(default="fs")
     CONFIG_ASSETS_STORAGE_FS_BASE_PATH: str = Field(default="/tmp/rpsd-config-assets")
     CONFIG_ASSETS_STORAGE_S3_BUCKET_NAME: str = Field(default="")

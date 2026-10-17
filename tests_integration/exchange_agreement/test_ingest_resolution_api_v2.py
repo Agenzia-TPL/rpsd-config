@@ -3,7 +3,7 @@
 from datetime import timedelta
 from unittest.mock import patch
 
-from django.db import OperationalError
+from django.db import OperationalError, models
 from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
@@ -161,9 +161,10 @@ class IngestResolutionApiV2Tests(_ContractRevisionFixtureMixin, TestCase):
 
     def test_runtime_values_remain_frozen_when_catalog_rows_change(self):
         self._approve_current()
-        InputFlowVersion.objects.filter(
-            pk=self.profile_input.input_flow_version_id
-        ).update(
+        models.QuerySet.update(
+            InputFlowVersion.objects.filter(
+                pk=self.profile_input.input_flow_version_id
+            ),
             deployment_name="mutated-after-approval",
             artifact_identifier="git:mutated-after-approval",
         )

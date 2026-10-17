@@ -29,7 +29,7 @@ def save_dataset_rule(binding: DatasetVersionRule, *, actor) -> DatasetVersionRu
 
 @transaction.atomic
 def bind_dataset_rule(
-    *, specification, rule_version, import_policy: str, actor
+    *, specification, rule_version, failure_policy: str, actor
 ) -> DatasetVersionRule:
     """Associate a published rule and keep append-only provenance."""
     require_catalog_admin(actor)
@@ -37,7 +37,7 @@ def bind_dataset_rule(
         DatasetVersionRule(
             dataset_specification=specification,
             rule_version=rule_version,
-            import_policy=import_policy,
+            failure_policy=failure_policy,
         ),
         actor=actor,
     )
@@ -45,13 +45,14 @@ def bind_dataset_rule(
 
 @transaction.atomic
 def bind_indicator_rule(
-    *, indicator_version, dataset_rule, impact: str, dimensions, actor
+    *, indicator_version, specification, rule_version, impact: str, dimensions, actor
 ) -> IndicatorVersionRule:
     """Create a complete impact plus its dimensions atomically."""
     require_catalog_admin(actor)
     binding = IndicatorVersionRule.objects.create(
         indicator_version=indicator_version,
-        dataset_version_rule=dataset_rule,
+        dataset_specification=specification,
+        rule_version=rule_version,
         impact=impact,
     )
     for dimension in dimensions:
@@ -94,13 +95,31 @@ def resolve_dataset_rules(
     """Resolve import policies and distinct consumers without executing checks."""
     paths = paths or {}
     versions = {version.pk: version for version in indicator_versions}
-    consumers = {}
+    entries = {}
+    for binding in specification.rule_bindings.select_related(
+        "rule_version__rule", "rule_version__validation_type_version"
+    ):
+        binding.full_clean()
+        entries[binding.rule_version_id] = {
+            "rule": serialize_validation_rule(binding.rule_version),
+            "import_policy": binding.failure_policy,
+            "consumers": [],
+        }
     for version in sorted(versions.values(), key=lambda version: version.code):
         for binding in version.rule_bindings.filter(
-            dataset_version_rule__dataset_specification=specification
-        ).select_related("dataset_version_rule"):
+            dataset_specification=specification
+        ).select_related("rule_version__rule", "rule_version__validation_type_version"):
             binding.validate_complete()
-            consumers.setdefault(binding.dataset_version_rule_id, []).append(
+            entry = entries.setdefault(
+                binding.rule_version_id,
+                {
+                    "rule": serialize_validation_rule(binding.rule_version),
+                    # Legacy public plan marker only: no dataset binding is persisted.
+                    "import_policy": "indicator_only",
+                    "consumers": [],
+                },
+            )
+            entry["consumers"].append(
                 {
                     "indicator_version_code": version.code,
                     "impact": binding.impact,
@@ -110,21 +129,8 @@ def resolve_dataset_rules(
                     "dependency_paths": sorted(paths.get(version.pk, [[version.code]])),
                 }
             )
-    result = []
-    for binding in specification.rule_bindings.select_related("rule_version__rule"):
-        relevant = consumers.get(binding.pk, [])
-        if binding.import_policy == "indicator_only" and not relevant:
-            continue
-        binding.full_clean()
-        result.append(
-            {
-                "rule": serialize_validation_rule(binding.rule_version),
-                "import_policy": binding.import_policy,
-                "consumers": relevant,
-            }
-        )
     return sorted(
-        result,
+        entries.values(),
         key=lambda entry: (entry["rule"]["rule_code"], entry["rule"]["rule_version"]),
     )
 
@@ -157,8 +163,8 @@ def validate_profile_input_coverage(profile, indicator_versions) -> None:
 def validate_indicator_bindings(version) -> None:
     """Check all binding completeness at publication, not only in forms."""
     for binding in version.rule_bindings.select_related(
-        "dataset_version_rule__rule_version",
-        "dataset_version_rule__dataset_specification",
+        "rule_version",
+        "dataset_specification",
     ):
         binding.validate_complete()
     for link in version.dataset_inputs.select_related("dataset_specification"):
@@ -174,9 +180,9 @@ def required_dataset_specifications(version) -> list:
         )
     }
     for binding in version.rule_bindings.select_related(
-        "dataset_version_rule__dataset_specification__dataset"
+        "dataset_specification__dataset"
     ):
-        spec = binding.dataset_version_rule.dataset_specification
+        spec = binding.dataset_specification
         specs[spec.pk] = spec
     by_category = {}
     for spec in specs.values():

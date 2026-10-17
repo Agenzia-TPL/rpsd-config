@@ -35,6 +35,7 @@ class TechnicalCatalogAdminTests(TestCase):
         )
         self.dataset = Dataset.objects.create(code="netex", name="NeTEx")
         self.specification = DatasetSpecification.objects.create(
+            format="xml",
             dataset=self.dataset,
             code="netex-it-v001",
             version="001",

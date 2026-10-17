@@ -34,6 +34,7 @@ from rpsd_config.exchange_agreement.services.validation_bindings import (
     required_dataset_specifications,
 )
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
     transition_validation_rule,
 )
 
@@ -44,13 +45,11 @@ class ValidationBindingsTests(TestCase):
             username="binding-admin", is_superuser=True
         )
         self.dataset = Dataset.objects.create(code="netex", name="NeTEx")
-        self.spec = publish_dataset_specification(
-            DatasetSpecification.objects.create(
-                dataset=self.dataset,
-                code="netex-ita_v002",
-                version="002",
-                metadata={"format": "xml"},
-            )
+        self.spec = DatasetSpecification.objects.create(
+            dataset=self.dataset,
+            code="netex-ita_v002",
+            version="002",
+            format="xml",
         )
         rule = ValidationRule.objects.create(
             code="calendar-ref", name="Calendar reference"
@@ -59,9 +58,8 @@ class ValidationBindingsTests(TestCase):
             rule=rule,
             version="1",
             name="Calendar reference",
-            validation_type="xpath",
+            validation_type_version=get_validation_type_version("xpath", "1.0"),
             definition="//n:DayTypeRef[not(@ref=//n:DayType/@id)]",
-            language_version="1.0",
             options={"namespaces": {"n": "http://www.netex.org.uk/netex"}},
             execution_reference="validators/default",
         )
@@ -71,9 +69,10 @@ class ValidationBindingsTests(TestCase):
         self.binding = bind_dataset_rule(
             specification=self.spec,
             rule_version=self.rule,
-            import_policy="indicator_only",
+            failure_policy="warn",
             actor=self.admin,
         )
+        self.spec = publish_dataset_specification(self.spec)
         self.dimension = IndicatorDimension.objects.create(code="line", name="Line")
 
     def indicator(self, code):
@@ -90,17 +89,18 @@ class ValidationBindingsTests(TestCase):
         )
 
     def test_base_policy_cannot_be_added_to_published_specification(self):
-        self.binding.import_policy = "reject_import"
+        self.binding.failure_policy = "reject_import"
         with self.assertRaises(ValidationError):
             self.binding.save()
-        self.assertEqual(self.binding.indicator_bindings.count(), 0)
+        self.assertFalse(self.spec.indicator_rule_bindings.exists())
 
     def test_dimension_binding_is_atomic_and_does_not_change_import_policy(self):
         version = self.indicator("journeys")
         with self.assertRaises(ValidationError):
             bind_indicator_rule(
                 indicator_version=version,
-                dataset_rule=self.binding,
+                specification=(self.binding).dataset_specification,
+                rule_version=(self.binding).rule_version,
                 impact="dimension",
                 dimensions=[],
                 actor=self.admin,
@@ -108,13 +108,14 @@ class ValidationBindingsTests(TestCase):
         self.assertFalse(version.rule_bindings.exists())
         result = bind_indicator_rule(
             indicator_version=version,
-            dataset_rule=self.binding,
+            specification=(self.binding).dataset_specification,
+            rule_version=(self.binding).rule_version,
             impact="dimension",
             dimensions=[self.dimension],
             actor=self.admin,
         )
         result.validate_complete()
-        self.assertEqual(self.binding.import_policy, "indicator_only")
+        self.assertEqual(self.binding.failure_policy, "warn")
         publish_indicator_version(version, actor=self.admin)
         with self.assertRaises(ValidationError):
             result.dimension_links.all().delete()
@@ -171,7 +172,7 @@ class ValidationBindingsTests(TestCase):
             dataset=dataset or self.dataset,
             code=f"{(dataset or self.dataset).code}_{version}",
             version=version,
-            metadata={"format": file_format},
+            format=file_format,
         )
 
     def published_rule(self, code):
@@ -179,9 +180,8 @@ class ValidationBindingsTests(TestCase):
             rule=ValidationRule.objects.create(code=code, name=code),
             version="001",
             name=code,
-            validation_type="xpath",
+            validation_type_version=get_validation_type_version("xpath", "1.0"),
             definition="//n:Line[not(@id)]",
-            language_version="1.0",
             options={"namespaces": {"n": "urn:netex"}},
             execution_reference="validators/default",
         )
@@ -194,7 +194,7 @@ class ValidationBindingsTests(TestCase):
         link = bind_dataset_rule(
             specification=other,
             rule_version=self.rule,
-            import_policy="warn",
+            failure_policy="warn",
             actor=self.admin,
         )
         self.assertEqual(link.created_by, self.admin)
@@ -202,7 +202,7 @@ class ValidationBindingsTests(TestCase):
             bind_dataset_rule(
                 specification=other,
                 rule_version=self.rule,
-                import_policy="reject_import",
+                failure_policy="reject_import",
                 actor=self.admin,
             )
         self.assertEqual(other.rule_bindings.count(), 1)
@@ -216,40 +216,38 @@ class ValidationBindingsTests(TestCase):
         base = bind_dataset_rule(
             specification=spec,
             rule_version=self.rule,
-            import_policy="reject_import",
+            failure_policy="reject_import",
             actor=self.admin,
         )
         warning = bind_dataset_rule(
             specification=spec,
             rule_version=self.published_rule("base-warning"),
-            import_policy="warn",
+            failure_policy="warn",
             actor=self.admin,
         )
         publish_dataset_specification(spec, actor=self.admin)
-        extra = bind_dataset_rule(
-            specification=spec,
-            rule_version=self.published_rule("optional-check"),
-            import_policy="indicator_only",
-            actor=self.admin,
-        )
+        extra_rule = self.published_rule("optional-check")
         left, right = self.indicator("consumer-left"), self.indicator("consumer-right")
         bind_indicator_rule(
             indicator_version=left,
-            dataset_rule=base,
+            specification=(base).dataset_specification,
+            rule_version=(base).rule_version,
             impact="calculation",
             dimensions=[],
             actor=self.admin,
         )
         bind_indicator_rule(
             indicator_version=right,
-            dataset_rule=base,
+            specification=(base).dataset_specification,
+            rule_version=(base).rule_version,
             impact="dimension",
             dimensions=[self.dimension],
             actor=self.admin,
         )
         bind_indicator_rule(
             indicator_version=left,
-            dataset_rule=extra,
+            specification=spec,
+            rule_version=extra_rule,
             impact="calculation",
             dimensions=[],
             actor=self.admin,
@@ -269,12 +267,14 @@ class ValidationBindingsTests(TestCase):
             ["calculation", "dimension"],
         )
         self.assertEqual(shared["consumers"][1]["affected_dimensions"], ["line"])
-        self.assertEqual(warning.import_policy, "warn")
+        self.assertEqual(warning.failure_policy, "warn")
         self.assertEqual(len(resolve_dataset_rules(spec, [right])), 2)
-        bind_dataset_rule(
+        bind_indicator_rule(
+            indicator_version=self.indicator("unselected"),
             specification=spec,
             rule_version=self.published_rule("new-use"),
-            import_policy="indicator_only",
+            impact="calculation",
+            dimensions=[],
             actor=self.admin,
         )
         self.assertEqual(old_plan, resolve_dataset_rules(spec, []))
@@ -288,7 +288,8 @@ class ValidationBindingsTests(TestCase):
             with self.subTest(impact=impact), self.assertRaises(ValidationError):
                 bind_indicator_rule(
                     indicator_version=version,
-                    dataset_rule=self.binding,
+                    specification=(self.binding).dataset_specification,
+                    rule_version=(self.binding).rule_version,
                     impact=impact,
                     dimensions=dimensions,
                     actor=self.admin,
@@ -303,7 +304,8 @@ class ValidationBindingsTests(TestCase):
         version = self.indicator("editable-binding")
         binding = bind_indicator_rule(
             indicator_version=version,
-            dataset_rule=self.binding,
+            specification=(self.binding).dataset_specification,
+            rule_version=(self.binding).rule_version,
             impact="dimension",
             dimensions=[self.dimension],
             actor=self.admin,
@@ -336,13 +338,14 @@ class ValidationBindingsTests(TestCase):
             bind_dataset_rule(
                 specification=spec,
                 rule_version=self.rule,
-                import_policy="warn",
+                failure_policy="warn",
                 actor=self.admin,
             )
         with self.assertRaises(ValidationError):
             bind_indicator_rule(
                 indicator_version=self.indicator("stale-rule"),
-                dataset_rule=self.binding,
+                specification=(self.binding).dataset_specification,
+                rule_version=(self.binding).rule_version,
                 impact="calculation",
                 dimensions=[],
                 actor=self.admin,
@@ -354,7 +357,7 @@ class ValidationBindingsTests(TestCase):
         bind_dataset_rule(
             specification=spec,
             rule_version=self.rule,
-            import_policy="reject_import",
+            failure_policy="reject_import",
             actor=self.admin,
         )
         transition_validation_rule(
@@ -377,7 +380,7 @@ class ValidationBindingsTests(TestCase):
             bind_dataset_rule(
                 specification=self.draft_spec(dataset=csv, file_format="csv"),
                 rule_version=self.rule,
-                import_policy="warn",
+                failure_policy="warn",
                 actor=self.admin,
             )
         self.assertEqual(
@@ -387,7 +390,7 @@ class ValidationBindingsTests(TestCase):
             self.binding.delete()
         with self.assertRaises(ValidationError):
             DatasetVersionRule.objects.filter(pk=self.binding.pk).update(
-                import_policy="warn"
+                failure_policy="warn"
             )
         with self.assertRaises(ProtectedError):
             Collector(using="default").collect([self.rule])
@@ -405,12 +408,13 @@ class ValidationBindingsTests(TestCase):
             lambda: bind_dataset_rule(
                 specification=self.spec,
                 rule_version=self.rule,
-                import_policy="warn",
+                failure_policy="warn",
                 actor=editor,
             ),
             lambda: bind_indicator_rule(
                 indicator_version=version,
-                dataset_rule=self.binding,
+                specification=(self.binding).dataset_specification,
+                rule_version=(self.binding).rule_version,
                 impact="calculation",
                 dimensions=[],
                 actor=editor,
@@ -512,7 +516,7 @@ class ValidationBindingsTests(TestCase):
         binding = bind_dataset_rule(
             specification=spec,
             rule_version=self.rule,
-            import_policy="warn",
+            failure_policy="warn",
             actor=self.admin,
         )
         binding.created_by = None
@@ -527,7 +531,8 @@ class ValidationBindingsTests(TestCase):
         version = self.indicator("incomplete-binding")
         IndicatorVersionRule.objects.create(
             indicator_version=version,
-            dataset_version_rule=self.binding,
+            dataset_specification=(self.binding).dataset_specification,
+            rule_version=(self.binding).rule_version,
             impact="dimension",
         )
         with self.assertRaises(ValidationError):
@@ -559,10 +564,10 @@ class ValidationBindingsTests(TestCase):
             args=[self.binding.pk],
         )
         self.assertEqual(
-            self.client.post(url, {"import_policy": "reject_import"}).status_code, 403
+            self.client.post(url, {"failure_policy": "reject_import"}).status_code, 403
         )
         self.binding.refresh_from_db()
-        self.assertEqual(self.binding.import_policy, "indicator_only")
+        self.assertEqual(self.binding.failure_policy, "warn")
 
     def test_admin_creation_records_authenticated_actor(self):
         from django.urls import reverse
@@ -579,7 +584,7 @@ class ValidationBindingsTests(TestCase):
             {
                 "dataset_specification": spec.pk,
                 "rule_version": self.rule.pk,
-                "import_policy": "warn",
+                "failure_policy": "warn",
                 "_save": "Save",
             },
         )

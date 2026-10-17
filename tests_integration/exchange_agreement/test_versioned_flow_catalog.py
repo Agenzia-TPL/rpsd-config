@@ -43,6 +43,7 @@ class VersionedFlowCatalogTests(TestCase):
         )
         self.dataset = Dataset.objects.create(code="netex", name="NeTEx")
         self.specification = DatasetSpecification.objects.create(
+            format="xml",
             dataset=self.dataset,
             code="netex-ita_v001",
             version="001",
@@ -114,6 +115,7 @@ class VersionedFlowCatalogTests(TestCase):
             publish_input_flow_version(incomplete, actor=self.user)
 
         draft_specification = DatasetSpecification.objects.create(
+            format="xml",
             dataset=self.dataset,
             code="netex-ita_v002",
             version="002",

@@ -27,6 +27,7 @@ from rpsd_config.exchange_agreement.services.validation_bindings import (
     bind_indicator_rule,
 )
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
     transition_validation_rule,
 )
 from rpsd_config.exchange_agreement.technical_catalog_views import (
@@ -62,7 +63,8 @@ class ValidationUITests(TestCase):
         )
         return bind_indicator_rule(
             indicator_version=draft,
-            dataset_rule=dataset_binding,
+            specification=(dataset_binding).dataset_specification,
+            rule_version=(dataset_binding).rule_version,
             impact="dimension",
             dimensions=[dimension],
             actor=self.admin,
@@ -71,7 +73,8 @@ class ValidationUITests(TestCase):
     def form_values(self, binding, impact="calculation", dimensions=()):
         return {
             "indicator_version": binding.indicator_version_id,
-            "dataset_version_rule": binding.dataset_version_rule_id,
+            "dataset_specification": binding.dataset_specification_id,
+            "rule_version": binding.rule_version_id,
             "impact": impact,
             "dimensions": list(dimensions),
         }
@@ -130,9 +133,8 @@ class ValidationUITests(TestCase):
             rule=rule,
             version="1",
             name="Escaped rule",
-            validation_type="xpath",
+            validation_type_version=get_validation_type_version("xpath", "1.0"),
             definition=definition,
-            language_version="1.0",
             options={"namespaces": {"n": "urn:netex"}},
             execution_reference="validators/default",
         )
@@ -236,14 +238,29 @@ class ValidationUITests(TestCase):
                 "penalties": {},
             },
         )
-        path = reverse(
-            "admin:admin_dataset_exchange_contractdependencyconfigurationadminproxy_change",
-            args=(config.pk,),
+        from django.contrib import admin
+        from django.test import RequestFactory
+
+        from rpsd_config.admin_agreements.admin import ContractDependencyValuesInline
+        from rpsd_config.admin_agreements.proxies import (
+            ContractConfigurationRevisionAdminProxy,
         )
-        self.assertEqual(self.client.get(path).status_code, 200)
-        self.assertEqual(
-            self.client.post(path, {"parameters": '{"forged":true}'}).status_code, 403
+
+        platform = get_user_model().objects.create_user(
+            username="values-platform", is_staff=True
         )
+        SocialAccount.objects.create(
+            user=platform,
+            provider="openid_connect",
+            uid="values-platform",
+            extra_data={"id_token": {"groups": ["/rpsd/admin"]}},
+        )
+        request = RequestFactory().get("/admin/")
+        request.user = platform
+        inline = ContractDependencyValuesInline(
+            ContractConfigurationRevisionAdminProxy, admin.site
+        )
+        self.assertFalse(inline.has_change_permission(request, self.revision))
         config.refresh_from_db()
         self.assertEqual(config.parameters, {})
 

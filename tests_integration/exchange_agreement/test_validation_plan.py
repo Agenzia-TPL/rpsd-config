@@ -38,6 +38,9 @@ from rpsd_config.exchange_agreement.services.ingest_resolution import (
 from rpsd_config.exchange_agreement.services.revision_indicator_values import (
     save_revision_indicator_values,
 )
+from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
+)
 from rpsd_config.exchange_agreement.services.validation_plans import (
     validation_plan_from_resolution,
 )
@@ -212,21 +215,21 @@ class ValidationPlanTests(TestCase):
             ),
             version="001",
             name="Later optional rule",
-            validation_type="xpath",
+            validation_type_version=get_validation_type_version("xpath", "1.0"),
             definition="//n:Line[not(@id)]",
-            language_version="1.0",
             options={"namespaces": {"n": "urn:netex"}},
             execution_reference="validators/default",
         )
         rule = transition_validation_rule(
             version, target_status="published", actor=self.admin
         )
-        bind_dataset_rule(
-            specification=specification,
-            rule_version=rule,
-            import_policy="indicator_only",
-            actor=self.admin,
-        )
+        with self.assertRaises(ValidationError):
+            bind_dataset_rule(
+                specification=specification,
+                rule_version=rule,
+                failure_policy="warn",
+                actor=self.admin,
+            )
         self.revision.refresh_from_db()
         self.assertEqual(self.revision.configuration_snapshot, before_snapshot)
         self.assertEqual(self.revision.snapshot_checksum, before_checksum)

@@ -141,7 +141,7 @@ PARAMETER_SCHEMA = {
     "allow_extra": False,
 }
 JSON_EXAMPLES = {
-    "metadata": {"format": "csv"},
+    "metadata": {"source": "Example catalog"},
     "input_schema": {"datasets": ["netex"]},
     "output_schema": {
         "type": "object",

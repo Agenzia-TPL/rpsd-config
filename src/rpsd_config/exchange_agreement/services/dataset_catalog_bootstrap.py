@@ -58,8 +58,11 @@ def ensure_initial_dataset_catalog() -> list[DatasetSpecification]:
                     f"Initial {initial.dataset_name} technical specification."
                 ),
                 "metadata": {},
+                "format": "xml",
             },
         )
+        if specification.format != "xml":
+            raise ValueError(f"Conflicting initial format: {specification.code}.")
         if created:
             specification = publish_dataset_specification(specification)
         specifications.append(specification)

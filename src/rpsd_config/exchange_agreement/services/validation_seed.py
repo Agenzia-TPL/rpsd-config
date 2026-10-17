@@ -42,6 +42,7 @@ from rpsd_config.exchange_agreement.services.validation_bindings import (
     bind_indicator_rule,
 )
 from rpsd_config.exchange_agreement.services.validation_catalog import (
+    get_validation_type_version,
     require_catalog_admin,
     transition_validation_rule,
 )
@@ -84,7 +85,8 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
                 "dataset": dataset,
                 "version": "validation-demo-001",
                 "description": "Target validation demo",
-                "metadata": {"format": "xml"},
+                "format": "xml",
+                "metadata": {},
             },
         )
         if created:
@@ -99,9 +101,8 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
             version="001",
             defaults={
                 "name": rule.name,
-                "validation_type": "xpath",
+                "validation_type_version": get_validation_type_version("xpath", "1.0"),
                 "definition": "/*[not(" + path + ")]",
-                "language_version": "1.0",
                 "options": {"namespaces": {"n": namespace}},
                 "execution_reference": "validators/" + code + "-demo",
             },
@@ -113,7 +114,7 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
         binding = DatasetVersionRule.objects.filter(
             dataset_specification=spec, rule_version=version
         ).first()
-        if binding is not None and binding.import_policy != "reject_import":
+        if binding is not None and binding.failure_policy != "reject_import":
             raise ValidationError("Demo base rule policy differs from the seed.")
         if binding is None:
             if spec.status != "draft":
@@ -124,7 +125,7 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
             bind_dataset_rule(
                 specification=spec,
                 rule_version=version,
-                import_policy="reject_import",
+                failure_policy="reject_import",
                 actor=actor,
             )
         if spec.status == "draft":
@@ -142,9 +143,8 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
         version="001",
         defaults={
             "name": rule.name,
-            "validation_type": "xpath",
+            "validation_type_version": get_validation_type_version("xpath", "1.0"),
             "definition": "//n:ServiceJourney[not(n:LineRef)]",
-            "language_version": "1.0",
             "options": {"namespaces": {"n": definitions[0][2]}},
             "execution_reference": "validators/netex-demo",
         },
@@ -152,23 +152,6 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
     if line_rule.status == "draft":
         line_rule = transition_validation_rule(
             line_rule, target_status="published", actor=actor
-        )
-    line_binding = DatasetVersionRule.objects.filter(
-        dataset_specification=specs[0], rule_version=line_rule
-    ).first()
-    if line_binding is not None and line_binding.import_policy != "indicator_only":
-        raise ValidationError("Demo indicator rule policy differs from the seed.")
-    if line_binding is None:
-        if specs[0].status != "draft" and specs[0].pk not in new_spec_ids:
-            raise ValidationError(
-                "Published demo dataset is missing its indicator rule; "
-                "create a new version instead of changing the seed composition."
-            )
-        line_binding = bind_dataset_rule(
-            specification=specs[0],
-            rule_version=line_rule,
-            import_policy="indicator_only",
-            actor=actor,
         )
     versions = []
     for code in ("demo-journey-count", "demo-composed-performance"):
@@ -199,7 +182,8 @@ def ensure_validation_demo(*, actor) -> ProcessingProfileVersion:
                 if not version.rule_bindings.exists():
                     bind_indicator_rule(
                         indicator_version=version,
-                        dataset_rule=line_binding,
+                        specification=specs[0],
+                        rule_version=line_rule,
                         impact="dimension",
                         dimensions=[dimension],
                         actor=actor,

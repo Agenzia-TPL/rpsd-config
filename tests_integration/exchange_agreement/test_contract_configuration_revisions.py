@@ -93,6 +93,7 @@ class _ContractRevisionFixtureMixin:
     def _published_processing_profile(self):
         dataset = Dataset.objects.create(code="netex", name="NeTEx")
         specification = DatasetSpecification.objects.create(
+            format="xml",
             dataset=dataset,
             code="netex-ita_v001",
             version="001",
@@ -100,6 +101,7 @@ class _ContractRevisionFixtureMixin:
         )
         self.netex_asset = ConfigurationAsset.objects.create(
             asset_type=ConfigurationAsset.AssetType.NETEX_XSD,
+            what="netex",
             label="NeTEx validation schema",
             version=1,
             status=ConfigurationAsset.Status.ACTIVE,
@@ -127,6 +129,7 @@ class _ContractRevisionFixtureMixin:
         siri_dataset = Dataset.objects.create(code="siri-vm", name="SIRI VM")
         siri_specification = publish_dataset_specification(
             DatasetSpecification.objects.create(
+                format="xml",
                 dataset=siri_dataset,
                 code="siri-vm_v003",
                 version="003",
@@ -361,7 +364,7 @@ class ContractConfigurationRevisionTests(_ContractRevisionFixtureMixin, TestCase
             f"sha256:{self.netex_asset.checksum_sha256}",
         )
 
-        with self.assertRaises(ProtectedError):
+        with self.assertRaises((ProtectedError, ValidationError)):
             with transaction.atomic():
                 DatasetSpecification.objects.filter(
                     pk=self.netex_specification.pk

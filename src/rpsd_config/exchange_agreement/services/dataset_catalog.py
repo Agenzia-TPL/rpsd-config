@@ -3,7 +3,7 @@
 """Lifecycle operations for the versioned dataset catalog."""
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from rpsd_config.exchange_agreement.models import (
@@ -41,10 +41,6 @@ def _validate_assets_for_publication(specification: DatasetSpecification) -> Non
     links = specification.asset_links.select_related("configuration_asset")
     for link in links:
         asset = link.configuration_asset
-        if asset.what != specification.dataset.code:
-            raise DatasetSpecificationTransitionError(
-                f"Asset {asset.pk} does not match dataset {specification.dataset.code}."
-            )
         if link.required and (
             asset.status != ConfigurationAsset.Status.ACTIVE or not asset.is_active
         ):
@@ -98,7 +94,9 @@ def transition_dataset_specification(
             }
         )
 
-    DatasetSpecification.objects.filter(pk=locked.pk).update(**update_fields)
+    models.QuerySet.update(
+        DatasetSpecification.objects.filter(pk=locked.pk), **update_fields
+    )
     DatasetSpecificationStatusEvent.objects.create(
         dataset_specification=locked,
         from_status=source_status,

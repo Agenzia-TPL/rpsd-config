@@ -51,6 +51,7 @@ class IndicatorVersionCatalogTests(TestCase):
     def _published_specification(self, *, dataset_code, specification_code):
         dataset = Dataset.objects.create(code=dataset_code, name=dataset_code.upper())
         specification = DatasetSpecification.objects.create(
+            format="xml",
             dataset=dataset,
             code=specification_code,
             version="001",

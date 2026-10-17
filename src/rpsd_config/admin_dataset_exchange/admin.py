@@ -2,18 +2,27 @@
 # SPDX-License-Identifier: EUPL-1.2
 from datetime import datetime
 
-from django.contrib import admin
-from django.core.exceptions import ValidationError
+from django.conf import settings
+from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models.expressions import DatabaseDefault
+from django.http import HttpResponseRedirect
+from django.template.response import TemplateResponse
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.formats import date_format
+from django.utils.html import format_html
 
 from rpsd_config import admin_hidden  # noqa: F401
 from rpsd_config.admin_dataset_exchange.validation_admin import (
+    IndicatorDependencyInline,
+    IndicatorInputInline,
     register_validation_admin,
 )
 from rpsd_config.admin_guidance import GuidedAdminMixin, GuidedInlineMixin
+from rpsd_config.exchange_agreement.asset_forms import ConfigurationAssetUploadForm
 from rpsd_config.exchange_agreement.models import (
+    BUNDLE_IDENTITY_FIELDS,
     DatasetSpecificationAsset,
     IndicatorVersion,
     InputFlowVersion,
@@ -22,6 +31,11 @@ from rpsd_config.exchange_agreement.models import (
     ProcessingProfileInputFlow,
 )
 from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
+from rpsd_config.exchange_agreement.services.configuration_assets import (
+    activate_configuration_asset,
+    archive_configuration_asset,
+    store_configuration_asset,
+)
 from rpsd_config.exchange_agreement.services.dataset_catalog import (
     DatasetSpecificationTransitionError,
     deprecate_dataset_specification,
@@ -52,21 +66,13 @@ from rpsd_config.exchange_agreement.services.processing_profiles import (
 
 from .proxies import (
     ConfigurationAssetAdminProxy,
-    ConfigurationAssetEventAdminProxy,
     DatasetAdminProxy,
     DatasetSpecificationAdminProxy,
-    DatasetSpecificationStatusEventAdminProxy,
     IndicatorAdminProxy,
     IndicatorVersionAdminProxy,
-    IndicatorVersionStatusEventAdminProxy,
     InputFlowVersionAdminProxy,
-    InputFlowVersionStatusEventAdminProxy,
-    NetexValidationProfileAdminProxy,
     OrchestrationFlowVersionAdminProxy,
-    OrchestrationFlowVersionStatusEventAdminProxy,
     ProcessingProfileVersionAdminProxy,
-    ProcessingProfileVersionStatusEventAdminProxy,
-    SiriValidationProfileAdminProxy,
 )
 
 
@@ -156,11 +162,12 @@ class DatasetSpecificationAdmin(
         "code",
         "dataset",
         "version",
+        "format",
         "status",
         "published_at",
         "updated_at",
     )
-    list_filter = ("status", "dataset")
+    list_filter = ("status", "dataset", "format")
     search_fields = ("code", "version", "description", "dataset__code")
     autocomplete_fields = ("dataset", "published_by")
     readonly_fields = (
@@ -176,7 +183,9 @@ class DatasetSpecificationAdmin(
     def get_readonly_fields(self, request, obj=None):
         fields = list(super().get_readonly_fields(request, obj))
         if obj is not None and obj.status != obj.Status.DRAFT:
-            fields.extend(["dataset", "code", "version", "description", "metadata"])
+            fields.extend(
+                ["dataset", "code", "version", "format", "description", "metadata"]
+            )
         return fields
 
     def has_delete_permission(self, request, obj=None):
@@ -208,7 +217,6 @@ class DatasetSpecificationAdmin(
         self._transition_selected(request, queryset, withdraw_dataset_specification)
 
 
-@admin.register(DatasetSpecificationStatusEventAdminProxy)
 class DatasetSpecificationStatusEventAdmin(
     _PlatformCatalogAdminMixin,
     admin.ModelAdmin,
@@ -276,6 +284,7 @@ class IndicatorVersionAdmin(
         "created_at_human",
         "updated_at_human",
     )
+    inlines = (IndicatorInputInline, IndicatorDependencyInline)
     actions = ("publish_selected", "deprecate_selected", "withdraw_selected")
 
     def get_form(self, request, obj=None, **kwargs):
@@ -341,7 +350,6 @@ class IndicatorVersionAdmin(
         self._transition_selected(request, queryset, withdraw_indicator_version)
 
 
-@admin.register(IndicatorVersionStatusEventAdminProxy)
 class IndicatorVersionStatusEventAdmin(
     _PlatformCatalogAdminMixin,
     admin.ModelAdmin,
@@ -452,6 +460,41 @@ class InputFlowVersionAdmin(_FlowVersionAdminBase):
     deprecate_transition = staticmethod(deprecate_input_flow_version)
     withdraw_transition = staticmethod(withdraw_input_flow_version)
 
+    readonly_fields = _FlowVersionAdminBase.readonly_fields + ("profile_users",)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("using_profile_versions")
+
+    @admin.display(description="Utilizzato dai profili tecnici")
+    def profile_users(self, obj):
+        return (
+            "; ".join(
+                f"{p.code} · {p.name} · {p.version} · {p.get_status_display()}"
+                for p in obj.using_profile_versions.all()
+            )
+            or "Nessun profilo tecnico collegato."
+        )
+
+    def render_change_form(
+        self, request, context, add=False, change=False, form_url="", obj=None
+    ):
+        if obj:
+            target_admin = self.admin_site._registry[ProcessingProfileVersionAdminProxy]
+            context["config_profile_links"] = [
+                {
+                    "label": (
+                        f"{p.code} · {p.name} · {p.version} · {p.get_status_display()}"
+                    ),
+                    "url": reverse(
+                        "admin:admin_dataset_exchange_processingprofileversionadminproxy_change",
+                        args=[p.pk],
+                    ),
+                }
+                for p in obj.using_profile_versions.all()
+                if target_admin.has_view_permission(request, p)
+            ]
+        return super().render_change_form(request, context, add, change, form_url, obj)
+
     def get_readonly_fields(self, request, obj=None):
         fields = list(super().get_readonly_fields(request, obj))
         if obj is not None and obj.status != obj.Status.DRAFT:
@@ -490,7 +533,6 @@ class _FlowVersionStatusEventAdminBase(
         return False
 
 
-@admin.register(InputFlowVersionStatusEventAdminProxy)
 class InputFlowVersionStatusEventAdmin(_FlowVersionStatusEventAdminBase):
     list_display = (
         "input_flow_version",
@@ -505,7 +547,6 @@ class InputFlowVersionStatusEventAdmin(_FlowVersionStatusEventAdminBase):
     )
 
 
-@admin.register(OrchestrationFlowVersionStatusEventAdminProxy)
 class OrchestrationFlowVersionStatusEventAdmin(_FlowVersionStatusEventAdminBase):
     list_display = (
         "orchestration_flow_version",
@@ -644,7 +685,6 @@ class ProcessingProfileVersionAdmin(
         self._transition_selected(request, queryset, withdraw_processing_profile)
 
 
-@admin.register(ProcessingProfileVersionStatusEventAdminProxy)
 class ProcessingProfileVersionStatusEventAdmin(
     _PlatformCatalogAdminMixin,
     admin.ModelAdmin,
@@ -676,29 +716,6 @@ class ProcessingProfileVersionStatusEventAdmin(
         return False
 
 
-@admin.register(NetexValidationProfileAdminProxy)
-class NetexValidationProfileAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
-    list_display = ("label", "file", "is_active", "created_at", "updated_at")
-    list_filter = ("is_active",)
-    search_fields = ("label", "file")
-    readonly_fields = ("created_at_human", "updated_at_human")
-
-
-@admin.register(SiriValidationProfileAdminProxy)
-class SiriValidationProfileAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
-    list_display = (
-        "profile_type",
-        "label",
-        "file",
-        "is_active",
-        "created_at",
-        "updated_at",
-    )
-    list_filter = ("profile_type", "is_active")
-    search_fields = ("profile_type", "label", "file")
-    readonly_fields = ("created_at_human", "updated_at_human")
-
-
 @admin.register(ConfigurationAssetAdminProxy)
 class ConfigurationAssetAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     list_display = (
@@ -713,10 +730,109 @@ class ConfigurationAssetAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     )
     list_filter = ("asset_type", "what", "status", "is_active", "publish_status")
     search_fields = ("label", "original_filename", "storage_url", "checksum_sha256")
-    readonly_fields = ("created_at_human", "updated_at_human")
+    actions = ("activate_assets", "archive_assets")
+    readonly_fields = (
+        "created_at_human",
+        "updated_at_human",
+        "uploaded_by",
+        "uploaded_at",
+        "activated_by",
+        "activated_at",
+        "archived_at",
+        "publish_status",
+        "last_publish_error",
+        "status",
+        "is_active",
+        "new_version",
+        "dataset_links",
+    ) + tuple(sorted(BUNDLE_IDENTITY_FIELDS))
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description="Nuova versione")
+    def new_version(self, obj):
+        return format_html(
+            '<a href="{}?asset_type={}&amp;what={}">Carica una nuova versione</a>',
+            reverse("admin:admin_dataset_exchange_configurationassetadminproxy_add"),
+            obj.asset_type,
+            obj.what,
+        )
+
+    @admin.display(description="Versioni dataset associate")
+    def dataset_links(self, obj):
+        return (
+            "; ".join(
+                f"{link.dataset_specification.code} ({link.get_role_display()})"
+                for link in obj.dataset_specification_links.select_related(
+                    "dataset_specification"
+                )
+            )
+            or "Nessuna associazione"
+        )
+
+    def add_view(self, request, form_url="", extra_context=None):
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+        form = ConfigurationAssetUploadForm(
+            request.POST if request.method == "POST" else None,
+            request.FILES if request.method == "POST" else None,
+            initial={
+                "asset_type": request.GET.get("asset_type", "other"),
+                "what": request.GET.get("what", ""),
+            },
+        )
+        if request.method == "POST" and form.is_valid():
+            try:
+                data = form.cleaned_data.copy()
+                stored = store_configuration_asset(**data, uploaded_by=request.user)
+            except ValidationError as exc:
+                form.add_error(None, ValidationError(exc.messages))
+            else:
+                self.log_addition(request, stored.asset, "Uploaded configuration asset")
+                self.message_user(request, "Asset caricato.", messages.SUCCESS)
+                return HttpResponseRedirect(
+                    reverse(
+                        "admin:admin_dataset_exchange_configurationassetadminproxy_change",
+                        args=[stored.asset.pk],
+                    )
+                )
+        return TemplateResponse(
+            request,
+            "admin/config_guidance/asset_upload.html",
+            {
+                **self.admin_site.each_context(request),
+                "opts": self.model._meta,
+                "title": "Carica asset tecnico dataset",
+                "asset_limits": {
+                    key: getattr(settings, key)
+                    for key in (
+                        "CONFIG_ASSETS_MAX_UPLOAD_BYTES",
+                        "CONFIG_ASSETS_XSD_MAX_TOTAL_BYTES",
+                        "CONFIG_ASSETS_XSD_MAX_FILE_BYTES",
+                        "CONFIG_ASSETS_XSD_MAX_FILES",
+                    )
+                },
+                "form": form,
+                **(extra_context or {}),
+            },
+        )
+
+    @admin.action(description="Attiva la versione selezionata", permissions=["change"])
+    def activate_assets(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(
+                request, "Seleziona una sola versione da attivare.", messages.ERROR
+            )
+            return
+        activate_configuration_asset(asset=queryset.get(), actor=request.user)
+
+    @admin.action(description="Archivia gli asset selezionati", permissions=["change"])
+    def archive_assets(self, request, queryset):
+        for asset in queryset:
+            archive_configuration_asset(asset=asset)
 
 
-@admin.register(ConfigurationAssetEventAdminProxy)
 class ConfigurationAssetEventAdmin(_HumanReadableTimestampsMixin, admin.ModelAdmin):
     list_display = ("event_type", "asset", "status", "attempts", "created_at")
     list_filter = ("event_type", "status")

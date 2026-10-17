@@ -79,7 +79,7 @@ DatasetForm = modelform_factory(
 )
 DatasetSpecificationForm = modelform_factory(
     DatasetSpecification,
-    fields=("dataset", "code", "version", "description"),
+    fields=("dataset", "code", "version", "format", "description", "metadata"),
 )
 IndicatorForm = modelform_factory(
     Indicator,
@@ -241,9 +241,8 @@ CATALOGS.update(
                     "version",
                     "name",
                     "description",
-                    "validation_type",
+                    "validation_type_version",
                     "definition",
-                    "language_version",
                     "options",
                     "result_contract",
                     "execution_reference",
@@ -261,7 +260,7 @@ CATALOGS.update(
             "form": DatasetRuleForm,
             "description": (
                 "reject_import rifiuta il trasferimento; warn avvisa; "
-                "indicator_only vale solo per gli indicatori scelti."
+                "Le regole degli indicatori si configurano separatamente."
             ),
         },
         "indicator-rule-bindings": {
@@ -383,9 +382,9 @@ def _detail_context(slug: str, instance) -> dict:
         context["asset_links"] = instance.asset_links.select_related(
             "configuration_asset"
         )
-        context["available_assets"] = ConfigurationAsset.objects.filter(
-            what=instance.dataset.code
-        ).order_by("-version")
+        context["available_assets"] = ConfigurationAsset.objects.all().order_by(
+            "asset_type", "what", "-version"
+        )
         context["asset_roles"] = DatasetSpecificationAsset.Role.choices
     elif slug == "validation-rule-versions":
         context["rule_definition"] = instance.definition
@@ -400,8 +399,8 @@ def _detail_context(slug: str, instance) -> dict:
         except ValidationError as exc:
             context["closure_error"] = "; ".join(exc.messages)
         context["indicator_bindings"] = instance.rule_bindings.select_related(
-            "dataset_version_rule__rule_version__rule",
-            "dataset_version_rule__dataset_specification",
+            "rule_version__rule",
+            "dataset_specification",
         ).prefetch_related("affected_dimensions")
         context["declared_inputs"] = instance.dataset_inputs.select_related(
             "dataset_specification"
@@ -566,9 +565,8 @@ def technical_catalog_detail_page(
                     "rule",
                     "name",
                     "description",
-                    "validation_type",
+                    "validation_type_version",
                     "definition",
-                    "language_version",
                     "options",
                     "result_contract",
                     "execution_reference",

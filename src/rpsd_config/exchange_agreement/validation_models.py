@@ -94,6 +94,62 @@ class RuleVersionQuerySet(models.QuerySet):
         return super().delete()
 
 
+class ValidationTypeQuerySet(models.QuerySet):
+    """Prevent bypassing the closed catalog through bulk writes."""
+
+    def update(self, **kwargs):
+        raise ValidationError("Catalog pair identities are immutable.")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError("Catalog pair identities are immutable.")
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValidationError("Create supported catalog pairs through validated saves.")
+
+
+class ValidationTypeVersion(TimeStampedModel):
+    """Supported definition language pair; runtime provisioning remains external."""
+
+    validation_type = models.CharField(max_length=32)
+    language_version = models.CharField(max_length=16)
+    objects = ValidationTypeQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["validation_type", "language_version"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["validation_type", "language_version"],
+                name="uniq_validation_type_language",
+            )
+        ]
+        verbose_name = "Tipo e versione del linguaggio"
+        verbose_name_plural = "Tipi e versioni dei linguaggi"
+
+    def __str__(self) -> str:
+        return f"{self.validation_type} / {self.language_version}"
+
+    def clean(self):
+        super().clean()
+        from rpsd_config.exchange_agreement.services.validation_registry import (
+            CAPABILITIES,
+        )
+
+        capability = CAPABILITIES.get(self.validation_type)
+        if not capability or self.language_version not in capability.language_versions:
+            raise ValidationError("Unsupported validation type/language pair.")
+        if self.pk:
+            old = type(self).objects.get(pk=self.pk)
+            if (old.validation_type, old.language_version) != (
+                self.validation_type,
+                self.language_version,
+            ):
+                raise ValidationError("Catalog pair identities are immutable.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
 class ValidationRuleVersion(TimeStampedModel):
     """A complete rule definition pinned to one editorial version."""
 
@@ -117,9 +173,13 @@ class ValidationRuleVersion(TimeStampedModel):
     version = models.CharField(max_length=32)
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True)
-    validation_type = models.CharField(max_length=32)
+    validation_type_version = models.ForeignKey(
+        ValidationTypeVersion,
+        on_delete=models.PROTECT,
+        related_name="rule_versions",
+        verbose_name="Tipo di validazione e versione del linguaggio",
+    )
     definition = models.TextField(blank=True)
-    language_version = models.CharField(max_length=16, blank=True)
     options = models.JSONField(default=dict, blank=True)
     result_contract = models.CharField(
         max_length=32,
@@ -150,9 +210,8 @@ class ValidationRuleVersion(TimeStampedModel):
         "version",
         "name",
         "description",
-        "validation_type",
+        "validation_type_version_id",
         "definition",
-        "language_version",
         "options",
         "result_contract",
         "execution_reference",
@@ -171,6 +230,16 @@ class ValidationRuleVersion(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.rule.code}@{self.version}"
+
+    @property
+    def validation_type(self) -> str:
+        """Keep public serializers independent from database catalog IDs."""
+        return self.validation_type_version.validation_type
+
+    @property
+    def language_version(self) -> str:
+        """Return the selected language version for the external descriptor."""
+        return self.validation_type_version.language_version
 
     def validate_for_publication(self) -> None:
         """Check the declared interpreter and Prefect reference locally."""
@@ -290,8 +359,16 @@ class CompositionQuerySet(models.QuerySet):
     def update(self, **kwargs):
         raise ValidationError("Use validated composition services.")
 
+    @transaction.atomic
     def bulk_create(self, objs, **kwargs):
-        raise ValidationError("Bulk composition creation bypasses validation.")
+        if kwargs.get("ignore_conflicts") or kwargs.get("update_conflicts"):
+            raise ValidationError(
+                "Conflict-skipping composition writes are unsupported."
+            )
+        objs = list(objs)
+        for obj in objs:
+            obj.save(using=self.db, force_insert=True)
+        return objs
 
     def bulk_update(self, objs, fields, batch_size=None):
         raise ValidationError("Bulk composition updates bypass validation.")
@@ -347,10 +424,9 @@ class FrozenComposition(models.Model):
 class DatasetVersionRule(FrozenComposition):
     """Rule applicability and admission policy for one technical dataset version."""
 
-    class ImportPolicy(models.TextChoices):
+    class FailurePolicy(models.TextChoices):
         REJECT_IMPORT = "reject_import", "Reject the transfer"
         WARN = "warn", "Accept with dataset warning"
-        INDICATOR_ONLY = "indicator_only", "Run only for selected indicators"
 
     OWNER_FIELD = "dataset_specification"
     dataset_specification = models.ForeignKey(
@@ -361,7 +437,7 @@ class DatasetVersionRule(FrozenComposition):
     rule_version = models.ForeignKey(
         ValidationRuleVersion, on_delete=models.PROTECT, related_name="dataset_bindings"
     )
-    import_policy = models.CharField(max_length=16, choices=ImportPolicy.choices)
+    failure_policy = models.CharField(max_length=16, choices=FailurePolicy.choices)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -383,22 +459,6 @@ class DatasetVersionRule(FrozenComposition):
             "rule_version__rule__code",
             "rule_version__version",
         ]
-
-    def check_editable(self) -> None:
-        # Append-only applicability does not change a published dataset's base policy.
-        specification = (
-            self._meta.get_field("dataset_specification")
-            .related_model.objects.select_for_update()
-            .get(pk=self.dataset_specification_id)
-        )
-        if (
-            not self.pk
-            and specification.status == "published"
-            and self.import_policy == self.ImportPolicy.INDICATOR_ONLY
-            and current_related(self, "rule_version").status == "published"
-        ):
-            return
-        super().check_editable()
 
     def clean(self):
         super().clean()
@@ -425,11 +485,7 @@ class DatasetVersionRule(FrozenComposition):
             CAPABILITIES,
         )
 
-        fmt = spec.metadata.get("format") if isinstance(spec.metadata, dict) else None
-        if fmt is None and (
-            spec.dataset.code == "netex" or spec.dataset.code.startswith("siri-")
-        ):
-            fmt = "xml"
+        fmt = spec.format
         if fmt not in CAPABILITIES[rule.validation_type].file_formats:
             raise ValidationError(
                 "Rule interpreter does not support this dataset format.",
@@ -504,8 +560,15 @@ class IndicatorVersionRule(FrozenComposition):
         on_delete=models.PROTECT,
         related_name="rule_bindings",
     )
-    dataset_version_rule = models.ForeignKey(
-        DatasetVersionRule, on_delete=models.PROTECT, related_name="indicator_bindings"
+    dataset_specification = models.ForeignKey(
+        "exchange_agreement.DatasetSpecification",
+        on_delete=models.PROTECT,
+        related_name="indicator_rule_bindings",
+    )
+    rule_version = models.ForeignKey(
+        ValidationRuleVersion,
+        on_delete=models.PROTECT,
+        related_name="indicator_bindings",
     )
     impact = models.CharField(
         max_length=16,
@@ -525,22 +588,27 @@ class IndicatorVersionRule(FrozenComposition):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["indicator_version", "dataset_version_rule"],
+                fields=["indicator_version", "dataset_specification", "rule_version"],
                 name="uniq_indicator_version_rule",
             )
         ]
 
     def clean(self):
         super().clean()
-        if not self.dataset_version_rule_id:
+        if not self.dataset_specification_id or not self.rule_version_id:
             return
-        dataset_rule = current_related(self, "dataset_version_rule")
-        if current_related(dataset_rule, "dataset_specification").status != "published":
+        specification = current_related(self, "dataset_specification")
+        if specification.status != "published":
             raise ValidationError(
                 "The dataset specification must be published.",
                 code="unpublished_dataset_specification",
             )
-        dataset_rule.full_clean()
+        # Share interpreter/schema checks without persisting a dataset policy.
+        DatasetVersionRule(
+            dataset_specification=specification,
+            rule_version=current_related(self, "rule_version"),
+            failure_policy="warn",
+        ).clean()
         if (
             self.pk
             and self.impact == self.Impact.CALCULATION
