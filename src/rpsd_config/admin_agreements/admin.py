@@ -320,9 +320,14 @@ class ContractRevisionIndicatorInline(GuidedInlineMixin, admin.TabularInline):
         if not obj.pk:
             return "Salva prima la selezione dell'indicatore."
         return format_html(
+            '<a href="{}">Gestisci indicatore, soglie e penali</a> · '
             '<a href="{}?owner_id={}">Nuova soglia</a> · '
             '<a href="{}?owner_id={}">Nuova penale</a> · '
             '<a href="{}">Configurazione completa</a>',
+            reverse(
+                "admin:admin_agreements_contractrevisionindicatoradminproxy_change",
+                args=[obj.pk],
+            ),
             reverse(
                 "admin:admin_agreements_indicatorevaluationthresholdadminproxy_add"
             ),

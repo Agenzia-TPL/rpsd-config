@@ -73,9 +73,10 @@ class EvaluationFormMixin:
                 "activation_threshold"
             ].queryset = owner.evaluation_thresholds.all()
         for name in ("period_start_date", "period_end_date"):
-            self.fields[name].widget = forms.DateInput(
-                attrs={"type": "date"}, format="%Y-%m-%d"
-            )
+            if name in self.fields:
+                self.fields[name].widget = forms.DateInput(
+                    attrs={"type": "date"}, format="%Y-%m-%d"
+                )
         if (
             self.instance.pk
             and self.instance.contract_revision_indicator.revision.status != "draft"
@@ -126,7 +127,8 @@ class IndicatorParametersForm(forms.Form):
     def __init__(self, *args, owner, **kwargs):
         super().__init__(*args, **kwargs)
         self.owner = owner
-        self.schema = owner.processing_profile_indicator_version.indicator_version.parameter_schema
+        version = owner.processing_profile_indicator_version.indicator_version
+        self.schema = version.parameter_schema
         if not self.schema:
             self.fields["values"] = forms.JSONField(
                 required=False,

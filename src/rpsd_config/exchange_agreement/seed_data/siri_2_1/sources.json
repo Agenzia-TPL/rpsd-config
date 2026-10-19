@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/SIRI-CEN/SIRI",
+  "tag": "v2.1",
+  "commit": "87fe020ec88ec091de0f69d8c26347dd108ff6f1",
+  "entrypoint": "siri.xsd",
+  "xsd_files": 72,
+  "italian_repository": "https://github.com/5Tsrl/siri-italian-profile",
+  "italian_commit": "040253e90d6000fd2bc15adeba1002472da13f53",
+  "files": {
+    "SIRI_ET.xml": {
+      "sha256": "a7fb9e1836661c19e63a80d86ac29d06f842f4079be7806add95c1d1757cf860"
+    },
+    "SIRI_FM.xml": {
+      "sha256": "ee94ef1fe976fd1e55b9181ba423beb997fd147a37adfae71d0bcb6bf1d01442"
+    },
+    "SIRI_PT.xml": {
+      "sha256": "b0c12dd398cba9d008c0cf389a269b23bd821a76792f3d2b8cf37298fa146d2c"
+    },
+    "SIRI_SX.xml": {
+      "sha256": "1a34d71ab12b8e73f2fe119ae6e15e2abaaf9b47b60e18688dade1b768526156"
+    },
+    "SIRI_VM.xml": {
+      "sha256": "6d12e03d2dd77a24250cdf64747464d52466963910f2fc7b907e073e90d078a8"
+    },
+    "siri-2.1.zip": {
+      "sha256": "d20bd6e564afb10ec7a2c269221c69abea0a0b737839afaabbf89213f87bec18"
+    },
+    "siri-it-guidelines.pdf": {
+      "sha256": "2136123031bca3812fbef7f64b0424328be930997d467a988e9ac83b2a04e23c"
+    }
+  }
+}

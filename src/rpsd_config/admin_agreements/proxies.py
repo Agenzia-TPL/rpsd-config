@@ -7,6 +7,7 @@ from rpsd_config.exchange_agreement.models import (
     ContractInvitation,
     ContractMembership,
     ContractPublication,
+    ContractRevisionIndicator,
 )
 
 
@@ -78,3 +79,17 @@ class IndicatorPenaltyAdminProxy(IndicatorPenalty):
         app_label = "admin_agreements"
         verbose_name = "Penale dell'indicatore contrattuale"
         verbose_name_plural = "Penali degli indicatori contrattuali"
+
+
+class ContractRevisionIndicatorAdminProxy(ContractRevisionIndicator):
+    class Meta:
+        proxy = True
+        app_label = "admin_agreements"
+        verbose_name = "Indicatore della revisione contrattuale"
+        verbose_name_plural = "Indicatori delle revisioni contrattuali"
+
+    def __str__(self):
+        return (
+            f"{self.revision.code} · "
+            f"{self.processing_profile_indicator_version.indicator_version.code}"
+        )

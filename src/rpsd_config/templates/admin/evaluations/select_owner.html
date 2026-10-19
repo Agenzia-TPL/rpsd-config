@@ -1,0 +1,18 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Pagina iniziale</a> &rsaquo;
+  <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; Aggiungi
+</div>
+{% endblock %}
+
+{% block content %}
+<p>Prima seleziona l'indicatore contrattuale a cui associare questa configurazione.</p>
+<form method="get">
+  {{ selection_form.as_p }}
+  <div class="submit-row"><input type="submit" value="Continua"></div>
+</form>
+{% endblock %}

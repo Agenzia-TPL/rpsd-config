@@ -84,6 +84,65 @@ class _EvaluationFixtureMixin(_ContractRevisionFixtureMixin):
 
 
 class EvaluationTests(_EvaluationFixtureMixin, TestCase):
+    def test_revision_indicator_admin_inlines_save_and_freeze(self):
+        from django.urls import reverse
+
+        from rpsd_config.exchange_agreement.services.contract_revisions import (
+            approve_contract_revision,
+        )
+
+        self.client.force_login(self.user)
+        path = reverse(
+            "admin:admin_agreements_contractrevisionindicatoradminproxy_change",
+            args=[self.owner.pk],
+        )
+        response = self.client.get(path)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Soglie di valutazione")
+        self.assertContains(response, "Penali cumulative")
+        self.assertContains(response, self.revision.code)
+        data = {
+            "parameters": "{}",
+            "aggregation": "{}",
+            "evaluation_thresholds-TOTAL_FORMS": "1",
+            "evaluation_thresholds-INITIAL_FORMS": "0",
+            "evaluation_thresholds-MIN_NUM_FORMS": "0",
+            "evaluation_thresholds-MAX_NUM_FORMS": "1000",
+            "evaluation_penalties-TOTAL_FORMS": "0",
+            "evaluation_penalties-INITIAL_FORMS": "0",
+            "evaluation_penalties-MIN_NUM_FORMS": "0",
+            "evaluation_penalties-MAX_NUM_FORMS": "1000",
+            "_save": "Salva",
+        }
+        values = {
+            "code": "inline-daily",
+            "name": "Inline daily",
+            "metric_code": "missed",
+            "aggregation_method": "sum",
+            "violation_operator": "gt",
+            "limit_value": "3",
+            "period_type": "daily",
+            "evaluation_timezone": "Europe/Rome",
+            "partial_period_policy": "complete_only",
+            "severity": "alert",
+            "missing_data_policy": "not_evaluable",
+            "group_by_dimensions": [str(self.line.pk)],
+        }
+        data.update({f"evaluation_thresholds-0-{k}": v for k, v in values.items()})
+        response = self.client.post(path, data)
+        self.assertEqual(response.status_code, 302, response.context)
+        target = self.owner.evaluation_thresholds.get(code="inline-daily")
+        self.assertEqual(list(target.group_by_dimensions.all()), [self.line])
+        with patch(
+            "rpsd_config.exchange_agreement.services.contract_revisions.timezone.localdate",
+            return_value=self.revision.valid_from,
+        ):
+            approve_contract_revision(revision=self.revision, actor=self.user)
+        response = self.client.get(path)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'name="_save"')
+        self.assertEqual(self.client.post(path, data).status_code, 403)
+
     def test_custom_windows_are_inclusive_and_contract_end_is_frozen(self):
         start = self.contract.start_date + timedelta(days=2)
         for kind, extra, end in (
@@ -267,8 +326,16 @@ class EvaluationTests(_EvaluationFixtureMixin, TestCase):
         self.assertContains(self.client.get(path), "Dalla data X alla data Y")
         for name in ("indicatorevaluationthreshold", "indicatorpenalty"):
             add = reverse(f"admin:admin_agreements_{name}adminproxy_add")
+            response = self.client.get(add)
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, "Continua")
+            self.assertContains(response, self.revision.code)
+            self.assertNotContains(response, 'name="_save"')
             response = self.client.get(add, {"owner_id": self.owner.pk})
             self.assertEqual(response.status_code, 200, response.content[:400])
+            self.assertContains(response, 'name="group_by_dimensions"')
+            listing = reverse(f"admin:admin_agreements_{name}adminproxy_changelist")
+            self.assertContains(self.client.get(listing), 'class="addlink"')
         change = reverse(
             "admin:admin_agreements_indicatorevaluationthresholdadminproxy_change",
             args=[target.pk],

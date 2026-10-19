@@ -925,8 +925,11 @@ floating-point serialization. Public line labels are not inferred from technical
 
 Soglie and Penali are child records of ContractRevisionIndicator. Django admin
 lists them in Agreements; contextual links are in the revision's indicator inline.
-The admin add pages require `?owner_id=<revision-indicator-id>` and enforce both
-Django permissions and contract scope. Web/admin use the same forms and services.
+The admin lists offer Add followed by a selection of the draft revision indicator;
+contextual links can preselect it with `?owner_id=<revision-indicator-id>`.
+The revision indicator also has its own admin page with native threshold/penalty
+inlines. Django permissions and contract scope are enforced in every path.
+Evaluation forms and write services are shared with the web UI.
 Only draft revisions can change; approved and withdrawn content is readonly.
 
 A threshold selects an output metric, its supported aggregation, grouping,
@@ -1030,3 +1033,91 @@ row digests and snapshot checksums, then use `uv run manage migrate --noinput`.
 Rollback requires a matching binary/DB restoration plan: downgrading code alone
 cannot make v3 snapshots readable to old runtime consumers. Do not drop the new
 tables once they contain contractual data without a reviewed preservation plan.
+
+### Gestione di soglie e penali nel Django admin
+
+In **Agreements → Indicatori delle revisioni contrattuali**, aprire un indicatore
+già selezionato nella revisione. La pagina raccoglie parametri e aggregazioni,
+con due sezioni inline native Django: **Soglie di valutazione** e **Penali
+cumulative**. Usare “Aggiungi” nella sezione desiderata e salvare la pagina.
+Per associare una penale a una nuova soglia, salvare prima la soglia.
+
+La stessa pagina è raggiungibile dall'inline degli indicatori di una revisione,
+tramite **Gestisci indicatore, soglie e penali**. Contratto, revisione e versione
+indicatore restano fissi: per cambiare la selezione si torna alla revisione.
+Le modifiche sono consentite soltanto nelle bozze e secondo i permessi del
+contratto; le configurazioni approvate o ritirate sono consultabili.
+La migrazione admin `0010` registra solo il proxy e i relativi permessi:
+non aggiunge tabelle di dominio e non esegue seeding.
+
+È possibile iniziare anche dagli elenchi **Soglie degli indicatori contrattuali**
+e **Penali degli indicatori contrattuali**: premere **Aggiungi**, scegliere un
+indicatore di una revisione in bozza e premere **Continua**. La selezione iniziale
+non salva dati. Il modulo successivo offre solo le metriche, dimensioni e soglie
+compatibili con quell'indicatore. Il pulsante Aggiungi è disponibile agli utenti
+autorizzati quando esiste almeno un indicatore contrattuale modificabile.
+
+### Risorse iniziali NeTEx italiano livello 5
+
+```bash
+uv run manage seed_netex_italian_profile --actor NOME_UTENTE_ADMIN
+```
+
+Il comando aggiunge la specifica XML `netex-it-lev5_001` al dataset `netex`,
+con tre configuration asset attivi:
+
+- `netex-it-lev5-schema`: ZIP dei sette XSD richiesti dal punto d'ingresso
+  `NeTEx_publication_Lev5.xsd`, ruolo `validation_schema`, obbligatorio;
+- `netex-it-lev5-example`: XML di esempio KPI-ART livello 5, ruolo `example`,
+  facoltativo;
+- `netex-it-guidelines`: linee guida italiane 5.0.1 in PDF, ruolo
+  `documentation`, facoltativo.
+
+Le risorse sono incluse in `exchange_agreement/seed_data/netex_it_lev5` con
+checksum e commit di provenienza in `sources.json`. Il bundle contiene gli stessi
+XSD della fixture CORSE_PDE ma il comando non dipende dai test né da repository
+esterni. Lo storage usa la configurazione rpsd-storage esistente. Ripetere il
+comando riutilizza i file e i record esatti; contenuti diversi o asset archiviati
+vengono segnalati come conflitti, senza sostituzioni automatiche.
+
+La specifica e la regola `netex-it-lev5-xsd@001` nascono in bozza. Per rendere
+operativa la validazione, configurare il riferimento reale al validatore nella
+regola, pubblicarla e associarla alla specifica con politica `reject_import`,
+quindi completare la pubblicazione della specifica. Il seed non inventa deployment
+Prefect, non modifica profili/contratti esistenti e non trasferisce l'XML come
+dataset operativo. Le esecuzioni successive mantengono l'eventuale riferimento
+esecutivo inserito dall'amministratore.
+
+### Bundle condiviso SIRI 2.1 e asset del profilo italiano
+
+```bash
+uv run manage seed_siri_italian_profile --actor NOME_UTENTE_ADMIN
+```
+
+Il seed comprende un solo asset `siri-2-1-schema`, tipo `xsd_bundle`, archiviato
+una sola volta. Contiene i 72 XSD richiesti da `siri.xsd`, con cartelle e percorsi
+relativi originali, più `manifest.json`. La provenienza è il tag ufficiale
+SIRI-CEN `v2.1`, commit `87fe020ec88ec091de0f69d8c26347dd108ff6f1`.
+File e checksum sono inclusi in `exchange_agreement/seed_data/siri_2_1`:
+il comando non scarica dipendenze da Internet durante il seeding.
+
+Lo stesso asset è collegato alle specifiche dei dieci servizi iniziali:
+PT, ET, ST, SM, VM, CT, CM, GM, FM e SX, con ruolo `validation_schema` e
+`required=True`. Le linee guida italiane sono un secondo asset condiviso,
+facoltativo. Per VM, ET, SX, FM e PT viene associato anche il rispettivo XML di
+esempio italiano; gli altri cinque servizi non hanno esempi nel repository.
+I sette asset vengono attivati usando lo storage configurato per rpsd-storage.
+
+Se la specifica iniziale è in bozza, vengono aggiunti i collegamenti. Se è già
+pubblicata e priva dei collegamenti attesi, viene creata la corrispondente
+`siri-XX_v002` in bozza. `002` è la versione di Config: lo standard resta SIRI
+**2.1**. Le versioni pubblicate già complete sono riutilizzate. Profili tecnici,
+revisioni e snapshot contrattuali non vengono aggiornati automaticamente;
+le specifiche dimostrative non fanno parte di questo seed. Un conflitto su file,
+formato, versione standard o associazioni viene segnalato senza sostituzioni.
+
+Il bundle ufficiale si compila con libxml2 e i cinque XML italiani lo superano;
+la compilazione segnala tre avvisi su import ripetuti di namespace già caricati.
+Questo non verifica il runtime Prefect o tutti i requisiti del profilo italiano.
+Il caricamento degli asset non attiva automaticamente regole o processi:
+restano da configurare la regola XSD e i controlli sul servizio SIRI atteso.

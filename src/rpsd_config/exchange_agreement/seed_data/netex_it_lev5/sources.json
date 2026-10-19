@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/5Tsrl/netex-italian-profile",
+  "commit": "cecb0cde1820650af1d7b829107bef1ee8635ed7",
+  "entrypoint": "NeTEx_publication_Lev5.xsd",
+  "files": {
+    "netex-it-lev5.zip": {
+      "sha256": "025b31af23d04f672488eef7c1d70867af4ca4d8d40e57c6ebd4b14fa45e9f2f",
+      "source": "xsd/ (7 identical XSD files; existing CORSE_PDE ZIP packaging)"
+    },
+    "netex-it-lev5-example.xml": {
+      "sha256": "c663241ea73c3d78fd5aa3816b6a5bbf5f31ef301673cb6e0d90d96780269acf",
+      "source": "Examples/Netex_ITA_1.10_EPIP+Level2+KPI-ART_with_versioning_final_lev5.xml"
+    },
+    "netex-it-guidelines-5.0.1.pdf": {
+      "sha256": "dc4341547cf493c9c247bf02f058d6b8c5a14305e99b167c6a22124ef11361ef",
+      "source": "Linee guida/Linee guida compilazione NeTEx IT v.5.0.1.pdf"
+    }
+  }
+}

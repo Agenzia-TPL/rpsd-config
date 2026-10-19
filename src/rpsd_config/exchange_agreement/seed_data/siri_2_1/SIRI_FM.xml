@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- edited with XMLSpy v2017 rel. 3 sp1 (x64) (http://www.altova.com) by Rossella Panero (5T S.r.l.) -->
+<Siri xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.siri.org.uk/siri ../../SIRI_general/xsd/siri.xsd" xmlns="http://www.siri.org.uk/siri" version="2.1">
+	<ServiceDelivery>
+		<ResponseTimestamp>2023-02-15T10:33:11.695Z</ResponseTimestamp>
+		<ProducerRef>5T</ProducerRef>
+		<FacilityMonitoringDelivery>
+			<ResponseTimestamp>2023-02-15T10:29:59+01:00</ResponseTimestamp>
+			<SubscriberRef>NAP</SubscriberRef>
+			<SubscriptionRef>0001</SubscriptionRef>
+			<!-- Stato parcheggi-->
+			<FacilityCondition>
+				<FacilityRef>IT:ITC1:Parking:parcheggiTorino:p:Porta_Nuova</FacilityRef>
+				<FacilityStatus>
+					<Status>partiallyAvailable</Status>
+					<Description>Parziale allagamento del parcheggio</Description>
+				</FacilityStatus>
+				<MonitoredCounting>
+					<CountingType>availabilityCount</CountingType>
+					<CountedFeatureUnit>bays</CountedFeatureUnit>
+					<TypeOfCountedFeature>
+						<TypeOfValueCode>privateCar</TypeOfValueCode>
+						<NameOfClass>privateCar</NameOfClass>
+					</TypeOfCountedFeature>
+					<Percentage>50</Percentage>
+				</MonitoredCounting>
+			</FacilityCondition>
+			<!-- Stato Stazione di Ricarica-->
+			<FacilityCondition>
+				<FacilityRef>IT:ITC1:Parking:StazioniRicaricaTorino:p:Porta_Nuova</FacilityRef>
+				<FacilityStatus>
+					<Status>partiallyAvailable</Status>
+					<Description>Parziale allagamento del parcheggio</Description>
+				</FacilityStatus>
+				<MonitoredCounting>
+					<CountingType>availabilityCount</CountingType>
+					<CountedFeatureUnit>devices</CountedFeatureUnit>
+					<TypeOfCountedFeature>
+						<TypeOfValueCode>carRechargeBay</TypeOfValueCode>
+						<NameOfClass>carRechargeBay</NameOfClass>
+					</TypeOfCountedFeature>
+					<Count>15</Count>
+				</MonitoredCounting>
+			</FacilityCondition>
+		</FacilityMonitoringDelivery>
+		<!-- Stato stazione Bike Sharing-->
+		<FacilityMonitoringDelivery>
+			<ResponseTimestamp>2023-02-15T10:29:59+01:00</ResponseTimestamp>
+			<SubscriberRef>NAP</SubscriberRef>
+			<SubscriptionRef>0001</SubscriptionRef>
+			<FacilityCondition>
+				<FacilityRef>IT:ITC1:Parking:parcheggiBikeSharingTorino:p:Porta_Nuova</FacilityRef>
+				<FacilityStatus>
+					<Status>partiallyAvailable</Status>
+					<Description>Parziale allagamento del parcheggio</Description>
+				</FacilityStatus>
+				<MonitoredCounting>
+					<CountingType>availabilityCount</CountingType>
+					<CountedFeatureUnit>vehicles</CountedFeatureUnit>
+					<TypeOfCountedFeature>
+						<TypeOfValueCode>bike</TypeOfValueCode>
+						<NameOfClass>bike</NameOfClass>
+					</TypeOfCountedFeature>
+					<Count>5</Count>
+				</MonitoredCounting>
+			</FacilityCondition>
+		</FacilityMonitoringDelivery>
+		<!-- Disponibilità biciletta e posizione -->
+		<FacilityMonitoringDelivery>
+			<ResponseTimestamp>2023-02-15T10:29:59+01:00</ResponseTimestamp>
+			<SubscriberRef>NAP</SubscriberRef>
+			<SubscriptionRef>0001</SubscriptionRef>
+			<FacilityCondition>
+				<Facility>
+					<FacilityClass>vehicle</FacilityClass>
+					<FacilityLocation>
+						<VehicleRef>IT:ITC1:Vehicle:BikeSharingTorino:VE:01</VehicleRef>
+						<OperatorRef>IT:ITC1:Operator:12345678911:BikeSharing:BikeSharing</OperatorRef>
+					</FacilityLocation>
+				</Facility>			
+				<FacilityStatus>
+					<Status>available</Status>
+				</FacilityStatus>
+				<FacilityUpdatedPosition>
+					<Longitude>7.0000</Longitude>
+					<Latitude>45.000000</Latitude>
+				</FacilityUpdatedPosition>
+			</FacilityCondition>
+		</FacilityMonitoringDelivery>
+		<!-- Stato sistemi Ticketing -->
+		<FacilityMonitoringDelivery>
+			<ResponseTimestamp>2025-02-15T10:29:59+01:00</ResponseTimestamp>
+			<SubscriberRef>NAP</SubscriberRef>
+			<SubscriptionRef>0001</SubscriptionRef>
+			<FacilityCondition>
+				<FacilityRef>IT:ITC1:TicketingEquipment:busATS:001</FacilityRef>
+				<FacilityStatus>
+					<Status>notAvailable</Status>
+				</FacilityStatus>
+				<Remedy>
+					<RemedyType>repair</RemedyType>
+					<Description>In manutenzione</Description>
+					<RemedyPeriod>
+						<StartTime>2025-08-12T10:30:00+01:00</StartTime>
+						<EndTime>2025-08-12T11:30:00+01:00</EndTime>
+					</RemedyPeriod>
+				</Remedy>
+			</FacilityCondition>
+		</FacilityMonitoringDelivery>
+		<!-- Stato sistemi di bordo -->
+		<FacilityMonitoringDelivery>
+			<ResponseTimestamp>2025-02-15T10:29:59+01:00</ResponseTimestamp>
+			<SubscriberRef>NAP</SubscriberRef>
+			<SubscriptionRef>0001</SubscriptionRef>
+			<FacilityCondition>
+				<FacilityRef>IT:ITC1:HeadSign:busATS:1</FacilityRef>
+				<FacilityStatus>
+					<Status>partiallyAvailable</Status>
+				</FacilityStatus>
+				<Remedy>
+					<RemedyType>repair</RemedyType>
+					<Description>In manutenzione</Description>
+					<RemedyPeriod>
+						<StartTime>2025-08-12T10:30:00+01:00</StartTime>
+						<EndTime>2025-08-12T11:30:00+01:00</EndTime>
+					</RemedyPeriod>
+				</Remedy>
+			</FacilityCondition>
+		</FacilityMonitoringDelivery>
+		<!-- Stato sistemi di stazione -->
+		<FacilityMonitoringDelivery>
+			<ResponseTimestamp>2025-02-15T10:29:59+01:00</ResponseTimestamp>
+			<SubscriberRef>NAP</SubscriberRef>
+			<SubscriptionRef>0001</SubscriptionRef>
+			<FacilityCondition>
+				<FacilityRef>IT:ITC1:EscalatorEquipment:busATS:001</FacilityRef>
+				<FacilityStatus>
+					<Status>partiallyAvailable</Status>
+				</FacilityStatus>
+				<Remedy>
+					<RemedyType>repair</RemedyType>
+					<Description>In manutenzione</Description>
+					<RemedyPeriod>
+						<StartTime>2025-08-12T10:30:00+01:00</StartTime>
+						<EndTime>2025-08-12T11:30:00+01:00</EndTime>
+					</RemedyPeriod>
+				</Remedy>
+			</FacilityCondition>
+		</FacilityMonitoringDelivery>
+	</ServiceDelivery>
+</Siri>

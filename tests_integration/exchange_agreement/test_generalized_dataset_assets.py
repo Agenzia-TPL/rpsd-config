@@ -445,6 +445,121 @@ class GeneralizedDatasetAssetTests(TestCase):
         with self.assertRaises(ValidationError):
             ensure_dataset_asset_examples(actor=self.actor)
 
+    def test_netex_profile_seed_loads_pinned_assets_without_duplicates(self):
+        import json
+
+        from rpsd_config.exchange_agreement.models import ValidationRuleVersion
+        from rpsd_config.exchange_agreement.services.netex_profile_seed import (
+            ensure_netex_italian_profile,
+        )
+
+        spec = ensure_netex_italian_profile(actor=self.actor)
+        links = list(spec.asset_links.select_related("configuration_asset"))
+        self.assertEqual(len(links), 3)
+        schema = next(link for link in links if link.role == "validation_schema")
+        self.assertTrue(schema.required)
+        self.assertTrue(schema.configuration_asset.is_active)
+        self.assertEqual(len(schema.configuration_asset.bundle_manifest["files"]), 8)
+        self.assertTrue(all(not link.required for link in links if link != schema))
+        self.assertEqual(spec.status, "draft")
+        self.assertEqual(spec.rule_bindings.count(), 0)
+        rule = ValidationRuleVersion.objects.get(rule__code="netex-it-lev5-xsd")
+        self.assertEqual(rule.status, "draft")
+        self.assertEqual(rule.execution_reference, "")
+        self.assertEqual(
+            json.loads(rule.definition)["bundle_sha256"],
+            schema.configuration_asset.checksum_sha256,
+        )
+        paths = {p for p in Path(self.directory.name).rglob("*") if p.is_file()}
+        repeated = ensure_netex_italian_profile(actor=self.actor)
+        self.assertEqual(repeated.pk, spec.pk)
+        self.assertEqual(
+            list(repeated.asset_links.values_list("pk", flat=True)),
+            [link.pk for link in links],
+        )
+        self.assertEqual(
+            paths, {p for p in Path(self.directory.name).rglob("*") if p.is_file()}
+        )
+        self.upload(
+            code="netex-it-guidelines", asset_type="document", name="changed.txt"
+        )
+        with self.assertRaises(ValidationError):
+            ensure_netex_italian_profile(actor=self.actor)
+
+    def test_siri_seed_shares_bundle_and_preserves_published_versions(self):
+        from rpsd_config.exchange_agreement.services.dataset_catalog import (
+            publish_dataset_specification,
+        )
+        from rpsd_config.exchange_agreement.services.dataset_catalog_bootstrap import (
+            INITIAL_DATASET_SPECIFICATIONS,
+        )
+        from rpsd_config.exchange_agreement.services.siri_profile_seed import (
+            ensure_siri_italian_profile,
+        )
+
+        originals = []
+        for initial in INITIAL_DATASET_SPECIFICATIONS:
+            if not initial.dataset_code.startswith("siri-"):
+                continue
+            dataset = Dataset.objects.create(
+                code=initial.dataset_code, name=initial.dataset_name
+            )
+            spec = DatasetSpecification.objects.create(
+                dataset=dataset,
+                code=initial.specification_code,
+                version=initial.version,
+                format="xml",
+            )
+            originals.append(publish_dataset_specification(spec, actor=self.actor))
+        result = ensure_siri_italian_profile(actor=self.actor)
+        self.assertEqual(len(result), 10)
+        self.assertTrue(all(s.code.endswith("_v002") for s in result))
+        schema_ids = set()
+        for spec in result:
+            schema = spec.asset_links.get(role="validation_schema")
+            schema_ids.add(schema.configuration_asset_id)
+            self.assertTrue(schema.required)
+            self.assertEqual(spec.status, "draft")
+            self.assertEqual(spec.format, "xml")
+            self.assertEqual(spec.metadata["standard_version"], "2.1")
+            self.assertEqual(
+                len(schema.configuration_asset.bundle_manifest["files"]), 73
+            )
+            self.assertEqual(spec.asset_links.filter(role="documentation").count(), 1)
+        self.assertEqual(len(schema_ids), 1)
+        self.assertEqual(ConfigurationAsset.objects.count(), 7)
+        self.assertEqual(
+            sum(spec.asset_links.filter(role="example").count() for spec in result), 5
+        )
+        for spec in originals:
+            spec.refresh_from_db()
+            self.assertEqual(spec.status, "published")
+            self.assertEqual(spec.asset_links.count(), 0)
+        paths = {p for p in Path(self.directory.name).rglob("*") if p.is_file()}
+        repeated = ensure_siri_italian_profile(actor=self.actor)
+        self.assertEqual([s.pk for s in repeated], [s.pk for s in result])
+        self.assertEqual(ConfigurationAsset.objects.count(), 7)
+        self.assertEqual(
+            paths, {p for p in Path(self.directory.name).rglob("*") if p.is_file()}
+        )
+        self.upload(code="siri-2-1-schema", asset_type="other", name="changed.txt")
+        with self.assertRaises(ValidationError):
+            ensure_siri_italian_profile(actor=self.actor)
+
+    def test_siri_seed_fresh_catalog_keeps_same_versions_after_publication(self):
+        from rpsd_config.exchange_agreement.services.dataset_catalog import (
+            publish_dataset_specification,
+        )
+        from rpsd_config.exchange_agreement.services.siri_profile_seed import (
+            ensure_siri_italian_profile,
+        )
+
+        result = ensure_siri_italian_profile(actor=self.actor)
+        self.assertTrue(all(s.code.endswith("_v001") for s in result))
+        publish_dataset_specification(result[0], actor=self.actor)
+        repeated = ensure_siri_italian_profile(actor=self.actor)
+        self.assertEqual([s.pk for s in result], [s.pk for s in repeated])
+
     def test_migration_audit_rejects_invalid_existing_code(self):
         asset = self.upload()
         migration = importlib.import_module(
