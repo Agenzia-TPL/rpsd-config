@@ -29,6 +29,14 @@ jobs:
           repository: Agenzia-TPL/rpsd-commons
           path: rpsd-commons
 
+      - name: Check out rpsd-tools
+        uses: actions/checkout@v4
+        with:
+          repository: Agenzia-TPL/rpsd-tools
+          ref: v0.2.0
+          path: rpsd-tools
+          persist-credentials: false
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -36,7 +44,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: rpsd-config
-        run: uv sync --dev
+        run: uv sync --locked --dev
 
       - name: Lint
         working-directory: rpsd-config
@@ -99,6 +107,14 @@ jobs:
           repository: Agenzia-TPL/rpsd-commons
           path: rpsd-commons
 
+      - name: Check out rpsd-tools
+        uses: actions/checkout@v4
+        with:
+          repository: Agenzia-TPL/rpsd-tools
+          ref: v0.2.0
+          path: rpsd-tools
+          persist-credentials: false
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -106,7 +122,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: rpsd-config
-        run: uv sync --dev
+        run: uv sync --locked --dev
 
       - name: Check dependency licenses
         working-directory: rpsd-config
@@ -189,6 +205,14 @@ jobs:
           repository: Agenzia-TPL/rpsd-commons
           path: rpsd-commons
 
+      - name: Check out rpsd-tools
+        uses: actions/checkout@v4
+        with:
+          repository: Agenzia-TPL/rpsd-tools
+          ref: v0.2.0
+          path: rpsd-tools
+          persist-credentials: false
+
       - name: Read version
         id: version
         working-directory: rpsd-config
@@ -220,6 +244,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./rpsd-config
+          build-contexts: |
+            rpsd-commons=./rpsd-commons
+            rpsd-tools=./rpsd-tools
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

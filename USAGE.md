@@ -1208,23 +1208,57 @@ Config never resolves an arbitrary latest version.
 
 ### Install and build
 
-`uv.lock` pins the full core commit. Access to the private Tools repository is
-needed only during dependency installation and authoring export, not at seed or
-request time. The Python package does not include Tools input/reference files.
-The dependency uses SSH, with no credential in the project or seed package.
+Config installs `rpsd-core==0.2.0` from the sibling directory
+`../rpsd-tools/packages/rpsd-core`, declared in `[tool.uv.sources]`.
+`uv.lock` records the local source and resolved package version; it does not pin
+a Git commit for a directory dependency. The reviewed release baseline is
+`e58588b38f848c84bf58495bfb34f64f4ea14ef1`; keep a compatible local checkout and
+review updates before changing the expected version.
 
-The Dockerfile accepts a BuildKit SSH agent and a known-hosts secret. With a
-verified GitHub entry already present and a read-authorized key loaded:
+The workspace must contain these sibling directories:
+
+```text
+workspace/
+  rpsd/
+  rpsd-config/
+  rpsd-commons/
+  rpsd-tools/
+```
+
+For development, `uv sync --locked` builds core from that local directory.
+Docker Compose supplies `rpsd-tools` as an additional build context; the
+Dockerfile copies only `packages/rpsd-core` and installs it as a regular package.
+No SSH agent, private key, known-hosts secret or GitHub download is needed by
+the dependency build. Standard images and third-party packages can still require
+registry access. Tools authoring inputs and references are not embedded in the
+core Python package.
+
+From `rpsd/`, use the standard build and explicit database update:
+
+```bash
+docker compose --profile config build rpsd-config
+docker compose --profile config run --rm --no-deps \
+  rpsd-config uv run --no-sync manage migrate
+docker compose --profile config up -d --no-build --no-deps rpsd-config
+```
+
+For a direct build from `rpsd-config/`, provide both local contexts:
 
 ```bash
 docker build --build-context rpsd-commons=../rpsd-commons \
-  --ssh "default=$SSH_AUTH_SOCK" \
-  --secret "id=known_hosts,src=$HOME/.ssh/known_hosts" \
+  --build-context rpsd-tools=../rpsd-tools \
   -t rpsd-config:033 .
 ```
 
-Compose/CI builds must forward the same agent and secret. Neither is baked into
-the image. Native GIS/Postgres libraries are still required for Django commands.
+CI checks out Tools at `v0.2.0` beside Config before installing or building,
+and supplies the same local build contexts. The runner needs read access to that
+repository while it remains private; no SSH build secret is configured.
+
+`rpsd/repos.conf` includes Tools as a library dependency for cloning and smart
+rebuild detection. An unavailable local checkout is a build error, with no
+fallback to Git. When the upstream repository becomes public, remote distribution
+can be configured separately; the current build continues to use local sources.
+Native GIS/Postgres libraries are still required for Django commands.
 
 ### Export, preview and apply
 

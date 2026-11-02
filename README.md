@@ -473,5 +473,5 @@ rimossi; vedere [USAGE.md](USAGE.md) per recupero file e aggiornamento senza res
 Feature 033 adds formal indicator metadata and an offline, transactional Tools
 catalog import. Formulas are verified statically with pinned `rpsd-core` 0.2.0;
 calculation remains external. See [USAGE](USAGE.md#formal-indicator-catalog-feature-033)
-for private dependency builds, preview/apply commands, pilot limitations and the
+for local dependency builds, preview/apply commands, pilot limitations and the
 formal-aware M2M v5 API.

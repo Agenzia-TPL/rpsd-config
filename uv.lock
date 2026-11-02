@@ -1541,7 +1541,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "pyjwt", specifier = ">=2.8" },
     { name = "requests", specifier = ">=2.32" },
-    { name = "rpsd-core", git = "ssh://git@github.com/Agenzia-TPL/rpsd-tools?subdirectory=packages%2Frpsd-core&rev=v0.2.0" },
+    { name = "rpsd-core", directory = "../rpsd-tools/packages/rpsd-core" },
     { name = "rpsd-storage", editable = "../rpsd-commons/packages/rpsd-storage" },
     { name = "rpsd-transport", extras = ["rabbitmq"], editable = "../rpsd-commons/packages/rpsd-transport" },
     { name = "uvicorn", specifier = ">=0.23.0" },
@@ -1562,13 +1562,22 @@ dev = [
 [[package]]
 name = "rpsd-core"
 version = "0.2.0"
-source = { git = "ssh://git@github.com/Agenzia-TPL/rpsd-tools?subdirectory=packages%2Frpsd-core&rev=v0.2.0#e58588b38f848c84bf58495bfb34f64f4ea14ef1" }
+source = { directory = "../rpsd-tools/packages/rpsd-core" }
 dependencies = [
     { name = "elementpath" },
     { name = "lxml" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "xmlschema" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "elementpath", specifier = ">=5.1,<5.2" },
+    { name = "lxml", specifier = ">=5.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "xmlschema", specifier = ">=3.0" },
 ]
 
 [[package]]

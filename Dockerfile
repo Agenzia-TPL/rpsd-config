@@ -16,8 +16,7 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list && \
         postgis \
         binutils \
         build-essential \
-        git \
-        openssh-client && \
+        git && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -27,21 +26,21 @@ WORKDIR /app
 COPY --from=rpsd-commons pyproject.toml uv.lock README.md /rpsd-commons/
 COPY --from=rpsd-commons packages/ /rpsd-commons/packages/
 
+# Install only the core library from the sibling Tools checkout.
+# The git executable is used by authoring export checks, not dependency downloads.
+COPY --from=rpsd-tools packages/rpsd-core/ /rpsd-tools/packages/rpsd-core/
+
 # Copy dependency files first (for better layer caching)
 COPY pyproject.toml uv.lock README.md ./
 
 # Install dependencies only (cached unless pyproject.toml/uv.lock change)
-# Private rpsd-core: forward an SSH agent and verified known_hosts at build time.
-# Neither the agent nor the host-key file is copied into the resulting image.
-RUN --mount=type=ssh --mount=type=secret,id=known_hosts,target=/root/.ssh/known_hosts \
-    uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy source code (changes here don't invalidate dependency cache)
 COPY src/ ./src/
 
 # Now install the local project (builds webinner with src/ available)
-RUN --mount=type=ssh --mount=type=secret,id=known_hosts,target=/root/.ssh/known_hosts \
-    uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev
 
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
