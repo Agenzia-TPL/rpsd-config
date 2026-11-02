@@ -9,6 +9,9 @@ from django.db import transaction
 
 from rpsd_config.admin_dataset_exchange import proxies
 from rpsd_config.admin_guidance import GuidedInlineMixin
+from rpsd_config.exchange_agreement.formal_forms import IndicatorDimensionForm
+from rpsd_config.exchange_agreement.models import IndicatorVersionDimension
+from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
 from rpsd_config.exchange_agreement.services.validation_bindings import (
     save_dataset_rule,
 )
@@ -313,6 +316,39 @@ class IndicatorInputInline(FrozenCompositionInline):
     verbose_name_plural = "Dataset richiesti"
 
 
+class IndicatorDimensionInline(FrozenCompositionInline):
+    model = IndicatorVersionDimension
+    form = IndicatorDimensionForm
+    fields = (
+        "dimension",
+        "is_carried",
+        "is_monitoring",
+        "is_contractual",
+        "copy_catalog_values",
+        "allowed_values",
+    )
+    verbose_name_plural = "Dimensioni proprie e vocabolari della versione"
+
+    @staticmethod
+    def _authorized(request):
+        return (
+            request.user.is_active
+            and resolve_user_agency_scope(request.user).is_platform_admin
+        )
+
+    def has_view_permission(self, request, obj=None):
+        return self._authorized(request)
+
+    def has_add_permission(self, request, obj=None):
+        return self._authorized(request) and (obj is None or obj.status == "draft")
+
+    has_change_permission = has_add_permission
+    has_delete_permission = has_add_permission
+
+    def get_fields(self, request, obj=None):
+        return self.get_readonly_fields(request, obj) or self.fields
+
+
 class DependencyInlineForm(CompositionAdminForm):
     dimensions = forms.ModelMultipleChoiceField(
         queryset=proxies.IndicatorDimension.objects.all(),
@@ -347,12 +383,17 @@ class IndicatorDependencyInline(FrozenCompositionInline):
     model = proxies.IndicatorVersionDependency
     fk_name = "dependent"
     form = DependencyInlineForm
-    fields = ("prerequisite", "dimensions")
+    fields = ("prerequisite", "origin", "technical_reason", "dimensions")
     verbose_name_plural = "Indicatori prerequisiti"
 
     def get_readonly_fields(self, request, obj=None):
         return (
-            ("prerequisite", "required_dimensions_display")
+            (
+                "prerequisite",
+                "origin",
+                "technical_reason",
+                "required_dimensions_display",
+            )
             if obj and obj.status != "draft"
             else ()
         )

@@ -3,6 +3,7 @@
 """Lifecycle and deterministic serialization for versioned indicators."""
 
 import json
+from copy import deepcopy
 
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
@@ -36,7 +37,89 @@ ALLOWED_TRANSITIONS = {
 }
 
 
+@transaction.atomic
+def clone_indicator_version(source, *, code, version, actor):
+    """Copy authoring metadata into a fresh draft, without copying evidence."""
+    from rpsd_config.exchange_agreement.models import (
+        DependencyRequiredDimension,
+        IndicatorVersionDependency,
+        IndicatorVersionDimension,
+        IndicatorVersionInput,
+        IndicatorVersionRule,
+        IndicatorVersionRuleDimension,
+    )
+    from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+        lock_indicator_graph,
+    )
+    from rpsd_config.exchange_agreement.services.validation_catalog import (
+        require_catalog_admin,
+    )
+
+    require_catalog_admin(actor)
+    lock_indicator_graph()
+    source = IndicatorVersion.objects.select_for_update().get(pk=source.pk)
+    excluded = {
+        "id",
+        "code",
+        "version",
+        "created_at",
+        "updated_at",
+        "status",
+        "published_at",
+        "published_by",
+        "formal_verification",
+        "formula_value_kind",
+    }
+    values = {
+        f.attname: deepcopy(getattr(source, f.attname))
+        for f in source._meta.fields
+        if f.name not in excluded
+    }
+    target = IndicatorVersion.objects.create(code=code, version=version, **values)
+    for link in source.dimension_links.all():
+        IndicatorVersionDimension.objects.create(
+            indicator_version=target,
+            dimension=link.dimension,
+            allowed_values=deepcopy(link.allowed_values),
+            is_carried=link.is_carried,
+            is_monitoring=link.is_monitoring,
+            is_contractual=link.is_contractual,
+        )
+    for link in source.dataset_inputs.all():
+        IndicatorVersionInput.objects.create(
+            indicator_version=target, dataset_specification=link.dataset_specification
+        )
+    for edge in source.dependency_links.all():
+        cloned = IndicatorVersionDependency.objects.create(
+            dependent=target,
+            prerequisite=edge.prerequisite,
+            origin=edge.origin,
+            technical_reason=edge.technical_reason,
+        )
+        for dimension in edge.required_dimensions.all():
+            DependencyRequiredDimension.objects.create(
+                dependency=cloned, dimension=dimension
+            )
+    for link in source.rule_bindings.all():
+        cloned = IndicatorVersionRule.objects.create(
+            indicator_version=target,
+            dataset_specification=link.dataset_specification,
+            rule_version=link.rule_version,
+            impact=link.impact,
+        )
+        for dimension in link.affected_dimensions.all():
+            IndicatorVersionRuleDimension.objects.create(
+                binding=cloned, dimension=dimension
+            )
+    return target
+
+
 def _validate_for_publication(version: IndicatorVersion) -> None:
+    from rpsd_config.exchange_agreement.services.formal_definitions import (
+        require_current_verification,
+    )
+
+    require_current_verification(version)
     if version.indicator.status != Indicator.Status.ACTIVE:
         raise IndicatorVersionTransitionError("The logical indicator is not active.")
     if version.execution_engine != "prefect":
@@ -146,11 +229,20 @@ def withdraw_indicator_version(
 
 
 def serialize_indicator_version(version: IndicatorVersion) -> dict:
+    from rpsd_config.exchange_agreement.services.formal_definitions import (
+        formal_metadata,
+    )
+
     return {
         "code": version.code,
         "version": version.version,
         "description": version.description,
         "formula_description": version.formula_description,
+        **(
+            {"formal_definition": formal_metadata(version)}
+            if version.definition_kind
+            else {}
+        ),
         "input_schema": version.input_schema,
         "input_contract": version.input_schema,
         "output_schema": version.output_schema,

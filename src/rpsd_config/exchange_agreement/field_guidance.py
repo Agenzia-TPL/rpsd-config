@@ -882,7 +882,171 @@ FIELDS = {
     ),
 }
 
+FIELDS.update(
+    {
+        "revision_status": guide(
+            "Stato revisione",
+            (
+                "Ciclo di vita della revisione contrattuale cui "
+                "appartengono i valori. Parametri, soglie e penali sono "
+                "modificabili soltanto in bozza."
+            ),
+        ),
+        "formula_symbol": guide(
+            "Simbolo matematico",
+            (
+                "Identità nelle formule (es. CORSE_PDE), distinta dal "
+                "codice Config. Unica e stabile dopo la pubblicazione."
+            ),
+        ),
+        "definition_kind": guide(
+            "Tipo di definizione",
+            (
+                "Base: insieme ricostruito esternamente; proiezione: "
+                "selezione di un insieme; composto: espressione fra "
+                "indicatori. Vuoto per il catalogo precedente."
+            ),
+        ),
+        "formula_definition": guide(
+            "Formula formalizzata",
+            (
+                "Espressione nel linguaggio controllato rpsd-formula-v1."
+                " Config ne verifica i metadati senza eseguirla sui "
+                "dataset o generare SQL."
+            ),
+        ),
+        "formula_language_version": guide(
+            "Versione del linguaggio",
+            (
+                "Seleziona la grammatica rpsd-formula-v1 di core 0.2.0. "
+                "È distinta dalla versione tecnica dell'indicatore."
+            ),
+        ),
+        "formula_value_kind": guide(
+            "Tipo matematico verificato",
+            (
+                "Insieme o numero, ricavato dal verificatore statico. "
+                "Readonly; non dimostra unità fisiche, grana o "
+                "correttezza del calcolo."
+            ),
+        ),
+        "consistency_checks": guide(
+            "Controlli formali di coerenza",
+            (
+                "Uguaglianze controllate, una per riga. Possono citare "
+                "un contesto di verifica versionato senza aggiungere "
+                "input di esecuzione."
+            ),
+        ),
+        "consistency_notes": guide(
+            "Note di coerenza",
+            (
+                "Spiegazione informativa delle convenzioni e dei limiti;"
+                " il testo non viene interpretato come controllo "
+                "automatico."
+            ),
+        ),
+        "annual_aggregation_description": guide(
+            "Aggregazione annuale",
+            (
+                "Formalizzazione descrittiva del valore annuale. Non "
+                "configura scheduling, soglie o penali e non viene "
+                "eseguita da Config."
+            ),
+        ),
+        "formal_verification": guide(
+            "Evidenza di verifica statica",
+            (
+                "Prova readonly con digest, release del verificatore, "
+                "analisi e provenienza. Non certifica il SQL né un "
+                "deployment Prefect."
+            ),
+        ),
+        "formal_verification_state": guide(
+            "Stato della verifica (non del calcolo)",
+            (
+                "Corrente se la prova corrisponde ai metadati esatti; "
+                "obsoleta dopo modifiche rilevanti. Ripetere la verifica"
+                " prima della pubblicazione."
+            ),
+        ),
+        "allowed_values": guide(
+            "Valori ammessi",
+            (
+                "null indica dominio aperto; una lista di stringhe "
+                "uniche indica dominio chiuso; [] significa chiuso "
+                "vuoto. Le stringhe true e false restano stringhe."
+            ),
+        ),
+        "copy_catalog_values": guide(
+            "Copia ora i valori predefiniti",
+            (
+                "Copia una volta il dominio del catalogo dimensioni in "
+                "questa versione. Le successive modifiche del default "
+                "non si propagano."
+            ),
+        ),
+        "is_carried": guide(
+            "Dimensione trasportata",
+            (
+                "La base o il composto mette a disposizione questa "
+                "dimensione; le proiezioni la ereditano dalla versione "
+                "esatta del prerequisito."
+            ),
+        ),
+        "is_monitoring": guide(
+            "Dimensione di monitoraggio",
+            (
+                "Dimensione propria dichiarata per le analisi di "
+                "monitoraggio; distinta dalla sola disponibilità nei "
+                "dati e dall'uso contrattuale."
+            ),
+        ),
+        "is_contractual": guide(
+            "Dimensione contrattuale",
+            (
+                "Dimensione propria dichiarata per le analisi "
+                "contrattuali. Non indica un valore di parametro o una "
+                "soglia economica."
+            ),
+        ),
+        "origin": guide(
+            "Origine della dipendenza",
+            (
+                "formula: riferimento matematico; technical: "
+                "prerequisito operativo aggiuntivo; both: entrambi. Gli "
+                "archi tecnici richiedono una motivazione nelle "
+                "definizioni formali."
+            ),
+        ),
+        "technical_reason": guide(
+            "Motivo tecnico",
+            (
+                "Spiega perché serve un prerequisito tecnico anche "
+                "quando non compare nella formula. Obbligatorio per "
+                "origine technical o both nelle definizioni formali."
+            ),
+        ),
+    }
+)
+
 OVERRIDES = {
+    ("IndicatorDimension", "allowed_values"): guide(
+        "Valori ammessi predefiniti",
+        (
+            "Dominio usato come default di authoring: null aperto, "
+            "lista chiusa. Modificarlo non altera domini già copiati"
+            " nelle versioni."
+        ),
+    ),
+    ("IndicatorVersionDimension", "allowed_values"): guide(
+        "Valori ammessi della versione",
+        (
+            "Dominio posseduto da questa versione: null aperto, "
+            "lista chiusa anche vuota. Congelato dopo la "
+            "pubblicazione; indipendente dal default del catalogo."
+        ),
+    ),
     ("ContractRevisionIndicator", "processing_profile_indicator_version"): guide(
         "Versione indicatore ammessa dal profilo",
         "Seleziona una versione appartenente al profilo tecnico di questa revisione. "

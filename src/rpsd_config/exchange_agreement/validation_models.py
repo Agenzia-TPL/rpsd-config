@@ -393,6 +393,12 @@ class FrozenComposition(models.Model):
     def check_editable(self) -> None:
         owner_field = self._meta.get_field(self.OWNER_FIELD)
         owner_model = owner_field.related_model
+        if owner_model._meta.model_name == "indicatorversion":
+            from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+                lock_indicator_graph,
+            )
+
+            lock_indicator_graph()
         ids = {getattr(self, owner_field.attname)}
         if self.pk:
             old_id = (
@@ -460,7 +466,7 @@ class DatasetVersionRule(FrozenComposition):
             "rule_version__version",
         ]
 
-    def clean(self):
+    def clean(self, *, allow_draft_rule=False):
         super().clean()
         if not self.rule_version_id or not self.dataset_specification_id:
             return
@@ -476,11 +482,17 @@ class DatasetVersionRule(FrozenComposition):
                 )
         spec = current_related(self, "dataset_specification")
         rule = current_related(self, "rule_version")
-        if rule.status != "published":
+        staging = (
+            spec.status == "draft" or allow_draft_rule
+        ) and rule.status == "draft"
+        if rule.status != "published" and not staging:
             raise ValidationError(
                 "Only published rules can be associated.", code="unpublished_rule"
             )
-        rule.validate_for_publication()
+        if staging:
+            rule.full_clean()
+        else:
+            rule.validate_for_publication()
         from rpsd_config.exchange_agreement.services.validation_registry import (
             CAPABILITIES,
         )
@@ -504,18 +516,21 @@ class DimensionIdentityQuerySet(models.QuerySet):
     """Protect codes referenced by published bindings and frozen snapshots."""
 
     def update(self, **kwargs):
-        if "code" in kwargs:
+        if {"code", "allowed_values"} & kwargs.keys():
             raise ValidationError(
                 "Dimension codes are immutable.", code="immutable_dimension_code"
             )
         return super().update(**kwargs)
 
     def bulk_update(self, objs, fields, batch_size=None):
-        if "code" in fields:
+        if {"code", "allowed_values"} & set(fields):
             raise ValidationError(
                 "Dimension codes are immutable.", code="immutable_dimension_code"
             )
         return super().bulk_update(objs, fields, batch_size=batch_size)
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValidationError("Create dimension defaults through validated saves.")
 
 
 class IndicatorDimension(models.Model):
@@ -524,6 +539,17 @@ class IndicatorDimension(models.Model):
     code = models.SlugField(max_length=96, unique=True)
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True)
+    allowed_values = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Valori ammessi predefiniti",
+        help_text=(
+            "null = dominio aperto; lista di stringhe = dominio chiuso. Sono "
+            "default di authoring: non modificano i domini già associati alle"
+            " versioni."
+        ),
+    )
     objects = DimensionIdentityQuerySet.as_manager()
 
     class Meta:
@@ -534,6 +560,11 @@ class IndicatorDimension(models.Model):
 
     def clean(self):
         super().clean()
+        from rpsd_config.exchange_agreement.services.formal_definitions import (
+            validate_dimension_values,
+        )
+
+        validate_dimension_values(self.allowed_values)
         if (
             self.pk
             and type(self).objects.filter(pk=self.pk).exclude(code=self.code).exists()
@@ -546,6 +577,62 @@ class IndicatorDimension(models.Model):
             type(self).objects.select_for_update().get(pk=self.pk)
         self.full_clean()
         return super().save(*args, **kwargs)
+
+
+class IndicatorVersionDimension(FrozenComposition):
+    """Own analytical dimensions and their version-owned, frozen domains."""
+
+    indicator_version = models.ForeignKey(
+        "exchange_agreement.IndicatorVersion",
+        on_delete=models.PROTECT,
+        related_name="dimension_links",
+    )
+    dimension = models.ForeignKey(
+        IndicatorDimension, on_delete=models.PROTECT, related_name="version_links"
+    )
+    is_carried = models.BooleanField(
+        default=False, verbose_name="Portata dall'indicatore"
+    )
+    is_monitoring = models.BooleanField(
+        default=False, verbose_name="Dimensione di monitoraggio"
+    )
+    is_contractual = models.BooleanField(
+        default=False, verbose_name="Dimensione contrattuale"
+    )
+    allowed_values = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Valori ammessi della versione",
+        help_text=(
+            "null = aperto; lista = chiuso. Valori posseduti dalla versione, "
+            "non un collegamento al default corrente."
+        ),
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["indicator_version", "dimension"],
+                name="uniq_indicator_own_dimension",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(is_carried=True)
+                | models.Q(is_monitoring=True)
+                | models.Q(is_contractual=True),
+                name="indicator_dimension_has_usage",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        from rpsd_config.exchange_agreement.services.formal_definitions import (
+            validate_dimension_values,
+        )
+
+        validate_dimension_values(self.allowed_values)
+        if not any((self.is_carried, self.is_monitoring, self.is_contractual)):
+            raise ValidationError("Dichiarare almeno un uso della dimensione.")
 
 
 class IndicatorVersionRule(FrozenComposition):
@@ -598,17 +685,22 @@ class IndicatorVersionRule(FrozenComposition):
         if not self.dataset_specification_id or not self.rule_version_id:
             return
         specification = current_related(self, "dataset_specification")
-        if specification.status != "published":
+        owner = current_related(self, "indicator_version")
+        staging = owner.status == "draft" and bool(owner.definition_kind)
+        if specification.status != "published" and not (
+            staging and specification.status == "draft"
+        ):
             raise ValidationError(
                 "The dataset specification must be published.",
                 code="unpublished_dataset_specification",
             )
         # Share interpreter/schema checks without persisting a dataset policy.
-        DatasetVersionRule(
+        candidate = DatasetVersionRule(
             dataset_specification=specification,
             rule_version=current_related(self, "rule_version"),
             failure_policy="warn",
-        ).clean()
+        )
+        candidate.clean(allow_draft_rule=staging)
         if (
             self.pk
             and self.impact == self.Impact.CALCULATION
@@ -687,7 +779,12 @@ class IndicatorVersionInput(FrozenComposition):
     def clean(self):
         if not self.dataset_specification_id:
             return
-        if current_related(self, "dataset_specification").status != "published":
+        specification = current_related(self, "dataset_specification")
+        owner = current_related(self, "indicator_version")
+        staging = owner.status == "draft" and bool(owner.definition_kind)
+        if specification.status != "published" and not (
+            staging and specification.status == "draft"
+        ):
             raise ValidationError(
                 "Indicator inputs require published specifications.",
                 code="unpublished_dataset_specification",
@@ -718,6 +815,25 @@ class IndicatorVersionDependency(FrozenComposition):
     required_dimensions = models.ManyToManyField(
         IndicatorDimension, through="DependencyRequiredDimension", blank=True
     )
+    origin = models.CharField(
+        max_length=16,
+        choices=[
+            ("formula", "Formula"),
+            ("technical", "Prerequisito tecnico"),
+            ("both", "Formula e requisito tecnico"),
+        ],
+        default="technical",
+        verbose_name="Origine della dipendenza",
+    )
+    technical_reason = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Motivazione tecnica",
+        help_text=(
+            "Richiesta per nuovi archi tecnici di indicatori formalizzati; i "
+            "filtri matematici restano nella formula."
+        ),
+    )
 
     class Meta:
         constraints = [
@@ -747,7 +863,20 @@ class IndicatorVersionDependency(FrozenComposition):
                 "An indicator cannot depend on itself.",
                 code="cyclic_indicator_dependency",
             )
-        if current_related(self, "prerequisite").status != "published":
+        owner = current_related(self, "dependent")
+        prerequisite = current_related(self, "prerequisite")
+        staging = owner.status == "draft" and bool(owner.definition_kind)
+        if (
+            self.origin in {"technical", "both"}
+            and owner.definition_kind
+            and not self.technical_reason.strip()
+        ):
+            raise ValidationError(
+                {"technical_reason": "Motivare il prerequisito tecnico."}
+            )
+        if prerequisite.status != "published" and not (
+            staging and prerequisite.status == "draft"
+        ):
             raise ValidationError(
                 "A prerequisite must be published.", code="unpublished_prerequisite"
             )

@@ -47,7 +47,7 @@ def would_create_cycle(
     return False
 
 
-def resolve_indicator_closure(roots) -> dict:
+def resolve_indicator_closure(roots, *, allow_drafts=False) -> dict:
     """Return a deterministic AND closure, all paths, edges and required inputs."""
     root_ids = {version.pk for version in roots}
     roots = list(
@@ -78,7 +78,7 @@ def resolve_indicator_closure(roots) -> dict:
         if path not in paths.setdefault(version.pk, []):
             paths[version.pk].append(path)
         versions[version.pk] = version
-        validate_indicator_bindings(version)
+        validate_indicator_bindings(version, allow_drafts=allow_drafts)
         for spec in required_dataset_specifications(version):
             old = specs.get(spec.dataset.code)
             if old is not None and old.pk != spec.pk:
@@ -92,7 +92,9 @@ def resolve_indicator_closure(roots) -> dict:
             .prefetch_related("required_dimensions")
             .order_by("prerequisite__code")
         ):
-            if edge.prerequisite.status != "published":
+            if edge.prerequisite.status != "published" and not (
+                allow_drafts and edge.prerequisite.status == "draft"
+            ):
                 raise ValidationError(
                     "Unpublished prerequisite: "
                     + " -> ".join(path + [edge.prerequisite.code]),
@@ -134,7 +136,13 @@ def dependency_impact_contract(edge) -> dict:
 
 @transaction.atomic
 def add_indicator_dependency(
-    *, dependent: IndicatorVersion, prerequisite: IndicatorVersion, actor, dimensions=()
+    *,
+    dependent: IndicatorVersion,
+    prerequisite: IndicatorVersion,
+    actor,
+    dimensions=(),
+    origin="technical",
+    technical_reason="",
 ) -> IndicatorVersionDependency:
     """Add one prerequisite and its required dimensions under the graph lock."""
     from rpsd_config.exchange_agreement.models import DependencyRequiredDimension
@@ -145,11 +153,14 @@ def add_indicator_dependency(
     require_catalog_admin(actor)
     lock_indicator_graph()
     edge = IndicatorVersionDependency.objects.create(
-        dependent=dependent, prerequisite=prerequisite
+        dependent=dependent,
+        prerequisite=prerequisite,
+        origin=origin,
+        technical_reason=technical_reason,
     )
     for dimension in dimensions:
         DependencyRequiredDimension.objects.create(dependency=edge, dimension=dimension)
-    resolve_indicator_closure([dependent])
+    resolve_indicator_closure([dependent], allow_drafts=bool(dependent.definition_kind))
     return edge
 
 

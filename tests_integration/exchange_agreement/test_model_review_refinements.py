@@ -368,6 +368,7 @@ class ReviewAdminProtectionTests(TestCase):
                 f"{prefix}-TOTAL_FORMS": "1",
                 f"{prefix}-INITIAL_FORMS": "0",
                 f"{prefix}-0-prerequisite": prerequisite.pk,
+                f"{prefix}-0-origin": "technical",
                 f"{prefix}-0-dimensions": [dimension.pk],
             },
             instance=root,

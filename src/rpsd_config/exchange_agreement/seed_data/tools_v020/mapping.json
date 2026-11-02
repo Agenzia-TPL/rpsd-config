@@ -1,0 +1,1092 @@
+{
+  "dataset_rules": [
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-netex-lev5-xsd",
+      "rule_version": "tools-001",
+      "specification": "netex-it-lev5_002"
+    },
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-siri-2-2-1-xsd",
+      "rule_version": "tools-001",
+      "specification": "siri-pt_v003"
+    },
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-siri-pt-service",
+      "rule_version": "tools-001",
+      "specification": "siri-pt_v003"
+    },
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-siri-2-2-1-xsd",
+      "rule_version": "tools-001",
+      "specification": "siri-et_v003"
+    },
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-siri-et-service",
+      "rule_version": "tools-001",
+      "specification": "siri-et_v003"
+    }
+  ],
+  "datasets": [
+    {
+      "assets": [
+        {
+          "code": "netex-it-lev5-schema",
+          "required": true,
+          "role": "validation_schema",
+          "sha256": "025b31af23d04f672488eef7c1d70867af4ca4d8d40e57c6ebd4b14fa45e9f2f",
+          "version": 1
+        }
+      ],
+      "code": "netex-it-lev5_002",
+      "create": true,
+      "dataset_code": "netex",
+      "dataset_name": "NeTEx",
+      "description": "NeTEx: specifica del catalogo Tools 0.2.0, da revisionare.",
+      "format": "xml",
+      "metadata": {
+        "source_commit": "cecb0cde1820650af1d7b829107bef1ee8635ed7",
+        "source_repository": "https://github.com/5Tsrl/netex-italian-profile",
+        "standard": "NeTEx",
+        "standard_version": "IT-Lev5"
+      },
+      "source_dataset": "NETEX",
+      "source_schema": "netex-it-lev5@cecb0cd",
+      "version": "002"
+    },
+    {
+      "assets": [
+        {
+          "code": "siri-2-2-1-schema",
+          "required": true,
+          "role": "validation_schema",
+          "sha256": "6820a7bb73e334a4b98af940fcf4021ff97a8a950b942cad8b2b14762092ac6f",
+          "version": 1
+        }
+      ],
+      "code": "siri-pt_v003",
+      "create": true,
+      "dataset_code": "siri-pt",
+      "dataset_name": "SIRI PT",
+      "description": "SIRI PT: specifica del catalogo Tools 0.2.0, da revisionare.",
+      "format": "xml",
+      "metadata": {
+        "source_commit": "06b5aa632300985c117c485a3298320fd2b9b51d",
+        "source_repository": "https://github.com/SIRI-CEN/SIRI",
+        "standard": "SIRI",
+        "standard_version": "2.2.1"
+      },
+      "source_dataset": "SIRI-PT",
+      "source_schema": "siri@v2.2.1",
+      "version": "003"
+    },
+    {
+      "assets": [
+        {
+          "code": "siri-2-2-1-schema",
+          "required": true,
+          "role": "validation_schema",
+          "sha256": "6820a7bb73e334a4b98af940fcf4021ff97a8a950b942cad8b2b14762092ac6f",
+          "version": 1
+        }
+      ],
+      "code": "siri-et_v003",
+      "create": true,
+      "dataset_code": "siri-et",
+      "dataset_name": "SIRI ET",
+      "description": "SIRI ET: specifica del catalogo Tools 0.2.0, da revisionare.",
+      "format": "xml",
+      "metadata": {
+        "source_commit": "06b5aa632300985c117c485a3298320fd2b9b51d",
+        "source_repository": "https://github.com/SIRI-CEN/SIRI",
+        "standard": "SIRI",
+        "standard_version": "2.2.1"
+      },
+      "source_dataset": "SIRI-ET",
+      "source_schema": "siri@v2.2.1",
+      "version": "003"
+    }
+  ],
+  "extra_rules": [
+    {
+      "code": "tools-netex-lev5-xsd",
+      "definition": "{\"asset_code\": \"netex-it-lev5-schema\", \"asset_version\": \"1\", \"bundle_sha256\": \"025b31af23d04f672488eef7c1d70867af4ca4d8d40e57c6ebd4b14fa45e9f2f\", \"entrypoint\": \"NeTEx_publication_Lev5.xsd\"}",
+      "description": "Validazione strutturale tramite bundle condiviso. Deployment esterno da configurare.",
+      "language_version": "1.0",
+      "name": "Schema XSD NeTEx Lev5",
+      "result_contract": "structured_report",
+      "validation_type": "xsd_bundle",
+      "version": "tools-001"
+    },
+    {
+      "code": "tools-siri-2-2-1-xsd",
+      "definition": "{\"asset_code\": \"siri-2-2-1-schema\", \"asset_version\": \"1\", \"bundle_sha256\": \"6820a7bb73e334a4b98af940fcf4021ff97a8a950b942cad8b2b14762092ac6f\", \"entrypoint\": \"siri.xsd\"}",
+      "description": "Validazione strutturale tramite bundle condiviso. Deployment esterno da configurare.",
+      "language_version": "1.0",
+      "name": "Schema XSD SIRI 2.2.1",
+      "result_contract": "structured_report",
+      "validation_type": "xsd_bundle",
+      "version": "tools-001"
+    },
+    {
+      "code": "tools-siri-pt-service",
+      "definition": "/*[not(self::siri:Siri) or not(siri:ServiceDelivery/siri:ProductionTimetableDelivery)]",
+      "description": "Il contenuto deve essere una risposta del servizio SIRI selezionato, oltre a rispettare lo schema comune.",
+      "language_version": "1.0",
+      "name": "Servizio atteso SIRI PT",
+      "options": {
+        "namespaces": {
+          "siri": "http://www.siri.org.uk/siri"
+        }
+      },
+      "validation_type": "xpath",
+      "version": "tools-001"
+    },
+    {
+      "code": "tools-siri-et-service",
+      "definition": "/*[not(self::siri:Siri) or not(siri:ServiceDelivery/siri:EstimatedTimetableDelivery)]",
+      "description": "Il contenuto deve essere una risposta del servizio SIRI selezionato, oltre a rispettare lo schema comune.",
+      "language_version": "1.0",
+      "name": "Servizio atteso SIRI ET",
+      "options": {
+        "namespaces": {
+          "siri": "http://www.siri.org.uk/siri"
+        }
+      },
+      "validation_type": "xpath",
+      "version": "tools-001"
+    }
+  ],
+  "indicators": {
+    "CORSE_CONF": {
+      "code": "corse-conf-tools_001",
+      "indicator_code": "corse-conf",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_CONF_G": {
+      "code": "corse-conf-g-tools_001",
+      "indicator_code": "corse-conf-g",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_CONF_SIRI": {
+      "code": "corse-conf-siri-tools_001",
+      "indicator_code": "corse-conf-siri",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_LIM": {
+      "code": "corse-lim-tools_001",
+      "indicator_code": "corse-lim",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_LIM_ES": {
+      "code": "corse-lim-es-tools_001",
+      "indicator_code": "corse-lim-es",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_LIM_PROG": {
+      "code": "corse-lim-prog-tools_001",
+      "indicator_code": "corse-lim-prog",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_PDE": {
+      "code": "corse-pde-tools_001",
+      "indicator_code": "corse-pde",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_PS": {
+      "code": "corse-ps-tools_001",
+      "indicator_code": "corse-ps",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_RIP": {
+      "code": "corse-rip-tools_001",
+      "indicator_code": "corse-rip",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_SOPP": {
+      "code": "corse-sopp-tools_001",
+      "indicator_code": "corse-sopp",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_SOPP_ES": {
+      "code": "corse-sopp-es-tools_001",
+      "indicator_code": "corse-sopp-es",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_SOPP_PROG": {
+      "code": "corse-sopp-prog-tools_001",
+      "indicator_code": "corse-sopp-prog",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "CORSE_SOST_EFF": {
+      "code": "corse-sost-eff-tools_001",
+      "indicator_code": "corse-sost-eff",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "version": "tools-001"
+    },
+    "FID": {
+      "code": "fid-tools_001",
+      "indicator_code": "fid",
+      "limitations": [
+        {
+          "code": "binding_impact_review",
+          "reason": "Mapping iniziale conservativo calculation: rivedere impact e dimensioni con il referente prima della pubblicazione."
+        }
+      ],
+      "output_schema": {
+        "description": "Contratto proposto del risultato FID mensile per tipo di domanda; implementazione esterna da fornire.",
+        "identifier": "rpsd:kpi:fid:tools-001",
+        "metrics": [
+          {
+            "aggregations": [
+              "already_aggregated"
+            ],
+            "code": "fid",
+            "dimensions": [
+              "tipo_domanda"
+            ],
+            "grain": "month",
+            "type": "number",
+            "unit": "percent"
+          }
+        ],
+        "schema_version": 2
+      },
+      "version": "tools-001"
+    }
+  },
+  "profile_templates": [
+    {
+      "code": "tools-fid_001",
+      "description": "Template da completare con i riferimenti reali, non un profilo operativo.",
+      "indicators": [
+        "fid-tools_001"
+      ],
+      "input_flows": [],
+      "name": "Pilot FID da Tools 0.2.0",
+      "orchestration_flow": null,
+      "version": "001"
+    }
+  ],
+  "roots": [
+    "FID"
+  ],
+  "rules": {
+    "NETEX_DAY_TYPE_ASSIGNED": {
+      "code": "tools-netex-day-type-assigned",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_DTA_AVAILABLE": {
+      "code": "tools-netex-dta-available",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_DTA_NO_DATE": {
+      "code": "tools-netex-dta-no-date",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_DTA_OPERATING_PERIOD": {
+      "code": "tools-netex-dta-operating-period",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_DTA_PERIOD_REF": {
+      "code": "tools-netex-dta-period-ref",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_PASSING_TIME_IN_PATTERN": {
+      "code": "tools-netex-passing-time-in-pattern",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_PASSING_TIME_UNIQUE_STOP": {
+      "code": "tools-netex-passing-time-unique-stop",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_PERIOD_DAY_BITS": {
+      "code": "tools-netex-period-day-bits",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_PERIOD_DAY_BITS_FORMAT": {
+      "code": "tools-netex-period-day-bits-format",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_PERIOD_IN_CALENDAR": {
+      "code": "tools-netex-period-in-calendar",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJP_LINE_REF": {
+      "code": "tools-netex-sjp-line-ref",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJP_STOPS": {
+      "code": "tools-netex-sjp-stops",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJP_STOP_ORDER": {
+      "code": "tools-netex-sjp-stop-order",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJP_STOP_ORDER_UNIQUE": {
+      "code": "tools-netex-sjp-stop-order-unique",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJP_STOP_POINT_REF": {
+      "code": "tools-netex-sjp-stop-point-ref",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJ_DAY_TYPES": {
+      "code": "tools-netex-sj-day-types",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJ_DAY_TYPE_REF": {
+      "code": "tools-netex-sj-day-type-ref",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJ_DEPARTURE_FIRST_STOP": {
+      "code": "tools-netex-sj-departure-first-stop",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJ_DEPARTURE_TIME": {
+      "code": "tools-netex-sj-departure-time",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJ_LINE": {
+      "code": "tools-netex-sj-line",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJ_LINE_CONSISTENT": {
+      "code": "tools-netex-sj-line-consistent",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJ_PASSING_TIMES_COUNT": {
+      "code": "tools-netex-sj-passing-times-count",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJ_PATTERN_REF": {
+      "code": "tools-netex-sj-pattern-ref",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_SJ_PRESENT": {
+      "code": "tools-netex-sj-present",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "NETEX_TIME_LOCAL": {
+      "code": "tools-netex-time-local",
+      "consumers": {
+        "CORSE_PDE": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_ACTUAL_INCREASING": {
+      "code": "tools-siri-et-actual-increasing",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_ACTUAL_ON_OPERATING_DAY": {
+      "code": "tools-siri-et-actual-on-operating-day",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_BOOLEAN_LITERAL": {
+      "code": "tools-siri-et-boolean-literal",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_CALL_ORDER_UNIQUE": {
+      "code": "tools-siri-et-call-order-unique",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_CANCELLED_CALLS_COMPLETE": {
+      "code": "tools-siri-et-cancelled-calls-complete",
+      "consumers": {
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_CANCELLED_CALL_NO_ACTUAL": {
+      "code": "tools-siri-et-cancelled-call-no-actual",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_CANCELLED_NOT_RECORDED": {
+      "code": "tools-siri-et-cancelled-not-recorded",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_DATA_FRAME_DATE": {
+      "code": "tools-siri-et-data-frame-date",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_ESTIMATED_CALL_ORDER": {
+      "code": "tools-siri-et-estimated-call-order",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_EVJ_FRAMED_REF": {
+      "code": "tools-siri-et-evj-framed-ref",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_LAST_STOP_STATUS": {
+      "code": "tools-siri-et-last-stop-status",
+      "consumers": {
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_NOT_ALL_CALLS_CANCELLED": {
+      "code": "tools-siri-et-not-all-calls-cancelled",
+      "consumers": {
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_RECORDED_BEFORE_ESTIMATED": {
+      "code": "tools-siri-et-recorded-before-estimated",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_RECORDED_CALL_ORDER": {
+      "code": "tools-siri-et-recorded-call-order",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_RECORDED_TIME": {
+      "code": "tools-siri-et-recorded-time",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_ET_TRIP_UNIQUE": {
+      "code": "tools-siri-et-trip-unique",
+      "consumers": {
+        "CORSE_CONF_SIRI": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_LIM_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_ES": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_AIMED_INCREASING": {
+      "code": "tools-siri-pt-aimed-increasing",
+      "consumers": {
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_RIP": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_BOOLEAN_LITERAL": {
+      "code": "tools-siri-pt-boolean-literal",
+      "consumers": {
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_RIP": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_CALL_ORDER": {
+      "code": "tools-siri-pt-call-order",
+      "consumers": {
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_CALL_ORDER_UNIQUE": {
+      "code": "tools-siri-pt-call-order-unique",
+      "consumers": {
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_DATA_FRAME_DATE": {
+      "code": "tools-siri-pt-data-frame-date",
+      "consumers": {
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_RIP": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_DVJ_FRAMED_REF": {
+      "code": "tools-siri-pt-dvj-framed-ref",
+      "consumers": {
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_RIP": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_FIRST_CALL_DEPARTURE": {
+      "code": "tools-siri-pt-first-call-departure",
+      "consumers": {
+        "CORSE_RIP": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_NOT_ALL_CALLS_CANCELLED": {
+      "code": "tools-siri-pt-not-all-calls-cancelled",
+      "consumers": {
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_ONE_OPERATING_DAY": {
+      "code": "tools-siri-pt-one-operating-day",
+      "consumers": {
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_RIP": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    },
+    "SIRI_PT_TRIP_UNIQUE": {
+      "code": "tools-siri-pt-trip-unique",
+      "consumers": {
+        "CORSE_LIM_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_RIP": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        },
+        "CORSE_SOPP_PROG": {
+          "affected_dimensions": [],
+          "impact": "calculation"
+        }
+      },
+      "version": "tools-001"
+    }
+  },
+  "source_commit": "e58588b38f848c84bf58495bfb34f64f4ea14ef1"
+}

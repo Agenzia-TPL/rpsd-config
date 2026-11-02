@@ -83,7 +83,7 @@ DatasetSpecificationForm = modelform_factory(
 )
 IndicatorForm = modelform_factory(
     Indicator,
-    fields=("code", "name", "description", "status"),
+    fields=("code", "name", "description", "formula_symbol", "status"),
 )
 IndicatorVersionForm = modelform_factory(
     IndicatorVersion,
@@ -93,6 +93,12 @@ IndicatorVersionForm = modelform_factory(
         "version",
         "description",
         "formula_description",
+        "definition_kind",
+        "formula_definition",
+        "formula_language_version",
+        "consistency_checks",
+        "consistency_notes",
+        "annual_aggregation_description",
         "input_schema",
         "output_schema",
         "parameter_schema",
@@ -100,6 +106,12 @@ IndicatorVersionForm = modelform_factory(
         "execution_reference",
         "artifact_identifier",
     ),
+)
+IndicatorVersionForm.base_fields["formula_language_version"] = forms.ChoiceField(
+    required=False,
+    choices=[("", "---------"), ("rpsd-formula-v1", "rpsd-formula-v1 — core 0.2.0")],
+    label="Versione del linguaggio",
+    help_text="Grammatica controllata; nessuna esecuzione della formula.",
 )
 IndicatorVersionForm.base_fields["input_schema"].label = "Schema input"
 IndicatorVersionForm.base_fields["output_schema"].label = "Schema output"
@@ -176,7 +188,7 @@ CATALOGS = {
         "label": "Versioni indicatore",
         "model": IndicatorVersion,
         "form": IndicatorVersionForm,
-        "description": "Definizioni tecniche e frammenti necessari.",
+        "description": "Definizioni tecniche, formule, dimensioni e dipendenze.",
         "transitions": {
             "publish": publish_indicator_version,
             "deprecate": deprecate_indicator_version,
@@ -276,7 +288,8 @@ CATALOGS.update(
             "label": "Dimensioni degli indicatori",
             "model": IndicatorDimension,
             "form": modelform_factory(
-                IndicatorDimension, fields=("code", "name", "description")
+                IndicatorDimension,
+                fields=("code", "name", "description", "allowed_values"),
             ),
             "description": "Capacità di disaggregazione, ad esempio Linea e Contratto.",
         },
@@ -295,7 +308,8 @@ CATALOGS.update(
             "label": "Dipendenze degli indicatori",
             "model": IndicatorVersionDependency,
             "form": modelform_factory(
-                IndicatorVersionDependency, fields=("dependent", "prerequisite")
+                IndicatorVersionDependency,
+                fields=("dependent", "prerequisite", "origin", "technical_reason"),
             ),
             "description": (
                 "Prerequisiti necessari, a versione esplicita. Nessun ciclo "
@@ -372,7 +386,7 @@ def _is_editable(instance) -> bool:
     return draft is None or status == draft
 
 
-def _detail_context(slug: str, instance) -> dict:
+def _detail_context(slug: str, instance, *, dimension_data=None) -> dict:
     context: dict = {}
     if hasattr(instance, "status_events"):
         context["status_events"] = instance.status_events.select_related(
@@ -389,12 +403,41 @@ def _detail_context(slug: str, instance) -> dict:
     elif slug == "validation-rule-versions":
         context["rule_definition"] = instance.definition
     elif slug == "indicator-versions":
+        from rpsd_config.exchange_agreement.formal_forms import IndicatorDimensionForm
+        from rpsd_config.exchange_agreement.services.formal_definitions import (
+            verification_state,
+        )
+
+        context["formal_state"] = verification_state(instance)
+        context["formal_analysis"] = (
+            instance.formal_verification.get("analysis", {})
+            .get("indicators", {})
+            .get(instance.code, {})
+        )
+        context["formal_state"] = {
+            "current": "Corrente",
+            "stale": "Obsoleta",
+            "not_verified": "Non verificata",
+            "not_formal": "Non formalizzato",
+        }.get(context["formal_state"], context["formal_state"])
+        context["own_dimensions"] = instance.dimension_links.select_related("dimension")
+        context["own_dimension_form"] = _style_form(
+            IndicatorDimensionForm(dimension_data, owner=instance)
+        )
+        context["formal_limitations"] = instance.formal_verification.get(
+            "limitations", []
+        )
         from rpsd_config.exchange_agreement.services.indicator_dependencies import (
             resolve_indicator_closure,
         )
 
         try:
-            context["indicator_closure"] = resolve_indicator_closure([instance])
+            context["indicator_closure"] = resolve_indicator_closure(
+                [instance],
+                allow_drafts=bool(
+                    instance.definition_kind and instance.status == "draft"
+                ),
+            )
             context.update(catalog_validation_preview([instance]))
         except ValidationError as exc:
             context["closure_error"] = "; ".join(exc.messages)
@@ -552,7 +595,44 @@ def technical_catalog_detail_page(
     if request.method == "POST":
         action = request.POST.get("action", "")
         try:
-            if catalog_slug == "validation-rule-versions" and action == "delete-draft":
+            if catalog_slug == "indicator-versions" and action == "verify-formula":
+                from rpsd_config.exchange_agreement.services.formal_definitions import (
+                    verify_definition,
+                )
+
+                instance = verify_definition(instance, actor=request.user)
+                success_message = (
+                    "Verifica statica aggiornata; nessun calcolo eseguito."
+                )
+            elif catalog_slug == "indicator-versions" and action in {
+                "add-dimension",
+                "remove-dimension",
+            }:
+                if not _is_editable(instance):
+                    raise ValidationError(
+                        "Le dimensioni della versione pubblicata sono immutabili."
+                    )
+                if action == "remove-dimension":
+                    get_object_or_404(
+                        instance.dimension_links, pk=request.POST.get("link_id")
+                    ).delete()
+                else:
+                    from rpsd_config.exchange_agreement.formal_forms import (
+                        IndicatorDimensionForm,
+                    )
+
+                    dimension_form = IndicatorDimensionForm(
+                        request.POST, owner=instance
+                    )
+                    if not dimension_form.is_valid():
+                        raise ValidationError(dimension_form.errors.as_json())
+                    dimension_form.save()
+                success_message = (
+                    "Dimensioni della versione aggiornate; ripetere la verifica."
+                )
+            elif (
+                catalog_slug == "validation-rule-versions" and action == "delete-draft"
+            ):
                 if request.POST.get("confirm_delete") != "yes":
                     raise ValidationError("Conferma l'eliminazione della bozza.")
                 delete_validation_rule_version(instance, actor=request.user)
@@ -647,6 +727,12 @@ def technical_catalog_detail_page(
             "is_editable": _is_editable(instance),
             "error_message": error_message,
             "success_message": success_message,
-            **_detail_context(catalog_slug, instance),
+            **_detail_context(
+                catalog_slug,
+                instance,
+                dimension_data=request.POST
+                if error_message and request.POST.get("action") == "add-dimension"
+                else None,
+            ),
         },
     )

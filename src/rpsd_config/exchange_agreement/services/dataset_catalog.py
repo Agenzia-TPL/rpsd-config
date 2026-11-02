@@ -77,6 +77,14 @@ def transition_dataset_specification(
         _validate_assets_for_publication(locked)
         try:
             for binding in locked.rule_bindings.all():
+                if binding.rule_version.status != "published":
+                    raise ValidationError(
+                        (
+                            "Pubblicare tutte le regole della specifica prima "
+                            "dell'attivazione."
+                        ),
+                        code="unpublished_rule",
+                    )
                 binding.full_clean()
         except ValidationError as exc:
             errors = getattr(exc, "error_dict", {}).values()

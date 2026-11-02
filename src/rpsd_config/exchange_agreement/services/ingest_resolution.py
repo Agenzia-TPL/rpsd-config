@@ -66,6 +66,7 @@ def resolve_current_contract_configuration(
     contract: Contract,
     *,
     allow_evaluations: bool = False,
+    allow_formal: bool = False,
 ) -> CurrentContractConfiguration:
     """Resolve and integrity-check today's approved contract snapshot."""
 
@@ -110,7 +111,12 @@ def resolve_current_contract_configuration(
         ) from exc
     if (
         revision.snapshot_schema_version
-        not in {"canonical-json-v1", "canonical-json-v2", "canonical-json-v3"}
+        not in {
+            "canonical-json-v1",
+            "canonical-json-v2",
+            "canonical-json-v3",
+            "canonical-json-v4",
+        }
         or snapshot.get("snapshot_schema_version") != revision.snapshot_schema_version
         or not revision.snapshot_checksum
         or digest != revision.snapshot_checksum
@@ -120,7 +126,19 @@ def resolve_current_contract_configuration(
             "Current contract configuration failed integrity checks",
         )
 
-    if revision.snapshot_schema_version == "canonical-json-v3":
+    if revision.snapshot_schema_version == "canonical-json-v4":
+        if not allow_formal:
+            raise IngestResolutionError(
+                "unsupported_formal_configuration",
+                "This configuration requires the v5 formal-metadata-aware API",
+            )
+        from rpsd_config.exchange_agreement.services.formal_definitions import (
+            validate_frozen_formal_metadata,
+        )
+
+        validate_frozen_formal_metadata(snapshot)
+
+    if revision.snapshot_schema_version in {"canonical-json-v3", "canonical-json-v4"}:
         if not allow_evaluations:
             raise IngestResolutionError(
                 "unsupported_evaluation_configuration",
@@ -164,12 +182,13 @@ def resolve_current_ingest_configuration(
     data_category: str,
     *,
     allow_evaluations: bool = False,
+    allow_formal: bool = False,
 ) -> CurrentIngestConfiguration:
     """Resolve today's approved input without accepting a client-supplied date."""
 
     category = (data_category or "").strip().lower()
     current = resolve_current_contract_configuration(
-        contract, allow_evaluations=allow_evaluations
+        contract, allow_evaluations=allow_evaluations, allow_formal=allow_formal
     )
     snapshot = current.snapshot
 

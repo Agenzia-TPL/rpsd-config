@@ -256,7 +256,11 @@ class EvaluationInline(GuidedInlineMixin, admin.StackedInline):
                 form_kwargs["owner"] = obj
                 super().__init__(*args, **form_kwargs)
 
-        formset.form = ContextualForm
+        formset.form = guided_form(
+            ContextualForm,
+            self.model,
+            extra_fields=self.get_readonly_fields(request, obj),
+        )
         return formset
 
 
@@ -275,7 +279,7 @@ class PenaltyInline(EvaluationInline):
 
 
 @admin.register(ContractRevisionIndicatorAdminProxy)
-class RevisionIndicatorAdmin(admin.ModelAdmin):
+class RevisionIndicatorAdmin(GuidedAdminMixin, admin.ModelAdmin):
     """Edit contractual values and child evaluations without nested inlines."""
 
     list_display = ("__str__", "revision_status")

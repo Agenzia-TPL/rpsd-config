@@ -5,6 +5,13 @@
 <p>{{ contract.contract_code }} · {{ revision.code }} · {{ owner.processing_profile_indicator_version.indicator_version.code }}</p>
 <a href="{{ back_url }}">Torna alla revisione</a>
 <p>Configurazione contrattuale: Django non esegue i calcoli. Una modifica richiede una revisione in bozza.</p>
+{% if formal_definition %}<section class="card my-3"><div class="card-body">
+<h2 class="h5">Definizione tecnica dell'indicatore</h2>
+<p><code>{{ formal_definition.symbol }}</code> · {{ formal_definition.definition_kind }} · linguaggio {{ formal_definition.formula_language_version }} · verifica {{ formal_definition.state }}{% if formal_definition.frozen %} · dati dello snapshot approvato{% endif %}</p>
+<pre class="text-wrap">{{ formal_definition.formula_definition|default:"Indicatore base: ricostruzione esterna dei fatti." }}</pre>
+{% if formal_definition.annual_aggregation_description %}<p>{{ formal_definition.annual_aggregation_description }}</p>{% endif %}
+<p class="text-body-secondary">La verifica statica riguarda la definizione, non il risultato dei calcoli. I valori contrattuali dei parametri si configurano qui sotto.</p>
+</div></section>{% endif %}
 {% if error_message %}<div class="alert alert-danger">{{ error_message }}</div>{% endif %}
 <section class="card my-3"><div class="card-body"><h2 class="h5">Parametri dell'indicatore</h2>
 {% if editable %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="save-parameters">{{ parameter_form.as_p }}<button class="btn btn-primary">Salva parametri</button></form>

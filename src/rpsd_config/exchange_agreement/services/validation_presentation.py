@@ -45,6 +45,7 @@ def frozen_validation_rows(snapshot: dict) -> list[dict]:
     if snapshot.get("snapshot_schema_version") not in {
         "canonical-json-v2",
         "canonical-json-v3",
+        "canonical-json-v4",
     }:
         return []
     from rpsd_config.exchange_agreement.services.validation_plans import (
@@ -84,6 +85,7 @@ def frozen_indicator_value_rows(snapshot: dict) -> list[dict]:
     if snapshot.get("snapshot_schema_version") not in {
         "canonical-json-v2",
         "canonical-json-v3",
+        "canonical-json-v4",
     }:
         return []
     roles = {v["code"]: v["role"] for v in snapshot["effective_indicators"]}

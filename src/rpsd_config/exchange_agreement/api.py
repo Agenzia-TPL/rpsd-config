@@ -1550,6 +1550,12 @@ def m2m_contract_validation_plan_v4(
     contract_code: str,
     data_category: str | None = None,
 ):
+    return _m2m_validation_plan(request, contract_code, data_category)
+
+
+def _m2m_validation_plan(
+    request, contract_code, data_category, *, allow_formal=False, endpoint_version="v4"
+):
     unexpected = set(request.GET) - {"data_category"}
     category_values = request.GET.getlist("data_category")
     category = (data_category or "").strip().lower()
@@ -1621,13 +1627,15 @@ def m2m_contract_validation_plan_v4(
                 )
 
         resolution = resolve_current_ingest_configuration(
-            contract, category, allow_evaluations=True
+            contract, category, allow_evaluations=True, allow_formal=allow_formal
         )
         from rpsd_config.exchange_agreement.services.validation_plans import (
             validation_plan_from_resolution,
         )
 
-        plan = validation_plan_from_resolution(resolution, allow_evaluations=True)
+        plan = validation_plan_from_resolution(
+            resolution, allow_evaluations=True, allow_formal=allow_formal
+        )
     except IngestResolutionError as exc:
         return _m2m_v2_error(
             request,
@@ -1646,7 +1654,7 @@ def m2m_contract_validation_plan_v4(
     correlation_id = _m2m_correlation_id(request)
     audit_m2m_event(
         "api.validation_plan",
-        endpoint_version="v4",
+        endpoint_version=endpoint_version,
         outcome="allowed",
         correlation_id=correlation_id,
         principal_id=principal.pk if principal else None,
@@ -1658,7 +1666,7 @@ def m2m_contract_validation_plan_v4(
         snapshot_checksum=resolution.snapshot_checksum,
     )
     record_api_usage(
-        version="v4",
+        version=endpoint_version,
         endpoint="validation-plan",
         outcome="success",
         correlation_id=correlation_id,
@@ -1667,6 +1675,28 @@ def m2m_contract_validation_plan_v4(
         revision_code=resolution.revision.code,
     )
     return plan
+
+
+@m2m_api.get(
+    "/v5/contracts/{contract_code}/validation-plan",
+    auth=[M2MClientTokenAuth(), ValidationServiceTokenAuth()],
+    response={
+        200: dict,
+        401: M2MErrorEnvelopeSchema,
+        403: M2MErrorEnvelopeSchema,
+        404: M2MErrorEnvelopeSchema,
+        409: M2MErrorEnvelopeSchema,
+        422: M2MErrorEnvelopeSchema,
+        503: M2MErrorEnvelopeSchema,
+    },
+)
+def m2m_contract_validation_plan_v5(
+    request, contract_code: str, data_category: str | None = None
+):
+    """Formal/evaluation-aware consumer: same authorization as v4, no downcast."""
+    return _m2m_validation_plan(
+        request, contract_code, data_category, allow_formal=True, endpoint_version="v5"
+    )
 
 
 @m2m_api.get("/v1/me", response=M2MMeSchema)

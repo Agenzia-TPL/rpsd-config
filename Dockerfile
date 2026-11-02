@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.13-slim-bookworm
 
 # Install uv
@@ -14,7 +15,9 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list && \
         postgresql-client \
         postgis \
         binutils \
-        build-essential && \
+        build-essential \
+        git \
+        openssh-client && \
     rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -28,13 +31,17 @@ COPY --from=rpsd-commons packages/ /rpsd-commons/packages/
 COPY pyproject.toml uv.lock README.md ./
 
 # Install dependencies only (cached unless pyproject.toml/uv.lock change)
-RUN uv sync --frozen --no-dev --no-install-project
+# Private rpsd-core: forward an SSH agent and verified known_hosts at build time.
+# Neither the agent nor the host-key file is copied into the resulting image.
+RUN --mount=type=ssh --mount=type=secret,id=known_hosts,target=/root/.ssh/known_hosts \
+    uv sync --frozen --no-dev --no-install-project
 
 # Copy source code (changes here don't invalidate dependency cache)
 COPY src/ ./src/
 
 # Now install the local project (builds webinner with src/ available)
-RUN uv sync --frozen --no-dev
+RUN --mount=type=ssh --mount=type=secret,id=known_hosts,target=/root/.ssh/known_hosts \
+    uv sync --frozen --no-dev
 
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"

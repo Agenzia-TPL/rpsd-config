@@ -989,6 +989,23 @@ class DatasetSpecificationStatusEvent(models.Model):
         )
 
 
+class IndicatorIdentityQuerySet(models.QuerySet):
+    """Keep formula symbols behind the locked identity validation boundary."""
+
+    def update(self, **kwargs):
+        if {"formula_symbol", "code"} & kwargs.keys():
+            raise ValidationError("Change formula symbols through validated saves.")
+        return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if {"formula_symbol", "code"} & set(fields):
+            raise ValidationError("Change formula symbols through validated saves.")
+        return super().bulk_update(objs, fields, batch_size=batch_size)
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValidationError("Create indicator identities through validated saves.")
+
+
 class Indicator(TimeStampedModel):
     """Stable business identity of a monitored indicator."""
 
@@ -1011,6 +1028,19 @@ class Indicator(TimeStampedModel):
     )
     name = models.CharField(max_length=128)
     description = models.TextField()
+    formula_symbol = models.CharField(
+        max_length=96,
+        unique=True,
+        null=True,
+        blank=True,
+        validators=[RegexValidator(r"^[A-Z][A-Z0-9_]*$")],
+        verbose_name="Simbolo matematico",
+        help_text=(
+            "Identità nelle formule, es. CORSE_PDE; distinta dal codice "
+            "corse-pde. Stabile dopo la pubblicazione."
+        ),
+    )
+    objects = IndicatorIdentityQuerySet.as_manager()
     status = models.CharField(
         max_length=16,
         choices=Status.choices,
@@ -1028,6 +1058,7 @@ class Indicator(TimeStampedModel):
 
     def clean(self):
         super().clean()
+        self.formula_symbol = (self.formula_symbol or "").strip() or None
         self.code = (self.code or "").strip()
         self.name = (self.name or "").strip()
         self.description = (self.description or "").strip()
@@ -1039,7 +1070,28 @@ class Indicator(TimeStampedModel):
         if errors:
             raise ValidationError(errors)
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+            lock_indicator_graph,
+        )
+
+        lock_indicator_graph()
+        self.formula_symbol = (self.formula_symbol or "").strip() or None
+        if self.pk:
+            old = type(self).objects.select_for_update().get(pk=self.pk)
+            published = old.versions.exclude(status="draft")
+            frozen_symbol = published.exclude(definition_kind="").exists()
+            if (old.formula_symbol != self.formula_symbol and frozen_symbol) or (
+                old.code != self.code and published.exists()
+            ):
+                raise ValidationError(
+                    {
+                        "formula_symbol": (
+                            "Il simbolo di un indicatore pubblicato è immutabile."
+                        )
+                    }
+                )
         self.full_clean()
         return super().save(*args, **kwargs)
 
@@ -1082,6 +1134,11 @@ class IndicatorVersion(TimeStampedModel):
         DBT = EXECUTION_DBT, _("dbt")
         EXTERNAL = EXECUTION_EXTERNAL, _("External")
 
+    class DefinitionKind(models.TextChoices):
+        BASE = "base", "Base"
+        PROJECTION = "projection", "Proiezione"
+        COMPOSITE = "composite", "Composto"
+
     input_specifications = models.ManyToManyField(
         "DatasetSpecification",
         through="IndicatorVersionInput",
@@ -1097,6 +1154,12 @@ class IndicatorVersion(TimeStampedModel):
         related_name="dependent_versions",
         blank=True,
     )
+    dimensions = models.ManyToManyField(
+        "IndicatorDimension",
+        through="IndicatorVersionDimension",
+        related_name="declaring_indicator_versions",
+        blank=True,
+    )
 
     indicator = models.ForeignKey(
         Indicator,
@@ -1107,6 +1170,70 @@ class IndicatorVersion(TimeStampedModel):
     version = models.CharField(max_length=32)
     description = models.TextField()
     formula_description = models.TextField()
+    definition_kind = models.CharField(
+        max_length=16,
+        choices=DefinitionKind.choices,
+        blank=True,
+        default="",
+        verbose_name="Tipo di definizione",
+        help_text=(
+            "Base, proiezione o composto; vuoto solo per definizioni non formalizzate."
+        ),
+    )
+    formula_definition = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Formula formalizzata",
+        help_text=(
+            "Linguaggio controllato: verificato sui metadati, mai eseguito "
+            "sui dataset da Django."
+        ),
+    )
+    formula_language_version = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name="Versione del linguaggio",
+        help_text=(
+            "Usare rpsd-formula-v1 per la grammatica di rpsd-core 0.2.0; non "
+            "è la versione dell'indicatore."
+        ),
+    )
+    formula_value_kind = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        editable=False,
+        choices=[("set", "Insieme"), ("number", "Numero")],
+        verbose_name="Tipo matematico verificato",
+    )
+    consistency_checks = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Controlli formali di coerenza",
+        help_text="Una uguaglianza per riga; non aggiungono dipendenze di esecuzione.",
+    )
+    consistency_notes = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Note di coerenza",
+        help_text="Descrizione informativa, non analizzata automaticamente.",
+    )
+    annual_aggregation_description = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Aggregazione annuale",
+        help_text=(
+            "Definizione matematica descrittiva; non frequenza di scheduling "
+            "o soglia contrattuale."
+        ),
+    )
+    formal_verification = models.JSONField(
+        default=dict,
+        blank=True,
+        editable=False,
+        verbose_name="Evidenza di verifica statica",
+    )
     input_schema = models.JSONField(default=dict, blank=True)
     output_schema = models.JSONField(default=dict, blank=True)
     parameter_schema = models.JSONField(default=dict, blank=True)
@@ -1179,6 +1306,18 @@ class IndicatorVersion(TimeStampedModel):
         self.description = (self.description or "").strip()
         self.formula_description = (self.formula_description or "").strip()
         errors = {}
+        from rpsd_config.exchange_agreement.services.formal_definitions import (
+            validate_formal_fields,
+        )
+
+        try:
+            validate_formal_fields(self)
+        except ValidationError as exc:
+            errors.update(
+                exc.message_dict
+                if hasattr(exc, "message_dict")
+                else {"formula_definition": exc.messages}
+            )
         if not self.code:
             errors["code"] = _("Indicator version code is required.")
         if not self.version:
@@ -1247,6 +1386,14 @@ class IndicatorVersion(TimeStampedModel):
                         "version",
                         "description",
                         "formula_description",
+                        "definition_kind",
+                        "formula_definition",
+                        "formula_language_version",
+                        "formula_value_kind",
+                        "consistency_checks",
+                        "consistency_notes",
+                        "annual_aggregation_description",
+                        "formal_verification",
                         "input_schema",
                         "output_schema",
                         "parameter_schema",
@@ -1267,6 +1414,11 @@ class IndicatorVersion(TimeStampedModel):
 
     @transaction.atomic
     def save(self, *args, **kwargs):
+        from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+            lock_indicator_graph,
+        )
+
+        lock_indicator_graph()
         if self.pk:
             type(self).objects.select_for_update().get(pk=self.pk)
         self.full_clean()
@@ -2560,6 +2712,7 @@ class ContractConfigurationRevision(TimeStampedModel):
                 "canonical-json-v1",
                 "canonical-json-v2",
                 "canonical-json-v3",
+                "canonical-json-v4",
             }:
                 errors["snapshot_schema_version"] = _(
                     "Unsupported revision snapshot schema version."
@@ -3609,6 +3762,7 @@ from rpsd_config.exchange_agreement.validation_models import (  # noqa: E402, F4
     DependencyRequiredDimension,
     IndicatorDimension,
     IndicatorVersionDependency,
+    IndicatorVersionDimension,
     IndicatorVersionInput,
     IndicatorVersionRule,
     IndicatorVersionRuleDimension,

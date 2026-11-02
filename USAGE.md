@@ -1121,3 +1121,194 @@ la compilazione segnala tre avvisi su import ripetuti di namespace già caricati
 Questo non verifica il runtime Prefect o tutti i requisiti del profilo italiano.
 Il caricamento degli asset non attiva automaticamente regole o processi:
 restano da configurare la regola XSD e i controlli sul servizio SIRI atteso.
+
+### Seeding del solo bundle ufficiale SIRI v2.2.1
+
+```bash
+uv run manage seed_siri_schema --actor NOME_UTENTE_ADMIN --standard-version 2.2.1
+```
+
+Il comando crea e attiva un solo asset condiviso `siri-2-2-1-schema`, tipo
+`xsd_bundle`, tramite lo storage configurato per rpsd-storage. Una seconda
+esecuzione riutilizza lo stesso record e lo stesso file dopo averne verificato
+l'integrità. File o metadati in conflitto, versioni multiple dello stesso codice
+o un asset non attivo fanno fallire il seed senza sostituzioni o riattivazioni
+implicite. Sono richiesti un amministratore di piattaforma e uno storage
+disponibile; non sono necessarie migrazioni o connessioni a GitHub.
+
+`--standard-version` accetta `2.1` e `2.2.1`, con default esplicito `2.2.1`.
+Il comando carica soltanto il bundle scelto: non crea specifiche dataset,
+associazioni, regole di validazione, input flow, profili o revisioni contrattuali.
+
+Le risorse recuperate dal tag ufficiale `v2.2.1`, commit
+`06b5aa632300985c117c485a3298320fd2b9b51d`, sono disponibili in
+`src/rpsd_config/exchange_agreement/seed_data/siri_2_2_1/`:
+
+- `siri-2.2.1.zip`: i 73 XSD raggiungibili da `siri.xsd`, mantenuti invariati
+  nei percorsi originali, più il `manifest.json` richiesto da Config;
+- `sources.json`: provenienza, checksum dell'archivio scaricato e del bundle,
+  inventario dei file inclusi/esclusi e verifiche effettuate.
+
+La cartella upstream contiene 94 file: il bundle seleziona solo le dipendenze
+necessarie alla validazione XML, escludendo WSDL e schemi accessori non
+raggiungibili, tra cui un XSD vuoto. Lo schema compilato con libxml2 accetta
+i cinque esempi italiani PT, ET, VM, FM e SX già presenti nel seed SIRI 2.1;
+restano due avvisi upstream su import ripetuti dello stesso namespace.
+I contenuti della cartella originale corrispondono ai checksum registrati da
+`rpsd-tools/references/xsd/siri/v2.2.1/manifest.yaml`.
+
+Il comando `seed_siri_italian_profile` continua a caricare SIRI 2.1 e i relativi
+asset italiani. Per adottare v2.2.1 dopo il caricamento del nuovo bundle occorre
+collegarlo alle nuove versioni delle specifiche SIRI con ruolo
+`validation_schema` e `required=True`; queste associazioni non sono ancora
+incluse nel seed. Le associazioni delle versioni SIRI 2.1 restano invariate.
+L'adozione nei profili tecnici richiede poi nuove
+versioni degli input flow e del profilo, con regole coerenti e riferimenti
+esecutivi verificati; i contratti esistenti non vengono aggiornati implicitamente.
+
+Il tag della release è `v2.2.1`, ma l'attributo `version` del file upstream
+`siri.xsd` riporta ancora `2.1`: il file è conservato senza correzioni locali.
+La versione della specifica in Config è un ulteriore identificativo distinto.
+
+## Formal indicator catalog (feature 033)
+
+Config now stores `formula_symbol` on the logical indicator and a versioned
+formal definition on `IndicatorVersion`. The supported grammar identifier is
+`rpsd-formula-v1`, implemented by the pinned `rpsd-core` 0.2.0 release
+(`e58588b38f848c84bf58495bfb34f64f4ea14ef1`). Formulas document and verify metadata;
+Config does not execute them on datasets, generate SQL or call Prefect.
+
+Each version owns its dimensions through `IndicatorVersionDimension`, including
+carried/monitoring/contractual usage and a captured domain. `null` means an open
+domain, `[]` a closed empty domain, and a list of strings a closed vocabulary.
+The admin/web checkbox copies the current dimension default once. Later changes
+to the catalog default do not change existing versions. Old nonformal versions
+remain valid; no dimensions or verification results are guessed for them.
+
+Dependencies declare `origin=formula|technical|both`. Formula edges must exactly
+match the shared analyzer; extra technical edges require a reason. All execution
+edges remain acyclic. Formal drafts can reference other drafts; publication still
+requires published prerequisites, dataset specifications and rules, plus real
+execution references. No deployment is invented by import or verification.
+
+In **DatasetExchange → Indicator versions**, edit the definition and its native
+inlines, then use **Verifica le definizioni formali in bozza**. The web technical
+catalog has the same definition fields, dimension editor and verification action.
+The proof and inferred set/number type are readonly. A change to a draft graph,
+rule, dataset configuration or captured domain makes the proof stale. Global
+catalog defaults do not. The contract indicator page displays the definition;
+contract parameters remain on the indicator selected in that revision.
+
+Consistency checks may reference an exact version outside the execution graph.
+The importer records that explicit verification context in server-owned evidence;
+it adds no execution dependency. Context definitions are fingerprinted and frozen
+with the proof. To verify a manually authored cross-indicator invariant, supply
+its exact `context_bindings` through the verification service or import adapter;
+Config never resolves an arbitrary latest version.
+
+### Install and build
+
+`uv.lock` pins the full core commit. Access to the private Tools repository is
+needed only during dependency installation and authoring export, not at seed or
+request time. The Python package does not include Tools input/reference files.
+The dependency uses SSH, with no credential in the project or seed package.
+
+The Dockerfile accepts a BuildKit SSH agent and a known-hosts secret. With a
+verified GitHub entry already present and a read-authorized key loaded:
+
+```bash
+docker build --build-context rpsd-commons=../rpsd-commons \
+  --ssh "default=$SSH_AUTH_SOCK" \
+  --secret "id=known_hosts,src=$HOME/.ssh/known_hosts" \
+  -t rpsd-config:033 .
+```
+
+Compose/CI builds must forward the same agent and secret. Neither is baked into
+the image. Native GIS/Postgres libraries are still required for Django commands.
+
+### Export, preview and apply
+
+The complete adapter belongs to Config; the upstream Tools release is unchanged.
+Use a clean Tools checkout on the exact commit declared by the reviewed mapping:
+
+```bash
+uv run manage export_tools_catalog --source ../rpsd-tools \
+  --mapping src/rpsd_config/exchange_agreement/seed_data/tools_v020/mapping.json \
+  --out /tmp/tools-catalog.json
+uv run manage import_tools_catalog --package /tmp/tools-catalog.json \
+  --actor rpsd_admin --report /tmp/catalog-preview.json
+uv run manage import_tools_catalog --package /tmp/tools-catalog.json \
+  --actor rpsd_admin --apply --report /tmp/catalog-applied.json
+```
+
+The default is a read-only plan. `--apply` rechecks under the shared graph lock,
+creates drafts atomically and audits creations. A second identical import reuses
+objects. Conflicting identities fail; they are not overwritten. Asset references
+must already exist with the exact version/checksum and readable content. Reports
+list create/reuse/conflict/unresolved operations, source limitations and missing
+profile references. There is no import of `contracts.yaml` economic values.
+
+The closed interchange schema is
+`src/rpsd_config/exchange_agreement/contracts/config-catalog-import-v1.schema.json`.
+Unknown fields, duplicate JSON keys, nonfinite numbers, invalid digests, unregistered
+rule interpreters and inconsistent analyzer results are rejected. The digest
+covers normalized contract defaults; it is an integrity check, not a signature.
+No package content is executed.
+
+### Packaged Tools 0.2.0 pilot
+
+First load the pinned schema resources in the configured storage, if absent:
+
+```bash
+uv run manage seed_netex_italian_profile --actor rpsd_admin
+uv run manage seed_siri_schema --actor rpsd_admin --standard-version 2.2.1
+uv run manage seed_tools_catalog --actor rpsd_admin --report /tmp/pilot-preview.json
+uv run manage seed_tools_catalog --actor rpsd_admin --apply \
+  --report /tmp/pilot-applied.json
+```
+
+The offline package contains all 14 source indicators, 19 dimension definitions,
+51 XPath rules and four additional schema/service rules. It creates separate
+`netex-it-lev5_002` (`002`), `siri-pt_v003` (`003`) and `siri-et_v003` (`003`)
+specifications. PT and ET share `siri-2-2-1-schema@1`, while distinct service rules
+check their delivery elements. Existing NeTEx/SIRI versions, profiles and contracts
+are not rewritten. The seed imports no source repository or network resource.
+
+This is a reviewable draft catalog. One Python and 11 dbt rules are reported as
+unsupported requirements. Each indicator also carries an explicit review gate
+for the initial conservative `calculation` impact mapping; source parameter
+defaults are reported for review, not assigned to contracts. These limitations
+prevent publication until reviewed and resolved explicitly. A current static
+proof does not mean that the indicator is ready for calculation.
+
+The `tools-fid_001` profile template is reported with missing published versions,
+input flows and orchestrator. It is not created with fake references. After
+implementing the missing validators/calculation flows, revise the mapping and
+bindings, verify and publish in dependency order, create a profile using real
+input/orchestration references, then select FID in a contract draft. Configure
+parameters of implicit prerequisites in their existing contractual owner. Review
+and approve the revision only after all gates are closed. SQL/dbt calculations,
+scenarios, results and runtime integration remain separate acceptance work.
+
+### Snapshot/API compatibility and rollout
+
+| Configuration | Snapshot | Validation plan | Compatible M2M endpoint |
+| --- | --- | --- | --- |
+| Existing validation metadata | Existing v1/v2 behavior | Existing behavior | Existing endpoints |
+| Evaluation metadata without formal definitions | `canonical-json-v3` | `validation-plan-v2` | v4 or v5 |
+| Formal definitions | `canonical-json-v4` | `validation-plan-v3` | v5 |
+
+The v5 route is `/exchange_agreement/api/m2m/v5/contracts/{code}/validation-plan`.
+It preserves v4 authorization, contract/category scope and current-only selection.
+Older endpoints return an explicit 409 for a formal snapshot; they never silently
+drop its metadata. `indicator-formal-metadata-v1` freezes definitions, domains,
+edge origins, verification context and proof. Frozen readers use that JSON,
+without consulting current dimension defaults or rerunning a parser.
+
+Migration `0057_formal_indicator_definitions` is additive. Deploy the dependency,
+code and migration before authoring/importing new definitions. Keep existing
+snapshots unchanged, enable v5 in the external consumer before approving formal
+revisions, preview the seed, then apply explicitly. Do not downgrade a service
+that already has approved v4 snapshots to an incompatible reader; restore the
+matching application/database backup if rollback is required. No reset, automatic
+publication, local service restart or production rollout is part of the importer.

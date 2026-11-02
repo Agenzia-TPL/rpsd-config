@@ -1,6 +1,6 @@
 # Modello dati RPSD Config — stato consolidato
 
-Data aggiornamento: 15 ottobre 2026.
+Data aggiornamento: 2 novembre 2026.
 
 Questo documento descrive il modello implementato in `rpsd-config` al termine
 delle feature Config 019–023/025–026, sulla baseline 008–018. Il diagramma ER è disponibile in
@@ -438,3 +438,38 @@ owner and inherits its period/grouping. All penalties are cumulative; agreements
 and storni are external. Draft-only writes, approval locking and cloning protect
 these relationships. New snapshots use canonical-json-v3; historical data remains
 unchanged. See USAGE.md for field semantics, examples and runtime boundaries.
+
+
+## 033 — Definizioni formali e bootstrap Tools
+
+`Indicator.formula_symbol` identifica il simbolo matematico, separato dal codice
+slug. `IndicatorVersion` aggiunge tipo base/projection/composite, espressione,
+linguaggio, controlli/notes di coerenza e descrizione annuale. Tipo set/number ed
+evidenza sono readonly. Le definizioni legacy possono rimanere non formalizzate.
+
+`IndicatorVersionDimension` è la nuova relazione M:N nativa per le dimensioni
+proprie: FK versione/dimensione, tre flag carried/monitoring/contractual e dominio
+locale. `IndicatorDimension.allowed_values` è soltanto il default da copiare
+esplicitamente. null, [] e liste di stringhe hanno significati distinti; un cambio
+al default non si propaga. I domini delle proiezioni derivano dalla versione
+esatta del prerequisito; un composto non eredita automaticamente le dimensioni.
+
+`IndicatorVersionDependency.origin` distingue formula/technical/both; il motivo
+tecnico è obbligatorio per gli archi aggiuntivi nelle definizioni formali. Il
+verificatore condiviso confronta formula, archi, dimensioni e domini. I controlli
+di coerenza possono usare un contesto di versioni esatte conservato nella prova,
+senza diventare archi del grafo esecutivo. Le bozze formali possono comporsi con
+altre bozze; le condizioni operative rimangono obbligatorie alla pubblicazione.
+
+La prova è riferita al fingerprint della chiusura e del contesto: include schemi,
+riferimenti esecutivi, input, asset e regole. Una variazione rilevante la rende
+obsoleta. `clone_indicator_version` copia la composizione in una nuova bozza e
+azzera prova/tipo derivato. Una nuova revisione contrattuale non eredita uno
+snapshot approvato come se fosse già verificata.
+
+La migrazione 0057 è additiva. Il JSON Schema `config-catalog-import-v1` governa
+l'import CLI con piano senza scritture, apply atomico, lock, audit e idempotenza.
+Il pacchetto pilot fornisce bozze e un report di requisiti esclusi; non configura
+un runtime o un contratto operativo. `canonical-json-v4` conserva metadati
+formali autocontenuti e richiede M2M v5/`validation-plan-v3`; i vecchi snapshot
+mantengono i propri contenuti e i reader precedenti rifiutano il downcast.

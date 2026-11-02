@@ -169,7 +169,11 @@ def build_validation_snapshot(revision, base: dict) -> dict:
         or v.output_schema.get("schema_version") == 2
         for v in closure["versions"]
     )
-    if evaluations or has_new_schemas:
+    if (
+        evaluations
+        or has_new_schemas
+        or any(v.definition_kind for v in closure["versions"])
+    ):
         if any(
             c["thresholds"] or c["penalties"]
             for c in result["indicator_configurations"]
@@ -179,6 +183,22 @@ def build_validation_snapshot(revision, base: dict) -> dict:
             )
         result["snapshot_schema_version"] = "canonical-json-v3"
         result["evaluation_configurations"] = evaluations
+    formal_versions = [v for v in closure["versions"] if v.definition_kind]
+    if formal_versions:
+        from rpsd_config.exchange_agreement.services.formal_definitions import (
+            formal_metadata,
+            require_current_verification,
+        )
+
+        for version in formal_versions:
+            require_current_verification(version)
+        result["snapshot_schema_version"] = "canonical-json-v4"
+        result.setdefault("evaluation_configurations", evaluations)
+        result["formal_metadata"] = {
+            v.code: formal_metadata(v) for v in formal_versions
+        }
+        for item in result["effective_indicators"]:
+            item["formal_definition"] = item["code"] in result["formal_metadata"]
     return result
 
 
@@ -316,7 +336,9 @@ def validate_frozen_validation_snapshot(snapshot: dict) -> None:
         fail()
 
 
-def validation_plan_from_resolution(resolution, *, allow_evaluations=False) -> dict:
+def validation_plan_from_resolution(
+    resolution, *, allow_evaluations=False, allow_formal=False
+) -> dict:
     """Project a dataset subset from the approved snapshot, never from live rules."""
     from rpsd_config.exchange_agreement.services.contract_revisions import (
         canonical_snapshot_checksum,
@@ -328,6 +350,8 @@ def validation_plan_from_resolution(resolution, *, allow_evaluations=False) -> d
     allowed_versions = (
         {SCHEMA_VERSION, "canonical-json-v3"} if allow_evaluations else {SCHEMA_VERSION}
     )
+    if allow_formal:
+        allowed_versions.add("canonical-json-v4")
     if resolution.snapshot_schema_version not in allowed_versions:
         raise IngestResolutionError(
             "validation_plan_not_available",
@@ -384,7 +408,7 @@ def validation_plan_from_resolution(resolution, *, allow_evaluations=False) -> d
         "scope": "transfer",
         "orchestration_flow": copy.deepcopy(snapshot["orchestration_flow"]),
     }
-    if resolution.snapshot_schema_version == "canonical-json-v3":
+    if resolution.snapshot_schema_version in {"canonical-json-v3", "canonical-json-v4"}:
         from rpsd_config.exchange_agreement.services.indicator_evaluations import (
             validate_frozen_evaluations,
         )
@@ -394,6 +418,14 @@ def validation_plan_from_resolution(resolution, *, allow_evaluations=False) -> d
         plan["evaluation_configurations"] = copy.deepcopy(
             snapshot["evaluation_configurations"]
         )
+    if resolution.snapshot_schema_version == "canonical-json-v4":
+        from rpsd_config.exchange_agreement.services.formal_definitions import (
+            validate_frozen_formal_metadata,
+        )
+
+        validate_frozen_formal_metadata(snapshot)
+        plan["schema_version"] = "validation-plan-v3"
+        plan["formal_metadata"] = copy.deepcopy(snapshot["formal_metadata"])
     # Digest of the response without its own digest; distinct from full snapshot.
     plan["plan_digest"] = canonical_snapshot_checksum(plan)
     return plan

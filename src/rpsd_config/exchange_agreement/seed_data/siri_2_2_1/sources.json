@@ -1,0 +1,524 @@
+{
+  "repository": "https://github.com/SIRI-CEN/SIRI",
+  "canonical_repository": "https://github.com/TransmodelEcosystem/SIRI",
+  "tag": "v2.2.1",
+  "commit": "06b5aa632300985c117c485a3298320fd2b9b51d",
+  "retrieved_on": "2026-11-02",
+  "source_archive": {
+    "url": "https://codeload.github.com/SIRI-CEN/SIRI/tar.gz/refs/tags/v2.2.1",
+    "sha256": "103d0f67473233cc5c7d1696d098a90cf0f2fcd0dc927928cfd927ca967be2af",
+    "root": "SIRI-2.2.1",
+    "path": "xsd/"
+  },
+  "entrypoint": "siri.xsd",
+  "target_namespace": "http://www.siri.org.uk/siri",
+  "schema_declared_version": "2.1",
+  "schema_version_note": "The official release is v2.2.1; siri.xsd still declares schema version 2.1. Upstream bytes are preserved; these labels must not be conflated with Config specification versions or XML message versions.",
+  "xsd_files": 73,
+  "bundle_policy": "Transitive closure of local XSD include/import/redefine dependencies from siri.xsd; original file contents and relative paths; manifest.json added to declare the entrypoint. Sorted ZIP entries, fixed timestamp 1980-01-01, regular files mode 0644, DEFLATE level 9.",
+  "upstream_inventory": {
+    "total_files": 94,
+    "xsd_files": 87,
+    "excluded_files": [
+      {
+        "path": "datex2/DATEXIISchemaWithDefinitions.xsd",
+        "size_bytes": 516185,
+        "sha256": "e3b0ea7cd33a7d505ec23c511b02eb2975d93f1b64d2ffbd0201725a776a19d9"
+      },
+      {
+        "path": "siri/siri_all_framework.xsd",
+        "size_bytes": 672,
+        "sha256": "e2f326ea6dfe1e1fcde8d598436708392239d6619af7c0d279dfba89a4648ec8"
+      },
+      {
+        "path": "siri/siri_base.xsd",
+        "size_bytes": 14223,
+        "sha256": "8d19059e7df83819463a3f5fd39657e6cc2bb229876b492779d39f2a06c0456f"
+      },
+      {
+        "path": "siriSg.xsd",
+        "size_bytes": 8339,
+        "sha256": "4ba163cfd6d849c810c0a89b4676cef33b79728c800223ee5b0125866b95e9bf"
+      },
+      {
+        "path": "siri_model/siri_all.xsd",
+        "size_bytes": 927,
+        "sha256": "caa41a3d56e5d30850180e64d9f75004368002915a3908758a4a4022456abcd0"
+      },
+      {
+        "path": "siri_model/siri_all_journeyModel.xsd",
+        "size_bytes": 1371,
+        "sha256": "0a52eb68ada08b979b30eced1d4147faebdb91e58e96afd0842e6e71cfe4c6af"
+      },
+      {
+        "path": "siri_model/siri_all_model.xsd",
+        "size_bytes": 959,
+        "sha256": "5726cf19b05943b4cceb00242e18b8c417a4ae644a5a52852f73563ad4cd0272"
+      },
+      {
+        "path": "siri_model/siri_all_situation.xsd",
+        "size_bytes": 1197,
+        "sha256": "264811e7888f4da27322c8a7d2159c06ecf395c539668f39ea6d6a4764147f46"
+      },
+      {
+        "path": "siri_utility/siri_all_utility.xsd",
+        "size_bytes": 858,
+        "sha256": "e9b56b82893c0619892bb1a86aee93193d0bda318a43877f4e3624ab6b69a05e"
+      },
+      {
+        "path": "siri_wsConsumer-Document.wsdl",
+        "size_bytes": 7348,
+        "sha256": "23baf609a3fe5d675202a0ee63034c27f81fbb8710af2d18b013611b3b9ce627"
+      },
+      {
+        "path": "siri_wsConsumer-WSDL2.wsdl",
+        "size_bytes": 4675,
+        "sha256": "cd59264ee22314cf22520610007c09b11b96f41f5f2476c058993efe5286a82c"
+      },
+      {
+        "path": "siri_wsConsumer.wsdl",
+        "size_bytes": 9430,
+        "sha256": "9b3b83b1b6498a7ce3d0de6ad6e4b04c387b9e573a03a9e45e5e81fb4ca61215"
+      },
+      {
+        "path": "siri_wsProducer-Document.wsdl",
+        "size_bytes": 23026,
+        "sha256": "8dc1a3e0bcb50a70aee71c121ba175d3de2515bbca1081b7457b19b2a0951737"
+      },
+      {
+        "path": "siri_wsProducer-WSDL2.wsdl",
+        "size_bytes": 10003,
+        "sha256": "d594ea97404291d8ea80b1fbdbf0cb107e19beaf54c63afa27c15ff12aa14fc3"
+      },
+      {
+        "path": "siri_wsProducer.wsdl",
+        "size_bytes": 28875,
+        "sha256": "ac3194b422c74dafabb4c4599f25a508265eeebd8dafb103ad028c2df9ad27e6"
+      },
+      {
+        "path": "wsdl_model/siri_wsConsumer-Framework.xsd",
+        "size_bytes": 5942,
+        "sha256": "36ebcf72303c7744694be9e177cd6d022a5c11378528411317377385c613f9f2"
+      },
+      {
+        "path": "wsdl_model/siri_wsConsumer-Services.xsd",
+        "size_bytes": 10673,
+        "sha256": "eed976b06efdec209a49b51852ad13221a4acd8af2d26000e74cdf95735d2980"
+      },
+      {
+        "path": "wsdl_model/siri_wsProducer-DiscoveryCapability.xsd",
+        "size_bytes": 7657,
+        "sha256": "65fd2a0f92f0b60b1df8c87dd1d7e382a6256880f6691b958936d5b56812ca1b"
+      },
+      {
+        "path": "wsdl_model/siri_wsProducer-Framework.xsd",
+        "size_bytes": 8794,
+        "sha256": "449f2816de5514c20f789fb3fb4f8789166804fc46ffc0845208bb5b2e318f1a"
+      },
+      {
+        "path": "wsdl_model/siri_wsProducer-Services.xsd",
+        "size_bytes": 17660,
+        "sha256": "7a32a6b6bee089b710f70ce8494ad81bee99bbbbb8d2bdb33faa93b365831b8b"
+      },
+      {
+        "path": "xml/2008/09/xsd.xsl",
+        "size_bytes": 41220,
+        "sha256": "bad328bf6e1cbcfc0cd998231a02711aee001f0833ed99bff5b453133484ee06"
+      }
+    ],
+    "exclusion_reason": "Not in the XSD dependency closure of siri.xsd. This includes WSDL, auxiliary schemas, the empty datex2/DATEXIISchemaWithDefinitions.xsd and XMLSchema support files. No upstream schema was edited."
+  },
+  "files": {
+    "siri-2.2.1.zip": {
+      "sha256": "6820a7bb73e334a4b98af940fcf4021ff97a8a950b942cad8b2b14762092ac6f"
+    }
+  },
+  "bundle_members": [
+    {
+      "path": "acsb/acsb_accessibility.xsd",
+      "size_bytes": 6333,
+      "sha256": "92d97ff3ecfcfb2f561d1680b0f2b5f188c34a975039cc0b9e5b4bdae5f4e64b"
+    },
+    {
+      "path": "acsb/acsb_all.xsd",
+      "size_bytes": 624,
+      "sha256": "99cd44c3bd7a101f1a553d24b21242ed7d1644f3b73fa80011df62ed16bb94ea"
+    },
+    {
+      "path": "acsb/acsb_limitations.xsd",
+      "size_bytes": 6445,
+      "sha256": "fdb0e3706a25234149468a364d9ccd69d3397e327b4d92335b5a2ee111eaecbe"
+    },
+    {
+      "path": "acsb/acsb_passengerMobility.xsd",
+      "size_bytes": 9217,
+      "sha256": "68eb2cc6dc7124f4784fbba89ae5636ef10ff0db8b43eb339c845adee4832fe6"
+    },
+    {
+      "path": "datex2/DATEXIISchema.xsd",
+      "size_bytes": 181542,
+      "sha256": "f61fb7a13bb839be9d73de38830ad7f7c0de19bbbd10561e1b45d1ce354ba0b7"
+    },
+    {
+      "path": "gml/basicTypes.xsd",
+      "size_bytes": 14888,
+      "sha256": "72fb3a517cb3987a243701f74c85f43f707b793914d3c47a7e986030dee59ad3"
+    },
+    {
+      "path": "gml/geometryBasic0d1d-extract.xsd",
+      "size_bytes": 18731,
+      "sha256": "68149f21c0d7f77f89f51f3c2af7040e4d42e4bfc88e8047b3b58b80eb48c214"
+    },
+    {
+      "path": "gml/gmlBase-extract.xsd",
+      "size_bytes": 11895,
+      "sha256": "8a17cd88090e47847c343f27932f04e074f8a80c07c4e27cc3c3e747727592d0"
+    },
+    {
+      "path": "gml/gmlBasic2d-extract.xsd",
+      "size_bytes": 6429,
+      "sha256": "86a99b9a45bcc74d449c23b2ae99fdf2dc7a0f80ed7a14b6e9f45e3d074ad634"
+    },
+    {
+      "path": "gml/gml_extract_all_objects.xsd",
+      "size_bytes": 791,
+      "sha256": "371a1a107047b7f36250f7328345a4ddf1ec8b7183734fc4d544baa9805cf70d"
+    },
+    {
+      "path": "ifopt/ifopt_administration.xsd",
+      "size_bytes": 10686,
+      "sha256": "59181494f83f1b2c7521065f9b0bfd33ee032f0f5aea02884bfb182928963df7"
+    },
+    {
+      "path": "ifopt/ifopt_allStopPlace.xsd",
+      "size_bytes": 2543,
+      "sha256": "92bf19ba06167be8a28c187db280febe6f635c8a81bae01bf9550ef430b68332"
+    },
+    {
+      "path": "ifopt/ifopt_checkpoint.xsd",
+      "size_bytes": 9784,
+      "sha256": "f68ef4f276db7fa62f8fa15e8b6177b5e0944077642b03e68b49bde40add5b81"
+    },
+    {
+      "path": "ifopt/ifopt_countries.xsd",
+      "size_bytes": 41636,
+      "sha256": "9f93795fe96dd689a96ef19dc8e7408e64f383a040ed1aed5c774b2dcd468ea4"
+    },
+    {
+      "path": "ifopt/ifopt_equipment.xsd",
+      "size_bytes": 8346,
+      "sha256": "ca9b294ef3ef9d10cee9e18a1b71313e99b483ffd0a49b9184a648d78d63c9eb"
+    },
+    {
+      "path": "ifopt/ifopt_location.xsd",
+      "size_bytes": 11194,
+      "sha256": "b14763193a5eacf5a951c4df8c4f4f6fe161aa865bdc509f3fd521042fd4071e"
+    },
+    {
+      "path": "ifopt/ifopt_modes.xsd",
+      "size_bytes": 3619,
+      "sha256": "ba0c420d08b1ea3761c639eb1c8297f06d3cfe854abedf8eb919d79560b7a3dc"
+    },
+    {
+      "path": "ifopt/ifopt_modification.xsd",
+      "size_bytes": 8214,
+      "sha256": "af0274216e9d09ef6680f160823075ef5cb4b705e231c8cee85d99d36951070f"
+    },
+    {
+      "path": "ifopt/ifopt_path.xsd",
+      "size_bytes": 6586,
+      "sha256": "fc1814e789277b9bfa1987672e93c46a09d7e6b8e0429be8c6e4b51bb7241ac4"
+    },
+    {
+      "path": "ifopt/ifopt_stop.xsd",
+      "size_bytes": 16168,
+      "sha256": "8e6536aa87c8159e7480a1c45f51b7e9a0b30ecfbcef6bdac334c5daf66b5422"
+    },
+    {
+      "path": "ifopt/ifopt_time.xsd",
+      "size_bytes": 5766,
+      "sha256": "d8b64ac673a4a3ca10702d7358e175ccb69cf306c887534c2c7ab5ad05aa8a3e"
+    },
+    {
+      "path": "ifopt/ifopt_types.xsd",
+      "size_bytes": 3793,
+      "sha256": "1a5dcee42ce5bc2cae486c7b7c94a72d26bc03497d0abd749072a72a60a867ac"
+    },
+    {
+      "path": "manifest.json",
+      "size_bytes": 27,
+      "sha256": "e6ecfa8484e80f5f9e0eb06fad5b8643a74e08f86d2e743c43739912038ac49a"
+    },
+    {
+      "path": "siri.xsd",
+      "size_bytes": 27116,
+      "sha256": "c167ecbc4655618a1d0ed54841f4665298c04814f6930686bea74d67f75adb5f"
+    },
+    {
+      "path": "siri/siri_common_services.xsd",
+      "size_bytes": 39791,
+      "sha256": "94207036a0ff8ddcca7237633a11b04ca1cca97eafb62a5253347832b4b96c3d"
+    },
+    {
+      "path": "siri/siri_request_errorConditions.xsd",
+      "size_bytes": 27013,
+      "sha256": "3b60aa05b5421b1514ee0eb5e0e8130692e264cc2f9687efe3e29778a4016a53"
+    },
+    {
+      "path": "siri/siri_request_support.xsd",
+      "size_bytes": 9126,
+      "sha256": "d9e9f402e2ba706b96de0903f17ccb089218a9336e322b081f21458308cd5aac"
+    },
+    {
+      "path": "siri/siri_requests.xsd",
+      "size_bytes": 49201,
+      "sha256": "ac64189e81692f9da66af62c300707d9c411a5ef4912847f16f3603e04227832"
+    },
+    {
+      "path": "siri_all_functionalServices.xsd",
+      "size_bytes": 6492,
+      "sha256": "962540c34601d372590172c9baa66ba68bf5776442cced25ea11e2bbd4faa8d1"
+    },
+    {
+      "path": "siri_connectionMonitoring_service.xsd",
+      "size_bytes": 34202,
+      "sha256": "ccfe29ac9a8e3b90a142863d19395a17fbb2ba16c0a1b4c94c72ad7b923b8824"
+    },
+    {
+      "path": "siri_connectionTimetable_service.xsd",
+      "size_bytes": 21714,
+      "sha256": "d09dad751d5787ca69cc413ca25728bc8ef9def69de710739d2bbce4ae274248"
+    },
+    {
+      "path": "siri_controlAction_service.xsd",
+      "size_bytes": 84156,
+      "sha256": "bc6ec18059c8028e2d452147200f2efa0afff1fe547ec5abc74b43adee89be85"
+    },
+    {
+      "path": "siri_discovery.xsd",
+      "size_bytes": 41184,
+      "sha256": "5361d1396c775d81a75c9ae88afe592d3959002aa25c22adc935848c780810d0"
+    },
+    {
+      "path": "siri_estimatedTimetable_service.xsd",
+      "size_bytes": 25022,
+      "sha256": "4b5ed3a547ff4be6144db0c4bb17af4bbda013f18f9b0c05b976b7ea2984603a"
+    },
+    {
+      "path": "siri_facilityMonitoring_service.xsd",
+      "size_bytes": 23114,
+      "sha256": "5df9e67bcb0a130f8b4b3fc49d4649cc344b41919965f9e81e313b42ffcb7f2a"
+    },
+    {
+      "path": "siri_generalMessage_service.xsd",
+      "size_bytes": 20799,
+      "sha256": "ca3d7434721cc143e978798547f2ff8fed7b5e595ddb735c28f57fcd30068b26"
+    },
+    {
+      "path": "siri_model/siri_datedVehicleJourney.xsd",
+      "size_bytes": 35917,
+      "sha256": "68de9ad49aa05a588a7a09cd6db2812fb53bcf64e0d0a9194e3a6e3e7f2299a8"
+    },
+    {
+      "path": "siri_model/siri_estimatedVehicleJourney.xsd",
+      "size_bytes": 24987,
+      "sha256": "e53beb485781b37e74dbce6fa9334ef16f94db49ae177dda856f830527ff6c86"
+    },
+    {
+      "path": "siri_model/siri_facilities.xsd",
+      "size_bytes": 22606,
+      "sha256": "8b5bc2e8a444d40c8787cdbc29183123f2c2ab4f512eea015169fa9fde2c0b8e"
+    },
+    {
+      "path": "siri_model/siri_facility.xsd",
+      "size_bytes": 35489,
+      "sha256": "61135e2a818f1970004475504029e203962a8466c3494ba6922a156f51546f21"
+    },
+    {
+      "path": "siri_model/siri_feature_support.xsd",
+      "size_bytes": 6713,
+      "sha256": "4ac4284872d18793a84f6b5579b4b1ee1af904def72508345f3fd09644a51dd3"
+    },
+    {
+      "path": "siri_model/siri_interchangeJourney.xsd",
+      "size_bytes": 4643,
+      "sha256": "f1f21b920957b42645a0eb61d1e81ed044b1f1a5ec3ed03971eb51f2b28074b0"
+    },
+    {
+      "path": "siri_model/siri_journey.xsd",
+      "size_bytes": 101284,
+      "sha256": "65d61c31f6266247407b81736b3b385d75c8e9a10b86ec25c1525f55f49b4a22"
+    },
+    {
+      "path": "siri_model/siri_journey_support.xsd",
+      "size_bytes": 46268,
+      "sha256": "4e848fe5d29729e2ee615d114e1d8cc4d4fad56f90e26cfbbd669404d2e6f998"
+    },
+    {
+      "path": "siri_model/siri_modelPermissions.xsd",
+      "size_bytes": 14822,
+      "sha256": "d2a036b41485a61f663d0b7657b5a1eb814bcd0fdad5b2236bf9ab076948d1f3"
+    },
+    {
+      "path": "siri_model/siri_modes.xsd",
+      "size_bytes": 92526,
+      "sha256": "19d7ae005d555a1051ec7044e59d7cc4d35815774195d7c135285095bbf22b82"
+    },
+    {
+      "path": "siri_model/siri_monitoredVehicleJourney.xsd",
+      "size_bytes": 30219,
+      "sha256": "032e2128f92f06545786eccf11e04e9601b7943eac908d734f8f53cefd17ceee"
+    },
+    {
+      "path": "siri_model/siri_operator_support.xsd",
+      "size_bytes": 3588,
+      "sha256": "52ef85b98b68de6e67b45065dc9dd9912bb52bfbd9e6333ab0e467a16b1e7ff7"
+    },
+    {
+      "path": "siri_model/siri_reference.xsd",
+      "size_bytes": 37301,
+      "sha256": "d6d6815b14361a23efdf6df2429eefb2af9debd70e447a89101a3af2e7553795"
+    },
+    {
+      "path": "siri_model/siri_situation.xsd",
+      "size_bytes": 68392,
+      "sha256": "de108b153b8bc7acfed22fbe440619ea6600b0a8ce9b7f5ee86aa9d4f7d7b66f"
+    },
+    {
+      "path": "siri_model/siri_situationActions.xsd",
+      "size_bytes": 34920,
+      "sha256": "f58fd916489879ed029ffba86993e7130a34d51fd333e8e009f42cd6ad7ad8b3"
+    },
+    {
+      "path": "siri_model/siri_situationAffects.xsd",
+      "size_bytes": 70929,
+      "sha256": "b89f023c30869fb299d3cc677867995e2b87b243371f8f4243ff10d298058005"
+    },
+    {
+      "path": "siri_model/siri_situationClassifiers.xsd",
+      "size_bytes": 16336,
+      "sha256": "93e0d58237a51461cbb9b8ef4502869a571689946ad09b1a7a4589771e1cc901"
+    },
+    {
+      "path": "siri_model/siri_situationIdentity.xsd",
+      "size_bytes": 12867,
+      "sha256": "1eb7a5d17e7f14d0fe5026df1a6aafbecd005e963c09fe70cb6e78ac9df47642"
+    },
+    {
+      "path": "siri_model/siri_situationReasons.xsd",
+      "size_bytes": 55011,
+      "sha256": "441e79c522f57f7958132174efda0b3aab6b20aa309c5073feb82010b2c3f8c2"
+    },
+    {
+      "path": "siri_model/siri_situationServiceTypes.xsd",
+      "size_bytes": 26128,
+      "sha256": "d361518bc03f89ea1f038fff7d7092bdbaf6222d34348645d7b0566c921c3393"
+    },
+    {
+      "path": "siri_model/siri_targetedVehicleJourney.xsd",
+      "size_bytes": 5404,
+      "sha256": "d2c11a97dc9ad50c83b9c2032fc245f42b03a104ac7aad8a69362623e5c26590"
+    },
+    {
+      "path": "siri_model/siri_time.xsd",
+      "size_bytes": 14049,
+      "sha256": "9454926c0a72f586cbcb1f5cf186580160abe98afca68555196737182f808529"
+    },
+    {
+      "path": "siri_model_discovery/siri_connectionLink.xsd",
+      "size_bytes": 5707,
+      "sha256": "9aac066080d2471fb5ee6d663c7aa0e4d559b4e10fa78058aa5087acc5dd1b14"
+    },
+    {
+      "path": "siri_model_discovery/siri_feature.xsd",
+      "size_bytes": 7390,
+      "sha256": "496cb1dde24e4091051c5bd4884906c6a6ee5acffa5ce4627b9d5b4a057caca7"
+    },
+    {
+      "path": "siri_model_discovery/siri_infoChannel.xsd",
+      "size_bytes": 4370,
+      "sha256": "130ccbe3a15c4f934d5e3003618bb058cf6bb7a7b4b18fb487876eb544a4fb8b"
+    },
+    {
+      "path": "siri_model_discovery/siri_line.xsd",
+      "size_bytes": 10767,
+      "sha256": "60c7ff7afd61d0e9041cb0d9a385a1050b49f28b6cba0a31e8d4f35be62a7a7b"
+    },
+    {
+      "path": "siri_model_discovery/siri_stopPoint.xsd",
+      "size_bytes": 7148,
+      "sha256": "50991d6714cc76afb96891eae5c0ee55e1e586eb9f90a07b1a929a37ca3c0f1b"
+    },
+    {
+      "path": "siri_productionTimetable_service.xsd",
+      "size_bytes": 26159,
+      "sha256": "21991615079d2609073d68ecc9a0c3f29f6ae69a2f9736495ca88d1ccafea5d4"
+    },
+    {
+      "path": "siri_situationExchange_service.xsd",
+      "size_bytes": 38333,
+      "sha256": "18614ac86759a462bcbba1507ed1f23f66521470e85057cf5806b97e61dc97a5"
+    },
+    {
+      "path": "siri_stopMonitoring_service.xsd",
+      "size_bytes": 51673,
+      "sha256": "d71c0dae174aba0e9af79b69c26e88a5519ad78481a0510ea2a29d2bb41c851b"
+    },
+    {
+      "path": "siri_stopTimetable_service.xsd",
+      "size_bytes": 21330,
+      "sha256": "d64db4a74ba508d312baf883f46ae1f5e7f94176bb37c6bc3b6cc412f0197713"
+    },
+    {
+      "path": "siri_utility/siri_location.xsd",
+      "size_bytes": 11120,
+      "sha256": "accf28556e5c65a545ce272916c07cbeaeb23a1ddbd85444507f84cd79d8e882"
+    },
+    {
+      "path": "siri_utility/siri_participant.xsd",
+      "size_bytes": 3281,
+      "sha256": "70e8891b6a9f0969404902ef79fa3de722b640c85f129f7960c0cbdd9ba5ca3f"
+    },
+    {
+      "path": "siri_utility/siri_permissions.xsd",
+      "size_bytes": 5945,
+      "sha256": "c7bd38f04a1a246b140734beb5b1748e4b8ee9e5a4ceeb4e02e08701abde2fb9"
+    },
+    {
+      "path": "siri_utility/siri_types.xsd",
+      "size_bytes": 7410,
+      "sha256": "2469dd3e6dcb68b4a3f942eeb23e6093d68d5cdf1decff293cccf9c8426c6050"
+    },
+    {
+      "path": "siri_utility/siri_utility.xsd",
+      "size_bytes": 12739,
+      "sha256": "3ee421a6f888f7f5e0819544f6d59ef4d5b4ae26093afd82b5ea0031f6607aee"
+    },
+    {
+      "path": "siri_vehicleMonitoring_service.xsd",
+      "size_bytes": 32986,
+      "sha256": "41d4ce27c4073018ca45b08abd865a4ad402b82c893579b9f80267a3b6a38b3b"
+    },
+    {
+      "path": "xml/2009/01/XMLSchema.xsd",
+      "size_bytes": 10861,
+      "sha256": "d8acc3b3f2c9605cf92d88d7a382ed30ca25f810d7136ae620124f30670ffd48"
+    }
+  ],
+  "verification": {
+    "matches_rpsd_tools_manifest": "references/xsd/siri/v2.2.1/manifest.yaml: all 94 upstream files match the pinned SHA-256 values",
+    "local_dependencies_complete": true,
+    "xsd_compilation": "Passed with libxml2; two warnings about repeated imports for the SIRI namespace (siri_feature_support.xsd and siri_modes.xsd).",
+    "existing_italian_examples": {
+      "source": "../siri_2_1/",
+      "xsd_valid": [
+        "SIRI_PT.xml",
+        "SIRI_ET.xml",
+        "SIRI_VM.xml",
+        "SIRI_FM.xml",
+        "SIRI_SX.xml"
+      ],
+      "scope": "XSD compatibility only; external ingestion flows and indicator requirements are not verified."
+    }
+  }
+}

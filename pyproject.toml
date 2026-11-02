@@ -26,6 +26,7 @@ classifiers = [
 keywords = ["django", "web", "framework"]
 
 dependencies = [
+    "rpsd-core @ git+ssh://git@github.com/Agenzia-TPL/rpsd-tools@v0.2.0#subdirectory=packages/rpsd-core",
     "rpsd-storage",
     "rpsd-transport[rabbitmq]",
     "django[gis]>=5.2.0",  # ---> rimuovo "django>=5.2.0",
@@ -66,6 +67,9 @@ devserver = "rpsd_config.manage:devserver"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [dependency-groups]
 dev = [

@@ -160,14 +160,23 @@ def validate_profile_input_coverage(profile, indicator_versions) -> None:
             )
 
 
-def validate_indicator_bindings(version) -> None:
+def validate_indicator_bindings(version, *, allow_drafts=False) -> None:
     """Check all binding completeness at publication, not only in forms."""
     for binding in version.rule_bindings.select_related(
         "rule_version",
         "dataset_specification",
     ):
+        if not allow_drafts and (
+            binding.rule_version.status != "published"
+            or binding.dataset_specification.status != "published"
+        ):
+            raise ValidationError(
+                "Pubblicare regola e specifica prima dell'indicatore."
+            )
         binding.validate_complete()
     for link in version.dataset_inputs.select_related("dataset_specification"):
+        if not allow_drafts and link.dataset_specification.status != "published":
+            raise ValidationError("Pubblicare la specifica prima dell'indicatore.")
         link.full_clean()
 
 

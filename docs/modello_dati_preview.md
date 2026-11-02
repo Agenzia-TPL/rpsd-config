@@ -1,4 +1,4 @@
-# Anteprima del modello dati Config — 15 ottobre 2026
+# Anteprima del modello dati Config — 2 novembre 2026
 
 Sorgente: [`modello_dati.mmd`](./modello_dati.mmd). Descrizione e vincoli:
 [`modello_dati.md`](./modello_dati.md). In VS Code usare “Markdown: Open Preview”.
@@ -96,6 +96,7 @@ erDiagram
         bigint id PK
         string code UK
         string name
+        string formula_symbol UK
     }
     INDICATOR_VERSION {
         bigint id PK
@@ -108,12 +109,30 @@ erDiagram
         string execution_engine
         string execution_reference
         string artifact_identifier
+        string definition_kind
+        string formula_definition
+        string formula_language_version
+        string formula_value_kind
+        string consistency_checks
+        string consistency_notes
+        string annual_aggregation_description
+        json formal_verification
         string status
+    }
+    INDICATOR_VERSION_DIMENSION {
+        bigint id PK
+        bigint indicator_version_id FK
+        bigint dimension_id FK
+        boolean is_carried
+        boolean is_monitoring
+        boolean is_contractual
+        json allowed_values
     }
     INDICATOR_DIMENSION {
         bigint id PK
         string code UK
         string name
+        json allowed_values
     }
     INDICATOR_VERSION_INPUT {
         bigint id PK
@@ -136,6 +155,8 @@ erDiagram
         bigint id PK
         bigint dependent_id FK
         bigint prerequisite_id FK
+        string origin
+        string technical_reason
     }
     DEPENDENCY_REQUIRED_DIMENSION {
         bigint id PK
@@ -238,6 +259,8 @@ erDiagram
     DATASET_SPECIFICATION ||--o{ DATASET_VERSION_RULE : dataset_specification
     VALIDATION_RULE_VERSION ||--o{ DATASET_VERSION_RULE : rule_version
     INDICATOR ||--o{ INDICATOR_VERSION : indicator
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_DIMENSION : dimension_links
+    INDICATOR_DIMENSION ||--o{ INDICATOR_VERSION_DIMENSION : version_links
     INDICATOR_VERSION ||--o{ INDICATOR_VERSION_INPUT : indicator_version
     DATASET_SPECIFICATION ||--o{ INDICATOR_VERSION_INPUT : dataset_specification
     INDICATOR_VERSION ||--o{ INDICATOR_VERSION_RULE : indicator_version
@@ -268,6 +291,52 @@ erDiagram
     CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_PUBLICATION : configuration_revision
     CONTRACT o|--o{ CONTRACT : replaced_by
     CONTRACT_CONFIGURATION_REVISION o|--o{ CONTRACT_CONFIGURATION_REVISION : replaces_revision
+
+    INDICATOR_EVALUATION_THRESHOLD {
+        bigint id PK
+        bigint contract_revision_indicator_id FK
+        string code
+        string metric_code
+        string aggregation_method
+        string violation_operator
+        decimal limit_value
+        string period_type
+        date period_start_date
+        date period_end_date
+        int period_days
+        string evaluation_timezone
+        string partial_period_policy
+    }
+    INDICATOR_PENALTY {
+        bigint id PK
+        bigint contract_revision_indicator_id FK
+        bigint activation_threshold_id FK
+        string code
+        string calculation_method
+        decimal allowance_quantity
+        decimal fixed_amount
+        decimal unit_amount
+        decimal maximum_amount
+        string currency
+        string amount_rounding_mode
+    }
+    EVALUATION_THRESHOLD_DIMENSION {
+        bigint id PK
+        bigint threshold_id FK
+        bigint dimension_id FK
+    }
+    EVALUATION_PENALTY_DIMENSION {
+        bigint id PK
+        bigint penalty_id FK
+        bigint dimension_id FK
+    }
+    CONTRACT_REVISION_INDICATOR ||--o{ INDICATOR_EVALUATION_THRESHOLD : evaluation_thresholds
+    CONTRACT_REVISION_INDICATOR ||--o{ INDICATOR_PENALTY : evaluation_penalties
+    INDICATOR_EVALUATION_THRESHOLD o|--o{ INDICATOR_PENALTY : activation_threshold
+    INDICATOR_EVALUATION_THRESHOLD ||--o{ EVALUATION_THRESHOLD_DIMENSION : threshold
+    INDICATOR_DIMENSION ||--o{ EVALUATION_THRESHOLD_DIMENSION : dimension
+    INDICATOR_PENALTY ||--o{ EVALUATION_PENALTY_DIMENSION : penalty
+    INDICATOR_DIMENSION ||--o{ EVALUATION_PENALTY_DIMENSION : dimension
 ```
 
 

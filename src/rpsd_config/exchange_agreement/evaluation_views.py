@@ -123,11 +123,22 @@ def indicator_evaluations_page(request, contract_code, revision_id, owner_id):
                     " o rimuovi la penale."
                 )
             )
+    from rpsd_config.exchange_agreement.services.formal_definitions import (
+        formal_display,
+    )
+
+    formal = formal_display(
+        owner.processing_profile_indicator_version.indicator_version,
+        snapshot=revision.configuration_snapshot
+        if revision.status != "draft"
+        else None,
+    )
     return render(
         request,
         "exchange_agreement/indicator_evaluations.html",
         {
             "owner": owner,
+            "formal_definition": formal,
             "revision": revision,
             "contract": contract,
             "form": form,

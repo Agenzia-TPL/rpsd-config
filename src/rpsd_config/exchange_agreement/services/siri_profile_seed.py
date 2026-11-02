@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA
 # SPDX-License-Identifier: EUPL-1.2
-"""Pinned SIRI 2.1 resources, shared between service-specific specifications."""
+"""Pinned SIRI schemas and Italian resources for service specifications."""
 
 import hashlib
 import json
@@ -28,7 +28,66 @@ from rpsd_config.exchange_agreement.services.validation_catalog import (
 )
 
 RESOURCES = Path(__file__).resolve().parents[1] / "seed_data" / "siri_2_1"
+SCHEMA_RESOURCES = {
+    "2.1": (RESOURCES, "siri-2-1-schema", "siri-2.1.zip"),
+    "2.2.1": (
+        RESOURCES.parent / "siri_2_2_1",
+        "siri-2-2-1-schema",
+        "siri-2.2.1.zip",
+    ),
+}
 EXAMPLE_SERVICES = ("vm", "et", "sx", "fm", "pt")
+
+
+def _ensure_resource_asset(
+    *, actor, code, filename, asset_type, mime, content, checksum
+):
+    candidates = list(ConfigurationAsset.objects.filter(what=code))
+    if candidates:
+        if len(candidates) != 1:
+            raise ValidationError(f"Conflicting SIRI asset versions: {code}")
+        asset = candidates[0]
+        if (
+            asset.asset_type != asset_type
+            or asset.original_filename != filename
+            or asset.checksum_sha256 != checksum
+            or not asset.is_active
+        ):
+            raise ValidationError(f"Conflicting SIRI asset: {code}")
+        load_configuration_asset_content(asset)
+        return asset
+    return store_configuration_asset(
+        uploaded_file=SimpleUploadedFile(filename, content, mime),
+        asset_type=asset_type,
+        what=code,
+        label=code,
+        activate=True,
+        uploaded_by=actor,
+    ).asset
+
+
+def ensure_siri_schema_asset(
+    *, actor, standard_version: str = "2.2.1"
+) -> ConfigurationAsset:
+    """Load one exact shared bundle, without creating dataset or profile links."""
+    require_catalog_admin(actor)
+    if standard_version not in SCHEMA_RESOURCES:
+        raise ValidationError(f"Unsupported SIRI standard version: {standard_version}")
+    directory, code, filename = SCHEMA_RESOURCES[standard_version]
+    provenance = json.loads((directory / "sources.json").read_text())
+    content = (directory / filename).read_bytes()
+    checksum = provenance["files"][filename]["sha256"]
+    if hashlib.sha256(content).hexdigest() != checksum:
+        raise ValidationError(f"Packaged SIRI resource checksum mismatch: {filename}")
+    return _ensure_resource_asset(
+        actor=actor,
+        code=code,
+        filename=filename,
+        asset_type="xsd_bundle",
+        mime="application/zip",
+        content=content,
+        checksum=checksum,
+    )
 
 
 def _resources(actor):
@@ -59,29 +118,15 @@ def _resources(actor):
         contents[filename] = content
     assets = {}
     for code, filename, asset_type, mime in definitions:
-        candidates = list(ConfigurationAsset.objects.filter(what=code))
-        if candidates:
-            if len(candidates) != 1:
-                raise ValidationError(f"Conflicting SIRI asset versions: {code}")
-            asset = candidates[0]
-            if (
-                asset.asset_type != asset_type
-                or asset.original_filename != filename
-                or asset.checksum_sha256 != provenance["files"][filename]["sha256"]
-                or not asset.is_active
-            ):
-                raise ValidationError(f"Conflicting SIRI asset: {code}")
-            load_configuration_asset_content(asset)
-        else:
-            asset = store_configuration_asset(
-                uploaded_file=SimpleUploadedFile(filename, contents[filename], mime),
-                asset_type=asset_type,
-                what=code,
-                label=code,
-                activate=True,
-                uploaded_by=actor,
-            ).asset
-        assets[code] = asset
+        assets[code] = _ensure_resource_asset(
+            actor=actor,
+            code=code,
+            filename=filename,
+            asset_type=asset_type,
+            mime=mime,
+            content=contents[filename],
+            checksum=provenance["files"][filename]["sha256"],
+        )
     return provenance, assets
 
 

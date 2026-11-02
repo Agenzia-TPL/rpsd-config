@@ -14,6 +14,18 @@
 {% if success_message %}{% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}{% endif %}
 
 <div class="row g-3">
+  {% if catalog_slug == "indicator-versions" %}
+  <div class="col-12">
+    <section class="card border-0 shadow-sm"><div class="card-body">
+      <h2 class="h5">Definizione e verifica statica</h2>
+      <p>Simbolo: <code>{{ object.indicator.formula_symbol|default:"non formalizzato" }}</code> · Tipo: {{ object.get_definition_kind_display|default:"non classificato" }} · Verifica: <strong>{{ formal_state }}</strong>.</p>
+      {% if formal_analysis %}<p>Dimensioni effettive dell’ultima verifica: {% for dimension in formal_analysis.effective_dimensions %}<code>{{ dimension }}</code>{% if not forloop.last %}, {% endif %}{% empty %}nessuna{% endfor %}. Riverificare i metadati se la prova è obsoleta.</p>{% endif %}
+      <p class="text-body-secondary">Il controllo riguarda formula, simboli, dimensioni e dipendenze. Non esegue il calcolo e non certifica il SQL, i dati ricevuti o le penali.</p>
+      {% if is_editable and object.definition_kind %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify-formula"><button class="btn btn-outline-primary">Verifica definizione</button></form>{% endif %}
+      {% if formal_limitations %}<h3 class="h6 mt-3">Requisiti ancora da risolvere</h3><ul>{% for item in formal_limitations %}<li><code>{{ item.rule|default:item.code }}</code> · {{ item.reason }}</li>{% endfor %}</ul>{% endif %}
+    </div></section>
+  </div>
+  {% endif %}
   <div class="col-12 col-xl-7">
     <section class="card border-0 shadow-sm mb-3">
       <div class="card-body">
@@ -52,6 +64,17 @@
         </div>
         {% if is_editable %}<form method="post" class="row g-2">{% csrf_token %}<input type="hidden" name="action" value="add-asset"><div class="col-md-5"><select class="form-select" name="asset_id" required><option value="">Seleziona asset</option>{% for asset in available_assets %}<option value="{{ asset.id }}">{{ asset }}</option>{% endfor %}</select></div><div class="col-md-4"><select class="form-select" name="role">{% for value,label in asset_roles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div><div class="col-md-3"><div class="form-check"><input class="form-check-input" type="checkbox" name="required" id="required_asset" checked><label class="form-check-label" for="required_asset">Obbligatorio</label></div><button class="btn btn-primary btn-sm mt-2">Associa</button></div></form>{% endif %}
       </div></section>
+    {% endif %}
+
+    {% if catalog_slug == "indicator-versions" %}
+    <section class="card mb-3"><div class="card-body">
+      <h2 class="h5">Dimensioni proprie della versione</h2>
+      <p>I valori appartengono a questa versione. Una proiezione può ereditare ulteriori dimensioni dalla versione esatta del prerequisito; un composto non le eredita automaticamente.</p>
+      <ul>{% for link in own_dimensions %}<li>{{ link.dimension }} · {% if link.allowed_values == None %}dominio aperto{% else %}<code>{{ link.allowed_values }}</code>{% endif %}{% if link.is_carried %} · portata{% endif %}{% if link.is_monitoring %} · monitoraggio{% endif %}{% if link.is_contractual %} · contrattuale{% endif %}
+        {% if is_editable %}<form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="remove-dimension"><input type="hidden" name="link_id" value="{{ link.pk }}"><button class="btn btn-link text-danger btn-sm">Rimuovi</button></form>{% endif %}
+      </li>{% empty %}<li>Nessuna dimensione propria dichiarata.</li>{% endfor %}</ul>
+      {% if is_editable %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="add-dimension">{{ own_dimension_form.as_p }}<button class="btn btn-outline-primary">Associa dimensione</button></form>{% endif %}
+    </div></section>
     {% endif %}
 
 

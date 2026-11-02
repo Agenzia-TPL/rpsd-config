@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 from datetime import datetime
 
+from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -16,6 +17,7 @@ from django.utils.html import format_html
 from rpsd_config import admin_hidden  # noqa: F401
 from rpsd_config.admin_dataset_exchange.validation_admin import (
     IndicatorDependencyInline,
+    IndicatorDimensionInline,
     IndicatorInputInline,
     register_validation_admin,
 )
@@ -256,7 +258,7 @@ class IndicatorAdmin(
 ):
     list_display = ("code", "name", "status", "created_at", "updated_at")
     list_filter = ("status",)
-    search_fields = ("code", "name", "description")
+    search_fields = ("code", "name", "description", "formula_symbol")
     readonly_fields = ("created_at_human", "updated_at_human")
 
 
@@ -283,9 +285,102 @@ class IndicatorVersionAdmin(
         "published_at",
         "created_at_human",
         "updated_at_human",
+        "formula_value_kind",
+        "formal_verification",
+        "formal_verification_state",
     )
-    inlines = (IndicatorInputInline, IndicatorDependencyInline)
-    actions = ("publish_selected", "deprecate_selected", "withdraw_selected")
+    inlines = (
+        IndicatorDimensionInline,
+        IndicatorInputInline,
+        IndicatorDependencyInline,
+    )
+    actions = (
+        "verify_formulas",
+        "publish_selected",
+        "deprecate_selected",
+        "withdraw_selected",
+    )
+    fieldsets = (
+        (
+            "Identità e versione",
+            {"fields": ("indicator", "code", "version", "description")},
+        ),
+        (
+            "Definizione matematica",
+            {
+                "fields": (
+                    "formula_description",
+                    "definition_kind",
+                    "formula_definition",
+                    "formula_language_version",
+                    "consistency_checks",
+                    "consistency_notes",
+                    "annual_aggregation_description",
+                )
+            },
+        ),
+        (
+            "Contratti dei dati e parametri",
+            {"fields": ("input_schema", "output_schema", "parameter_schema")},
+        ),
+        (
+            "Esecuzione esterna",
+            {
+                "fields": (
+                    "execution_engine",
+                    "execution_reference",
+                    "artifact_identifier",
+                )
+            },
+        ),
+        (
+            "Verifica statica e ciclo di vita",
+            {
+                "fields": (
+                    "formula_value_kind",
+                    "formal_verification_state",
+                    "formal_verification",
+                    "status",
+                    "published_by",
+                    "published_at",
+                    "created_at_human",
+                    "updated_at_human",
+                )
+            },
+        ),
+    )
+
+    @admin.display(description="Stato della verifica (non del calcolo)")
+    def formal_verification_state(self, obj):
+        if obj is None:
+            return "Non verificato"
+        from rpsd_config.exchange_agreement.services.formal_definitions import (
+            verification_state,
+        )
+
+        return {
+            "current": "Corrente",
+            "stale": "Obsoleta: ripetere la verifica",
+            "not_verified": "Non verificata",
+            "not_formal": "Definizione non formalizzata",
+        }[verification_state(obj)]
+
+    @admin.action(
+        description="Verifica le definizioni formali in bozza (nessun calcolo)"
+    )
+    def verify_formulas(self, request, queryset):
+        from rpsd_config.exchange_agreement.services.formal_definitions import (
+            verify_definition,
+        )
+
+        for version in queryset:
+            try:
+                verify_definition(version, actor=request.user)
+                self.message_user(
+                    request, f"{version.code}: verifica statica aggiornata."
+                )
+            except ValidationError as exc:
+                self.message_user(request, str(exc), level="ERROR")
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -297,6 +392,13 @@ class IndicatorVersionAdmin(
         for name, label in labels.items():
             if name in form.base_fields:
                 form.base_fields[name].label = label
+        if "formula_language_version" in form.base_fields:
+            form.base_fields["formula_language_version"].widget = forms.Select(
+                choices=[
+                    ("", "---------"),
+                    ("rpsd-formula-v1", "rpsd-formula-v1 — core 0.2.0"),
+                ]
+            )
         return form
 
     def get_readonly_fields(self, request, obj=None):
@@ -309,6 +411,12 @@ class IndicatorVersionAdmin(
                     "version",
                     "description",
                     "formula_description",
+                    "definition_kind",
+                    "formula_definition",
+                    "formula_language_version",
+                    "consistency_checks",
+                    "consistency_notes",
+                    "annual_aggregation_description",
                     "input_schema",
                     "output_schema",
                     "parameter_schema",
