@@ -1,0 +1,863 @@
+%% RPSD Config — modello dati completo implementato, 9 novembre 2026.
+%% Fonti: exchange_agreement/models.py, validation_models.py, evaluation_models.py.
+%% Include campi ereditati, tabelle associative, accessi, inviti ed eventi.
+%% USER rappresenta AUTH_USER_MODEL: sono mostrati solo id e username.
+%% Escluse tabelle interne Django (sessioni, permessi, gruppi, admin log) e proxy senza tabella.
+%% PK = chiave primaria; FK = chiave esterna; UK = unicita del singolo campo.
+%% I vincoli composti sono annotati nei commenti della relativa entita.
+%% null = valore nullable nel database. Le cardinalita derivano da null/unique.
+%% I ManyToMany con through sono rappresentati dalle rispettive tabelle associative.
+%% I vincoli di lifecycle e coerenza applicativa non sono esprimibili con le sole cardinalita.
+erDiagram
+    direction LR
+
+    USER {
+        bigint id PK
+        string username UK
+    }
+
+    %% Modello Django: Agency
+    AGENCY {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string name UK
+        string agency_key UK
+        text description
+    }
+
+    %% Modello Django: Company
+    COMPANY {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string name UK
+        text description
+    }
+
+    %% Modello Django: ConfigurationAsset
+    %% models.UniqueConstraint(fields=['asset_type', 'what', 'version'], name='uniq_config_asset_type_what_version')
+    %% models.UniqueConstraint(fields=['asset_type', 'what'], condition=models.Q(is_active=True), name='uniq_active_config_asset_type_what')
+    %% models.CheckConstraint(condition=models.Q(asset_type__in=['xsd_schema', 'xsd_bundle', 'json_schema', 'document', 'archive', 'other', 'netex_xsd', 'siri_profile']), name='config_asset_supported_dataset_type')
+    CONFIGURATION_ASSET {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string asset_type
+        string what
+        string label
+        int version
+        string status
+        boolean is_active
+        string storage_url
+        string storage_provider
+        string storage_key
+        string original_filename
+        string content_type
+        string checksum_sha256
+        bigint size_bytes
+        json bundle_manifest
+        bigint uploaded_by_id FK "SET_NULL; null"
+        datetime uploaded_at
+        bigint activated_by_id FK "SET_NULL; null"
+        datetime activated_at "null"
+        datetime archived_at "null"
+        string publish_status
+        text last_publish_error
+    }
+
+    %% Modello Django: ConfigurationAssetEvent
+    CONFIGURATION_ASSET_EVENT {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint asset_id FK "CASCADE"
+        string event_type
+        string routing_key
+        json payload
+        string status
+        int attempts
+        text last_error
+        datetime published_at "null"
+    }
+
+    %% Modello Django: Authority
+    %% models.UniqueConstraint(fields=['name', 'authority_type'], name='uniq_authority_name_type')
+    AUTHORITY {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string name
+        text description
+        multipolygon geographic_extent "null"
+        string authority_type
+    }
+
+    %% Modello Django: AuthorityMembership
+    %% models.UniqueConstraint(fields=['authority', 'user'], name='unique_authority_membership_user')
+    AUTHORITY_MEMBERSHIP {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint authority_id FK "CASCADE"
+        bigint user_id FK "CASCADE"
+        boolean is_active
+        bigint created_by_id FK "SET_NULL; null"
+    }
+
+    %% Modello Django: Lot
+    %% models.UniqueConstraint(Lower('short_description'), 'agency', name='unique_lot_short_description_per_agency_ci')
+    LOT {
+        datetime created_at
+        datetime updated_at
+        bigint id PK
+        string short_description
+        bigint agency_id FK "PROTECT; null"
+        string description
+    }
+
+    %% Modello Django: Dataset
+    DATASET {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string code UK
+        string name
+        text description
+        string status
+    }
+
+    %% Modello Django: DatasetSpecification
+    %% models.UniqueConstraint(fields=['dataset', 'version'], name='uniq_dataset_specification_version')
+    DATASET_SPECIFICATION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string format
+        bigint dataset_id FK "PROTECT"
+        string code UK
+        string version
+        text description
+        string status
+        json metadata
+        bigint published_by_id FK "SET_NULL; null"
+        datetime published_at "null"
+    }
+
+    %% Modello Django: DatasetSpecificationAsset
+    %% models.UniqueConstraint(fields=['dataset_specification', 'configuration_asset', 'role'], name='uniq_dataset_spec_asset_role')
+    DATASET_SPECIFICATION_ASSET {
+        bigint id PK
+        bigint dataset_specification_id FK "CASCADE"
+        bigint configuration_asset_id FK "PROTECT"
+        string role
+        boolean required
+    }
+
+    %% Modello Django: DatasetSpecificationStatusEvent
+    DATASET_SPECIFICATION_STATUS_EVENT {
+        bigint id PK
+        bigint dataset_specification_id FK "PROTECT"
+        string from_status
+        string to_status
+        bigint changed_by_id FK "SET_NULL; null"
+        datetime changed_at
+    }
+
+    %% Modello Django: Indicator
+    INDICATOR {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string code UK
+        string name
+        text description
+        string formula_symbol UK "null"
+        string status
+    }
+
+    %% Modello Django: IndicatorVersion
+    %% models.UniqueConstraint(fields=['indicator', 'version'], name='uniq_indicator_version')
+    INDICATOR_VERSION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint indicator_id FK "PROTECT"
+        string code UK
+        string version
+        text description
+        text formula_description
+        string definition_kind
+        text formula_definition
+        string formula_language_version
+        string formula_value_kind
+        text consistency_checks
+        text consistency_notes
+        text annual_aggregation_description
+        json formal_verification
+        json input_schema
+        json output_schema
+        json parameter_schema
+        string execution_engine
+        string execution_reference
+        string artifact_identifier
+        string status
+        bigint published_by_id FK "SET_NULL; null"
+        datetime published_at "null"
+    }
+
+    %% Modello Django: IndicatorVersionStatusEvent
+    INDICATOR_VERSION_STATUS_EVENT {
+        bigint id PK
+        bigint indicator_version_id FK "PROTECT"
+        string from_status
+        string to_status
+        bigint changed_by_id FK "SET_NULL; null"
+        datetime changed_at
+    }
+
+    %% Modello Django: InputFlowVersion
+    %% models.UniqueConstraint(fields=['dataset_specification', 'version'], name='uniq_input_flow_specification_version')
+    INPUT_FLOW_VERSION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string code UK
+        string version
+        string name
+        text description
+        string engine
+        string deployment_name
+        string artifact_identifier
+        string status
+        bigint published_by_id FK "SET_NULL; null"
+        datetime published_at "null"
+        bigint dataset_specification_id FK "PROTECT"
+    }
+
+    %% Modello Django: OrchestrationFlowVersion
+    ORCHESTRATION_FLOW_VERSION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string code UK
+        string version
+        string name
+        text description
+        string engine
+        string deployment_name
+        string artifact_identifier
+        string status
+        bigint published_by_id FK "SET_NULL; null"
+        datetime published_at "null"
+    }
+
+    %% Modello Django: InputFlowVersionStatusEvent
+    INPUT_FLOW_VERSION_STATUS_EVENT {
+        bigint id PK
+        bigint input_flow_version_id FK "PROTECT"
+        string from_status
+        string to_status
+        bigint changed_by_id FK "SET_NULL; null"
+        datetime changed_at
+    }
+
+    %% Modello Django: OrchestrationFlowVersionStatusEvent
+    ORCHESTRATION_FLOW_VERSION_STATUS_EVENT {
+        bigint id PK
+        bigint orchestration_flow_version_id FK "PROTECT"
+        string from_status
+        string to_status
+        bigint changed_by_id FK "SET_NULL; null"
+        datetime changed_at
+    }
+
+    %% Modello Django: ProcessingProfileVersion
+    PROCESSING_PROFILE_VERSION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string code UK
+        string version
+        string name
+        text description
+        bigint orchestration_flow_version_id FK "PROTECT"
+        string status
+        bigint published_by_id FK "SET_NULL; null"
+        datetime published_at "null"
+    }
+
+    %% Modello Django: ProcessingProfileInputFlow
+    %% models.UniqueConstraint(fields=['processing_profile_version', 'dataset'], name='uniq_process_profile_dataset')
+    PROCESSING_PROFILE_INPUT_FLOW {
+        bigint id PK
+        bigint processing_profile_version_id FK "CASCADE"
+        bigint dataset_id FK "PROTECT"
+        bigint input_flow_version_id FK "PROTECT"
+    }
+
+    %% Modello Django: ProcessingProfileIndicatorVersion
+    %% models.UniqueConstraint(fields=['processing_profile_version', 'indicator_version'], name='uniq_process_profile_indicator')
+    PROCESSING_PROFILE_INDICATOR_VERSION {
+        bigint id PK
+        bigint processing_profile_version_id FK "CASCADE"
+        bigint indicator_version_id FK "PROTECT"
+        boolean proposed_by_default
+    }
+
+    %% Modello Django: ProcessingProfileVersionStatusEvent
+    PROCESSING_PROFILE_VERSION_STATUS_EVENT {
+        bigint id PK
+        bigint processing_profile_version_id FK "PROTECT"
+        string from_status
+        string to_status
+        bigint changed_by_id FK "SET_NULL; null"
+        datetime changed_at
+    }
+
+    %% Modello Django: Contract
+    %% models.UniqueConstraint(fields=['lot', 'client_agency', 'contractor_company', 'version'], name='unique_contract_version_per_lot_pair')
+    %% models.CheckConstraint(condition=models.Q(end_date__gte=models.F('start_date')) | models.Q(end_date__isnull=True), name='contract_date_range_ok')
+    CONTRACT {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string contract_code UK
+        bigint client_agency_id FK "PROTECT"
+        bigint contractor_company_id FK "PROTECT"
+        bigint governing_authority_id FK "PROTECT; null"
+        date start_date
+        date end_date "null"
+        string tender_id
+        string contract_type
+        int version
+        string contract_program_file "null"
+        bigint lot_id FK "PROTECT"
+        string status
+        datetime closed_at "null"
+        string closed_reason
+        bigint replaced_by_id FK "PROTECT; null"
+    }
+
+    %% Modello Django: ContractDocument
+    CONTRACT_DOCUMENT {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint contract_id FK "CASCADE"
+        string name
+        string file
+    }
+
+    %% Modello Django: ContractPublication
+    %% models.UniqueConstraint(fields=['contract', 'publication_version'], name='unique_contract_publication_version')
+    CONTRACT_PUBLICATION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint contract_id FK "CASCADE"
+        bigint configuration_revision_id FK "PROTECT"
+        int publication_version
+        datetime published_at
+        bigint published_by_id FK "SET_NULL; null"
+        string snapshot_schema_version
+        json snapshot
+        string snapshot_checksum
+    }
+
+    %% Modello Django: ContractConfigurationRevision
+    %% models.UniqueConstraint(fields=['contract', 'revision_number'], name='unique_contract_revision_number')
+    %% models.UniqueConstraint(fields=['contract', 'valid_from'], condition=models.Q(status='approved'), name='unique_approved_contract_revision_date')
+    CONTRACT_CONFIGURATION_REVISION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint contract_id FK "CASCADE"
+        int revision_number
+        string code UK
+        bigint processing_profile_version_id FK "PROTECT"
+        date valid_from "null"
+        string status
+        text change_reason
+        bigint replaces_revision_id FK "PROTECT; null"
+        string snapshot_schema_version
+        json configuration_snapshot
+        string snapshot_checksum
+        bigint created_by_id FK "SET_NULL; null"
+        bigint approved_by_id FK "SET_NULL; null"
+        datetime approved_at "null"
+        bigint withdrawn_by_id FK "SET_NULL; null"
+        datetime withdrawn_at "null"
+        text withdrawal_reason
+    }
+
+    %% Modello Django: ContractConfigurationRevisionStatusEvent
+    CONTRACT_CONFIGURATION_REVISION_STATUS_EVENT {
+        bigint id PK
+        bigint revision_id FK "CASCADE"
+        string from_status
+        string to_status
+        bigint changed_by_id FK "SET_NULL; null"
+        text reason
+        string snapshot_checksum
+        datetime changed_at
+    }
+
+    %% Modello Django: ContractInputSelection
+    %% models.UniqueConstraint(fields=['revision', 'processing_profile_input_flow'], name='unique_contract_revision_input')
+    CONTRACT_INPUT_SELECTION {
+        bigint id PK
+        bigint revision_id FK "CASCADE"
+        bigint processing_profile_input_flow_id FK "PROTECT"
+    }
+
+    %% Modello Django: ContractRevisionIndicator
+    %% models.UniqueConstraint(fields=['revision', 'processing_profile_indicator_version'], name='unique_revision_profile_indicator')
+    CONTRACT_REVISION_INDICATOR {
+        bigint id PK
+        bigint revision_id FK "CASCADE"
+        bigint processing_profile_indicator_version_id FK "PROTECT"
+        json thresholds
+        json aggregation
+        json penalties
+        json parameters
+    }
+
+    %% Modello Django: IntegrationPrincipal
+    %% models.UniqueConstraint(fields=['company', 'name', 'environment'], name='unique_integration_principal_per_company_name_env')
+    INTEGRATION_PRINCIPAL {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint company_id FK "CASCADE"
+        string name
+        string environment
+        string keycloak_client_id UK
+        string keycloak_client_uuid
+        string status
+        datetime last_secret_rotation_at "null"
+        text client_secret_ciphertext
+        string client_secret_key_id
+        datetime client_secret_updated_at "null"
+        bigint created_by_id FK "SET_NULL; null"
+    }
+
+    %% Modello Django: IntegrationGrant
+    %% models.CheckConstraint(condition=models.Q(valid_from__isnull=True) | models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=models.F('valid_from')), name='integration_grant_valid_window')
+    %% models.UniqueConstraint(fields=['principal', 'contract', 'action'], condition=models.Q(data_category__isnull=True, status='active'), name='uniq_active_integration_grant_no_category')
+    %% models.UniqueConstraint(fields=['principal', 'contract', 'action', 'data_category'], condition=models.Q(data_category__isnull=False, status='active'), name='uniq_active_integration_grant_with_category')
+    INTEGRATION_GRANT {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint principal_id FK "CASCADE"
+        bigint contract_id FK "CASCADE"
+        string action
+        string data_category "null"
+        datetime valid_from "null"
+        datetime valid_to "null"
+        string status
+        text notes
+        bigint created_by_id FK "SET_NULL; null"
+    }
+
+    %% Modello Django: ContractMembership
+    %% models.UniqueConstraint(fields=['contract', 'user'], name='unique_contract_membership_user')
+    CONTRACT_MEMBERSHIP {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint contract_id FK "CASCADE"
+        bigint user_id FK "CASCADE"
+        string role
+        bigint created_by_id FK "SET_NULL; null"
+    }
+
+    %% Modello Django: AgencyMembership
+    %% models.UniqueConstraint(fields=['agency', 'user'], name='unique_agency_membership_user')
+    AGENCY_MEMBERSHIP {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint agency_id FK "CASCADE"
+        bigint user_id FK "CASCADE"
+        string role
+        string status
+        string source
+        string keycloak_group_path
+        string keycloak_user_id
+        datetime last_synced_at "null"
+        text last_sync_error
+        bigint created_by_id FK "SET_NULL; null"
+        bigint updated_by_id FK "SET_NULL; null"
+        bigint revoked_by_id FK "SET_NULL; null"
+        datetime revoked_at "null"
+    }
+
+    %% Modello Django: AgencyInvitation
+    %% models.UniqueConstraint(fields=['agency', 'email', 'role_to_assign'], condition=models.Q(status='pending', email__isnull=False), name='unique_pending_agency_invitation_per_email_role')
+    %% models.UniqueConstraint(fields=['agency', 'role_to_assign'], condition=models.Q(status='pending', email__isnull=True), name='unique_pending_open_agency_invitation_per_role')
+    AGENCY_INVITATION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        uuid token UK
+        bigint agency_id FK "CASCADE"
+        string email "null"
+        string role_to_assign
+        bigint invited_by_id FK "SET_NULL; null"
+        bigint accepted_by_id FK "SET_NULL; null"
+        bigint rejected_by_id FK "SET_NULL; null"
+        datetime expires_at
+        datetime accepted_at "null"
+        datetime rejected_at "null"
+        string status
+    }
+
+    %% Modello Django: ContractInvitation
+    %% models.CheckConstraint(condition=models.Q(role_to_assign__in=[ContractMembership.Role.CONTRACT_EDITOR, ContractMembership.Role.CONTRACT_READER]), name='contract_invitation_role_editor_or_reader_only')
+    %% models.UniqueConstraint(fields=['contract', 'email', 'role_to_assign'], condition=models.Q(status='pending', email__isnull=False), name='unique_pending_contract_invitation_per_email_role')
+    %% models.UniqueConstraint(fields=['contract', 'role_to_assign'], condition=models.Q(status='pending', email__isnull=True), name='unique_pending_open_contract_invitation_per_role')
+    CONTRACT_INVITATION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        uuid token UK
+        bigint contract_id FK "CASCADE"
+        string email "null"
+        string role_to_assign
+        bigint invited_by_id FK "SET_NULL; null"
+        bigint accepted_by_id FK "SET_NULL; null"
+        bigint rejected_by_id FK "SET_NULL; null"
+        datetime expires_at
+        datetime accepted_at "null"
+        datetime rejected_at "null"
+        string status
+    }
+
+    %% Modello Django: ValidationRule
+    VALIDATION_RULE {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string code UK
+        string name
+        text description
+    }
+
+    %% Modello Django: ValidationTypeVersion
+    %% models.UniqueConstraint(fields=['validation_type', 'language_version'], name='uniq_validation_type_language')
+    VALIDATION_TYPE_VERSION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        string validation_type
+        string language_version
+    }
+
+    %% Modello Django: ValidationRuleVersion
+    %% models.UniqueConstraint(fields=['rule', 'version'], name='uniq_validation_rule_version')
+    VALIDATION_RULE_VERSION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint rule_id FK "PROTECT"
+        string version
+        string name
+        text description
+        bigint validation_type_version_id FK "PROTECT"
+        text definition
+        json options
+        string result_contract
+        string execution_reference
+        string status
+        bigint published_by_id FK "SET_NULL; null"
+        datetime published_at "null"
+    }
+
+    %% Modello Django: ValidationRuleStatusEvent
+    VALIDATION_RULE_STATUS_EVENT {
+        bigint id PK
+        bigint rule_version_id FK "PROTECT"
+        string from_status
+        string to_status
+        bigint changed_by_id FK "PROTECT; null"
+        datetime changed_at
+        text reason
+    }
+
+    %% Modello Django: DatasetVersionRule
+    %% models.UniqueConstraint(fields=['dataset_specification', 'rule_version'], name='uniq_dataset_version_rule')
+    DATASET_VERSION_RULE {
+        bigint id PK
+        bigint dataset_specification_id FK "PROTECT"
+        bigint rule_version_id FK "PROTECT"
+        string failure_policy
+        bigint created_by_id FK "PROTECT; null"
+        datetime created_at
+    }
+
+    %% Modello Django: IndicatorDimension
+    INDICATOR_DIMENSION {
+        bigint id PK
+        string code UK
+        string name
+        text description
+        json allowed_values "null"
+    }
+
+    %% Modello Django: IndicatorVersionDimension
+    %% models.UniqueConstraint(fields=['indicator_version', 'dimension'], name='uniq_indicator_own_dimension')
+    %% models.CheckConstraint(condition=models.Q(is_carried=True) | models.Q(is_monitoring=True) | models.Q(is_contractual=True), name='indicator_dimension_has_usage')
+    INDICATOR_VERSION_DIMENSION {
+        bigint id PK
+        bigint indicator_version_id FK "PROTECT"
+        bigint dimension_id FK "PROTECT"
+        boolean is_carried
+        boolean is_monitoring
+        boolean is_contractual
+        json allowed_values "null"
+    }
+
+    %% Modello Django: IndicatorVersionRule
+    %% models.UniqueConstraint(fields=['indicator_version', 'dataset_specification', 'rule_version'], name='uniq_indicator_version_rule')
+    INDICATOR_VERSION_RULE {
+        bigint id PK
+        bigint indicator_version_id FK "PROTECT"
+        bigint dataset_specification_id FK "PROTECT"
+        bigint rule_version_id FK "PROTECT"
+        string impact
+    }
+
+    %% Modello Django: IndicatorVersionRuleDimension
+    %% models.UniqueConstraint(fields=['binding', 'dimension'], name='uniq_indicator_rule_dimension')
+    INDICATOR_VERSION_RULE_DIMENSION {
+        bigint id PK
+        bigint binding_id FK "CASCADE"
+        bigint dimension_id FK "PROTECT"
+    }
+
+    %% Modello Django: IndicatorVersionInput
+    %% models.UniqueConstraint(fields=['indicator_version', 'dataset_specification'], name='uniq_indicator_version_input')
+    INDICATOR_VERSION_INPUT {
+        bigint id PK
+        bigint indicator_version_id FK "PROTECT"
+        bigint dataset_specification_id FK "PROTECT"
+    }
+
+    %% Modello Django: IndicatorVersionDependency
+    %% models.UniqueConstraint(fields=['dependent', 'prerequisite'], name='uniq_indicator_dependency')
+    %% models.CheckConstraint(condition=~models.Q(dependent=models.F('prerequisite')), name='no_indicator_self_dependency')
+    INDICATOR_VERSION_DEPENDENCY {
+        bigint id PK
+        bigint dependent_id FK "PROTECT"
+        bigint prerequisite_id FK "PROTECT"
+        string origin
+        text technical_reason
+    }
+
+    %% Modello Django: DependencyRequiredDimension
+    %% models.UniqueConstraint(fields=['dependency', 'dimension'], name='uniq_dependency_dimension')
+    DEPENDENCY_REQUIRED_DIMENSION {
+        bigint id PK
+        bigint dependency_id FK "CASCADE"
+        bigint dimension_id FK "PROTECT"
+    }
+
+    %% Modello Django: ContractDependencyConfiguration
+    %% models.UniqueConstraint(fields=['revision', 'indicator_version'], name='uniq_revision_dependency_config')
+    CONTRACT_DEPENDENCY_CONFIGURATION {
+        bigint id PK
+        bigint revision_id FK "CASCADE"
+        bigint indicator_version_id FK "PROTECT"
+        json thresholds
+        json parameters
+        json aggregation
+        json penalties
+    }
+
+    %% Modello Django: IndicatorEvaluationThreshold
+    %% models.UniqueConstraint(fields=['contract_revision_indicator', 'code'], name='unique_indicator_evaluation_threshold')
+    %% models.CheckConstraint(condition=models.Q(period_days__isnull=True) | models.Q(period_days__gte=1), name='threshold_positive_period_days')
+    INDICATOR_EVALUATION_THRESHOLD {
+        bigint id PK
+        string period_type
+        date period_start_date "null"
+        date period_end_date "null"
+        int period_days "null"
+        string evaluation_timezone
+        string partial_period_policy
+        datetime created_at
+        datetime updated_at
+        bigint contract_revision_indicator_id FK "CASCADE"
+        string code
+        string name
+        text description
+        string metric_code
+        string aggregation_method
+        string violation_operator
+        decimal limit_value "null"
+        string severity
+        string missing_data_policy
+    }
+
+    %% Modello Django: IndicatorPenalty
+    %% models.UniqueConstraint(fields=['contract_revision_indicator', 'code'], name='unique_indicator_penalty')
+    %% models.CheckConstraint(condition=models.Q(period_days__isnull=True) | models.Q(period_days__gte=1), name='penalty_positive_period_days')
+    %% models.CheckConstraint(condition=models.Q(**{f'{name}__isnull': True}) | models.Q(**{f'{name}__gte': 0}), name=f'penalty_nonnegative_{name}')
+    INDICATOR_PENALTY {
+        bigint id PK
+        string period_type
+        date period_start_date "null"
+        date period_end_date "null"
+        int period_days "null"
+        string evaluation_timezone
+        string partial_period_policy
+        datetime created_at
+        datetime updated_at
+        bigint contract_revision_indicator_id FK "CASCADE"
+        string code
+        string name
+        text description
+        bigint activation_threshold_id FK "PROTECT; null"
+        string calculation_method
+        string quantity_metric_code
+        string quantity_aggregation_method
+        decimal allowance_quantity "null"
+        decimal fixed_amount "null"
+        decimal unit_amount "null"
+        string currency
+        decimal maximum_amount "null"
+        string amount_rounding_mode
+        string external_execution_reference
+        string external_artifact_identifier
+        json external_parameter_schema
+        json external_parameters
+    }
+
+    %% Modello Django: EvaluationThresholdDimension
+    %% models.UniqueConstraint(fields=['threshold', 'dimension'], name='unique_threshold_dimension')
+    EVALUATION_THRESHOLD_DIMENSION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint threshold_id FK "CASCADE"
+        bigint dimension_id FK "PROTECT"
+    }
+
+    %% Modello Django: EvaluationPenaltyDimension
+    %% models.UniqueConstraint(fields=['penalty', 'dimension'], name='unique_penalty_dimension')
+    EVALUATION_PENALTY_DIMENSION {
+        bigint id PK
+        datetime created_at
+        datetime updated_at
+        bigint penalty_id FK "CASCADE"
+        bigint dimension_id FK "PROTECT"
+    }
+
+    %% Relazioni: il nome corrisponde al campo Django.
+    USER o|--o{ CONFIGURATION_ASSET : uploaded_by
+    USER o|--o{ CONFIGURATION_ASSET : activated_by
+    CONFIGURATION_ASSET ||--o{ CONFIGURATION_ASSET_EVENT : asset
+    AUTHORITY ||--o{ AUTHORITY_MEMBERSHIP : authority
+    USER ||--o{ AUTHORITY_MEMBERSHIP : user
+    USER o|--o{ AUTHORITY_MEMBERSHIP : created_by
+    AGENCY o|--o{ LOT : agency
+    DATASET ||--o{ DATASET_SPECIFICATION : dataset
+    USER o|--o{ DATASET_SPECIFICATION : published_by
+    DATASET_SPECIFICATION ||--o{ DATASET_SPECIFICATION_ASSET : dataset_specification
+    CONFIGURATION_ASSET ||--o{ DATASET_SPECIFICATION_ASSET : configuration_asset
+    DATASET_SPECIFICATION ||--o{ DATASET_SPECIFICATION_STATUS_EVENT : dataset_specification
+    USER o|--o{ DATASET_SPECIFICATION_STATUS_EVENT : changed_by
+    INDICATOR ||--o{ INDICATOR_VERSION : indicator
+    USER o|--o{ INDICATOR_VERSION : published_by
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_STATUS_EVENT : indicator_version
+    USER o|--o{ INDICATOR_VERSION_STATUS_EVENT : changed_by
+    USER o|--o{ INPUT_FLOW_VERSION : published_by
+    DATASET_SPECIFICATION ||--o{ INPUT_FLOW_VERSION : dataset_specification
+    USER o|--o{ ORCHESTRATION_FLOW_VERSION : published_by
+    INPUT_FLOW_VERSION ||--o{ INPUT_FLOW_VERSION_STATUS_EVENT : input_flow_version
+    USER o|--o{ INPUT_FLOW_VERSION_STATUS_EVENT : changed_by
+    ORCHESTRATION_FLOW_VERSION ||--o{ ORCHESTRATION_FLOW_VERSION_STATUS_EVENT : orchestration_flow_version
+    USER o|--o{ ORCHESTRATION_FLOW_VERSION_STATUS_EVENT : changed_by
+    ORCHESTRATION_FLOW_VERSION ||--o{ PROCESSING_PROFILE_VERSION : orchestration_flow_version
+    USER o|--o{ PROCESSING_PROFILE_VERSION : published_by
+    PROCESSING_PROFILE_VERSION ||--o{ PROCESSING_PROFILE_INPUT_FLOW : processing_profile_version
+    DATASET ||--o{ PROCESSING_PROFILE_INPUT_FLOW : dataset
+    INPUT_FLOW_VERSION ||--o{ PROCESSING_PROFILE_INPUT_FLOW : input_flow_version
+    PROCESSING_PROFILE_VERSION ||--o{ PROCESSING_PROFILE_INDICATOR_VERSION : processing_profile_version
+    INDICATOR_VERSION ||--o{ PROCESSING_PROFILE_INDICATOR_VERSION : indicator_version
+    PROCESSING_PROFILE_VERSION ||--o{ PROCESSING_PROFILE_VERSION_STATUS_EVENT : processing_profile_version
+    USER o|--o{ PROCESSING_PROFILE_VERSION_STATUS_EVENT : changed_by
+    AGENCY ||--o{ CONTRACT : client_agency
+    COMPANY ||--o{ CONTRACT : contractor_company
+    AUTHORITY o|--o{ CONTRACT : governing_authority
+    LOT ||--o{ CONTRACT : lot
+    CONTRACT o|--o{ CONTRACT : replaced_by
+    CONTRACT ||--o{ CONTRACT_DOCUMENT : contract
+    CONTRACT ||--o{ CONTRACT_PUBLICATION : contract
+    CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_PUBLICATION : configuration_revision
+    USER o|--o{ CONTRACT_PUBLICATION : published_by
+    CONTRACT ||--o{ CONTRACT_CONFIGURATION_REVISION : contract
+    PROCESSING_PROFILE_VERSION ||--o{ CONTRACT_CONFIGURATION_REVISION : processing_profile_version
+    CONTRACT_CONFIGURATION_REVISION o|--o{ CONTRACT_CONFIGURATION_REVISION : replaces_revision
+    USER o|--o{ CONTRACT_CONFIGURATION_REVISION : created_by
+    USER o|--o{ CONTRACT_CONFIGURATION_REVISION : approved_by
+    USER o|--o{ CONTRACT_CONFIGURATION_REVISION : withdrawn_by
+    CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_CONFIGURATION_REVISION_STATUS_EVENT : revision
+    USER o|--o{ CONTRACT_CONFIGURATION_REVISION_STATUS_EVENT : changed_by
+    CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_INPUT_SELECTION : revision
+    PROCESSING_PROFILE_INPUT_FLOW ||--o{ CONTRACT_INPUT_SELECTION : processing_profile_input_flow
+    CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_REVISION_INDICATOR : revision
+    PROCESSING_PROFILE_INDICATOR_VERSION ||--o{ CONTRACT_REVISION_INDICATOR : processing_profile_indicator_version
+    COMPANY ||--o{ INTEGRATION_PRINCIPAL : company
+    USER o|--o{ INTEGRATION_PRINCIPAL : created_by
+    INTEGRATION_PRINCIPAL ||--o{ INTEGRATION_GRANT : principal
+    CONTRACT ||--o{ INTEGRATION_GRANT : contract
+    USER o|--o{ INTEGRATION_GRANT : created_by
+    CONTRACT ||--o{ CONTRACT_MEMBERSHIP : contract
+    USER ||--o{ CONTRACT_MEMBERSHIP : user
+    USER o|--o{ CONTRACT_MEMBERSHIP : created_by
+    AGENCY ||--o{ AGENCY_MEMBERSHIP : agency
+    USER ||--o{ AGENCY_MEMBERSHIP : user
+    USER o|--o{ AGENCY_MEMBERSHIP : created_by
+    USER o|--o{ AGENCY_MEMBERSHIP : updated_by
+    USER o|--o{ AGENCY_MEMBERSHIP : revoked_by
+    AGENCY ||--o{ AGENCY_INVITATION : agency
+    USER o|--o{ AGENCY_INVITATION : invited_by
+    USER o|--o{ AGENCY_INVITATION : accepted_by
+    USER o|--o{ AGENCY_INVITATION : rejected_by
+    CONTRACT ||--o{ CONTRACT_INVITATION : contract
+    USER o|--o{ CONTRACT_INVITATION : invited_by
+    USER o|--o{ CONTRACT_INVITATION : accepted_by
+    USER o|--o{ CONTRACT_INVITATION : rejected_by
+    VALIDATION_RULE ||--o{ VALIDATION_RULE_VERSION : rule
+    VALIDATION_TYPE_VERSION ||--o{ VALIDATION_RULE_VERSION : validation_type_version
+    USER o|--o{ VALIDATION_RULE_VERSION : published_by
+    VALIDATION_RULE_VERSION ||--o{ VALIDATION_RULE_STATUS_EVENT : rule_version
+    USER o|--o{ VALIDATION_RULE_STATUS_EVENT : changed_by
+    DATASET_SPECIFICATION ||--o{ DATASET_VERSION_RULE : dataset_specification
+    VALIDATION_RULE_VERSION ||--o{ DATASET_VERSION_RULE : rule_version
+    USER o|--o{ DATASET_VERSION_RULE : created_by
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_DIMENSION : indicator_version
+    INDICATOR_DIMENSION ||--o{ INDICATOR_VERSION_DIMENSION : dimension
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_RULE : indicator_version
+    DATASET_SPECIFICATION ||--o{ INDICATOR_VERSION_RULE : dataset_specification
+    VALIDATION_RULE_VERSION ||--o{ INDICATOR_VERSION_RULE : rule_version
+    INDICATOR_VERSION_RULE ||--o{ INDICATOR_VERSION_RULE_DIMENSION : binding
+    INDICATOR_DIMENSION ||--o{ INDICATOR_VERSION_RULE_DIMENSION : dimension
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_INPUT : indicator_version
+    DATASET_SPECIFICATION ||--o{ INDICATOR_VERSION_INPUT : dataset_specification
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_DEPENDENCY : dependent
+    INDICATOR_VERSION ||--o{ INDICATOR_VERSION_DEPENDENCY : prerequisite
+    INDICATOR_VERSION_DEPENDENCY ||--o{ DEPENDENCY_REQUIRED_DIMENSION : dependency
+    INDICATOR_DIMENSION ||--o{ DEPENDENCY_REQUIRED_DIMENSION : dimension
+    CONTRACT_CONFIGURATION_REVISION ||--o{ CONTRACT_DEPENDENCY_CONFIGURATION : revision
+    INDICATOR_VERSION ||--o{ CONTRACT_DEPENDENCY_CONFIGURATION : indicator_version
+    CONTRACT_REVISION_INDICATOR ||--o{ INDICATOR_EVALUATION_THRESHOLD : contract_revision_indicator
+    CONTRACT_REVISION_INDICATOR ||--o{ INDICATOR_PENALTY : contract_revision_indicator
+    INDICATOR_EVALUATION_THRESHOLD o|--o{ INDICATOR_PENALTY : activation_threshold
+    INDICATOR_EVALUATION_THRESHOLD ||--o{ EVALUATION_THRESHOLD_DIMENSION : threshold
+    INDICATOR_DIMENSION ||--o{ EVALUATION_THRESHOLD_DIMENSION : dimension
+    INDICATOR_PENALTY ||--o{ EVALUATION_PENALTY_DIMENSION : penalty
+    INDICATOR_DIMENSION ||--o{ EVALUATION_PENALTY_DIMENSION : dimension
