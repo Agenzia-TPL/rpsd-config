@@ -76,6 +76,29 @@ CORSE_BUNDLE_MANIFEST = {
 
 RULE_EXAMPLES = (
     {
+        "validation_type": "dbt",
+        "language_version": "1",
+        "definition": json.dumps(
+            {
+                "schema_version": "dbt-context-v1",
+                "requirement": {
+                    "code": "EXAMPLE_COVERAGE",
+                    "description": "Confrontare le corse fra due dataset trasformati.",
+                },
+                "rule": {
+                    "code": "EXAMPLE_COVERAGE",
+                    "engine": "dbt",
+                    "description": "Contesto per chi scrive il test di copertura.",
+                },
+                "relations": [],
+                "notes": ["Definire il test nel progetto dbt esterno."],
+                "provenance": {},
+            }
+        ),
+        "options": {},
+        "result_contract": "structured_report",
+    },
+    {
         "validation_type": "xpath",
         "language_version": "1.0",
         "definition": "//n:ServiceJourney[not(n:DayTypeRef)]",
@@ -190,6 +213,13 @@ def field_examples(model: type, name: str) -> str:
                     "specifica con ruolo validation_schema, codice netex e versione "
                     "1. Adattare codice/versione all’asset effettivo. Il deployment "
                     "esterno va predisposto separatamente."
+                )
+            elif example["validation_type"] == "dbt":
+                note = _(
+                    "Solo contesto documentale: non genera né esegue test o SQL. "
+                    "Non associare a dataset, indicatori o profili. La versione 1 "
+                    "identifica il formato del documento. Opzioni e risultato "
+                    "sono convenzioni interne, senza significato esecutivo."
                 )
             blocks.append(
                 example_block(

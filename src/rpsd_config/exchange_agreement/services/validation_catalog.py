@@ -126,6 +126,7 @@ def validation_execution_manifest() -> dict:
     """List published references and capability requirements; no network access."""
     versions = (
         ValidationRuleVersion.objects.filter(status="published")
+        .exclude(validation_type_version__validation_type="dbt")
         .select_related("rule", "validation_type_version")
         .order_by("rule__code", "version")
     )

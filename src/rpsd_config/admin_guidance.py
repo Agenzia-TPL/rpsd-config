@@ -187,6 +187,20 @@ class GuidanceMixin:
     class Media:
         css = {"all": ("admin/config-guidance.css",)}
 
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        from rpsd_config.admin_relations import relation_formfield
+
+        relation_formfield(self, db_field, request, kwargs)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        from rpsd_config.admin_relations import apply_related_controls
+
+        field = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if getattr(db_field, "remote_field", None):
+            return apply_related_controls(db_field, field, request)
+        return field
+
     def get_fieldsets(
         self, request: HttpRequest, obj: models.Model | None = None
     ) -> list[tuple]:
@@ -216,6 +230,15 @@ class GuidedAdminMixin(GuidanceMixin):
     """ModelAdmin-only adapter; specialized save/freeze/RBAC stay in the MRO."""
 
     change_form_template = "admin/config_guidance/change_form.html"
+
+    def report_validation_error(self, request, obj, error):
+        from django.contrib import messages
+
+        from rpsd_config.admin_feedback import publication_feedback
+
+        self.message_user(
+            request, publication_feedback(self, obj, error), level=messages.ERROR
+        )
 
     def get_readonly_fields(
         self, request: HttpRequest, obj: models.Model | None = None
@@ -256,11 +279,14 @@ class GuidedAdminMixin(GuidanceMixin):
         self, request: HttpRequest, obj: models.Model | None = None, **kwargs
     ) -> type[forms.ModelForm]:
         """Supply labels and help even for fields omitted from the editable form."""
-        return guided_form(
+        form = guided_form(
             super().get_form(request, obj, **kwargs),
             self.model,
             extra_fields=self.get_readonly_fields(request, obj),
         )
+        from rpsd_config.admin_relations import wrap_declared_relations
+
+        return wrap_declared_relations(form, self, request)
 
     def get_list_display(self, request: HttpRequest) -> tuple:
         """Translate headers without mutating Django's global model metadata."""
@@ -412,4 +438,7 @@ class GuidedInlineMixin(GuidanceMixin):
             self.model,
             extra_fields=self.get_readonly_fields(request, obj),
         )
+        from rpsd_config.admin_relations import wrap_declared_relations
+
+        formset.form = wrap_declared_relations(formset.form, self, request)
         return formset

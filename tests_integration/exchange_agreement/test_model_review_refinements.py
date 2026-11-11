@@ -33,6 +33,7 @@ from rpsd_config.exchange_agreement.services.contract_revision_permissions impor
 from rpsd_config.exchange_agreement.services.indicator_catalog import (
     publish_indicator_version,
 )
+from rpsd_config.exchange_agreement.services.validation_registry import CAPABILITIES
 
 from . import test_validation_plan as plan_fixtures
 from .test_indicator_dependencies import version
@@ -126,7 +127,18 @@ class ModelReviewTests(TestCase):
             forbidden.save()
 
     def test_catalog_pairs_are_protected_and_seeded(self):
-        self.assertEqual(ValidationTypeVersion.objects.count(), 7)
+        self.assertEqual(
+            set(
+                ValidationTypeVersion.objects.values_list(
+                    "validation_type", "language_version"
+                )
+            ),
+            {
+                (kind, version)
+                for kind, capability in CAPABILITIES.items()
+                for version in capability.language_versions
+            },
+        )
         with self.assertRaises(ValidationError):
             ValidationTypeVersion.objects.create(
                 validation_type="arbitrary", language_version="99"

@@ -10,8 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rpsd_config.exchange_agreement.services.formal_definitions import (
     CORE_COMMIT,
+    CORE_RELEASES,
     LANGUAGE_VERSION,
     analyze_records,
+    core_version,
     digest,
 )
 
@@ -23,9 +25,15 @@ class CatalogRecord(BaseModel):
 class Producer(CatalogRecord):
     name: Literal["rpsd-config-tools-adapter"] = "rpsd-config-tools-adapter"
     version: Literal["1"] = "1"
-    core_version: Literal["0.2.0"] = "0.2.0"
-    core_commit: Literal[CORE_COMMIT] = CORE_COMMIT
+    core_version: Literal["0.2.0", "0.3.0"] = core_version
+    core_commit: str = CORE_COMMIT
     language_version: Literal[LANGUAGE_VERSION] = LANGUAGE_VERSION
+
+    @model_validator(mode="after")
+    def check_release(self):
+        if CORE_RELEASES[self.core_version] != self.core_commit:
+            raise ValueError("Versione e commit del core non coerenti.")
+        return self
 
 
 class CatalogSource(CatalogRecord):

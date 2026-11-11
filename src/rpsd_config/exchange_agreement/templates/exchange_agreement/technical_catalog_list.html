@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block extra_scripts %}{{ block.super }}{{ form.media }}{% endblock %}
+
 {% block title %}{{ catalog.label }} - RPSD Config{% endblock %}
 
 {% block page_header %}

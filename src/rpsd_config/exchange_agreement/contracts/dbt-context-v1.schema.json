@@ -1,0 +1,49 @@
+{
+  "$id": "urn:rpsd:dbt-context-v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Validate only the document envelope, preserving the source's metadata.",
+  "properties": {
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    },
+    "provenance": {
+      "additionalProperties": true,
+      "title": "Provenance",
+      "type": "object"
+    },
+    "relations": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Relations",
+      "type": "array"
+    },
+    "requirement": {
+      "additionalProperties": true,
+      "title": "Requirement",
+      "type": "object"
+    },
+    "rule": {
+      "additionalProperties": true,
+      "title": "Rule",
+      "type": "object"
+    },
+    "schema_version": {
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "requirement",
+    "rule"
+  ],
+  "title": "DbtContext",
+  "type": "object"
+}

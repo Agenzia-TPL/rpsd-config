@@ -2,6 +2,8 @@
 
 {% block title %}{{ object }} - RPSD Config{% endblock %}
 
+{% block extra_scripts %}{{ block.super }}{{ form.media }}{% endblock %}
+
 {% block page_header %}
 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
   <div><h1 class="h3 mb-0">{{ object }}</h1><p class="text-body-secondary mb-0">{{ catalog.label }}</p></div>
@@ -10,6 +12,7 @@
 {% endblock %}
 
 {% block content %}
+{% if object.validation_type == "dbt" %}<p class="alert alert-info">Contesto documentale per la scrittura dei test di trasformazione. Config non genera né esegue il test. Nessuna associazione a dataset, indicatori o profili è richiesta.</p>{% endif %}
 {% if error_message %}{% include "includes/ui_alert.html" with alert_variant="danger" alert_message=error_message %}{% endif %}
 {% if success_message %}{% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}{% endif %}
 
@@ -99,7 +102,7 @@
       {% if is_editable %}<form method="post" class="mt-3">{% csrf_token %}<input type="hidden" name="action" value="delete-draft"><label><input type="checkbox" name="confirm_delete" value="yes" required> Confermo l’eliminazione della versione in bozza</label><button class="btn btn-outline-danger ms-2">Elimina bozza</button></form>{% endif %}
     </div></section>
     {% endif %}
-    {% if rule_definition %}<section class="card mb-3"><div class="card-body"><h2 class="h5">Definizione completa</h2><pre class="text-wrap">{{ rule_definition }}</pre><p>Questo è il controllo configurato. L’esito sarà prodotto dal validator esterno sul file trasferito.</p></div></section>{% endif %}
+    {% if rule_definition %}<section class="card mb-3"><div class="card-body"><h2 class="h5">Definizione completa</h2><pre class="text-wrap">{{ rule_definition }}</pre>{% if object.validation_type == "dbt" %}<p>Questo documento fornisce contesto a chi scrive i test dbt. Non è un controllo eseguibile sul file trasferito.</p>{% else %}<p>Questo è il controllo configurato. L’esito sarà prodotto dal validator esterno sul file trasferito.</p>{% endif %}</div></section>{% endif %}
     {% if catalog_slug == "indicator-versions" %}
     <section class="card mb-3"><div class="card-body"><h2 class="h5">Regole e input dichiarati</h2>
     <ul>{% for binding in indicator_bindings %}<li>{{ binding.rule_version }} · {{ binding.dataset_specification.code }} · {{ binding.get_impact_display }}{% for dimension in binding.affected_dimensions.all %} · {{ dimension.name }}{% endfor %}</li>{% empty %}<li>Nessuna regola diretta.</li>{% endfor %}</ul>

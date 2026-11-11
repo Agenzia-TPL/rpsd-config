@@ -207,10 +207,10 @@ Gli operatori delle agenzie non possono scrivere nel catalogo globale.
 Le stesse restrizioni valgono nel Django admin.
 
 Una versione nasce in `draft` e può essere incompleta. Prima di pubblicarla
-compilare definizione, tipo, versione del linguaggio, opzioni, convenzione del
-risultato e `execution_reference`, nel formato `flow/deployment`.
-Il riferimento è una configurazione del futuro esecutore: la pubblicazione
-non ne attesta l'esistenza su Prefect. Il processo di validazione è distinto
+compilare definizione, tipo, versione del linguaggio, opzioni e convenzione del
+risultato. `execution_reference` è facoltativo anche alla pubblicazione; se
+compilato deve avere il formato `flow/deployment`. Il riferimento descrive
+il futuro esecutore: la pubblicazione non ne attesta l’esistenza su Prefect. Il processo di validazione è distinto
 dal processo di calcolo dell'indicatore.
 
 Per esempio, una regola XPath può contenere:
@@ -299,11 +299,15 @@ indicatori selezionati e impliciti, tutti i percorsi e `indicator_execution_orde
 con i prerequisiti prima dei dipendenti. Una dipendenza condivisa compare una
 volta nell'ordine di calcolo, mantenendo i diversi percorsi che la richiedono.
 
-La pubblicazione in Django verifica un descrittore di calcolo con
-`execution_engine=prefect` e `execution_reference`, oltre alla provenienza
-richiesta dal catalogo. Non contatta Prefect e non richiede che sia disponibile:
-il riferimento serve al servizio esterno che effettuerà il calcolo. Le bozze
-possono essere prive del riferimento. Non si inventano deployment per dati legacy.
+Il gruppo di calcolo (`execution_engine`, `execution_reference`,
+`artifact_identifier`) è facoltativo, anche alla pubblicazione e nella
+composizione di profili e revisioni contrattuali. Se si dichiara un motore,
+prima di pubblicare occorrono riferimento e artefatto completi; solo Prefect
+richiede la sintassi `flow/deployment`. Riferimenti senza motore sono incoerenti.
+Restano tutti gli altri controlli di pubblicazione. Django non contatta il
+motore né certifica la disponibilità del processo. Gli obblighi dei processi
+di input e orchestrazione non cambiano. Anche il riferimento delle regole
+di validazione è facoltativo; se presente, viene verificato alla pubblicazione.
 
 `input_schema` e `output_schema` descrivono il formato tecnico del calcolo:
 la migrazione 0043 rinomina le colonne conservando il JSON. Il serializer e
@@ -561,7 +565,7 @@ Il dettaglio del profilo mostra indicatori selezionati, dipendenze implicite,
 percorsi di provenienza e controlli per input. È un’anteprima della
 configurazione: Config non esegue le regole e non produce esiti sui file.
 «Schema input», «Schema output», «Processo di validazione Prefect» e «Processo
-di calcolo Prefect» distinguono i rispettivi campi tecnici.
+di calcolo» distinguono i rispettivi campi tecnici.
 
 Nella revisione in bozza, gli editor autorizzati possono salvare parametri,
 soglie, aggregazioni e penalità di ciascun indicatore selezionato o implicito.
@@ -1174,8 +1178,8 @@ La versione della specifica in Config è un ulteriore identificativo distinto.
 
 Config now stores `formula_symbol` on the logical indicator and a versioned
 formal definition on `IndicatorVersion`. The supported grammar identifier is
-`rpsd-formula-v1`, implemented by the pinned `rpsd-core` 0.2.0 release
-(`e58588b38f848c84bf58495bfb34f64f4ea14ef1`). Formulas document and verify metadata;
+`rpsd-formula-v1`, implemented by the pinned `rpsd-core` 0.3.0 release
+(`27f74313648dea3b58d12bca2285efa18e04ef62`). Formulas document and verify metadata;
 Config does not execute them on datasets, generate SQL or call Prefect.
 
 Each version owns its dimensions through `IndicatorVersionDimension`, including
@@ -1188,8 +1192,8 @@ remain valid; no dimensions or verification results are guessed for them.
 Dependencies declare `origin=formula|technical|both`. Formula edges must exactly
 match the shared analyzer; extra technical edges require a reason. All execution
 edges remain acyclic. Formal drafts can reference other drafts; publication still
-requires published prerequisites, dataset specifications and rules, plus real
-execution references. No deployment is invented by import or verification.
+requires published prerequisites, dataset specifications and rules. Execution
+references are optional; a declared execution group must be coherent and complete. No deployment is invented by import or verification.
 
 In **DatasetExchange → Indicator versions**, edit the definition and its native
 inlines, then use **Verifica le definizioni formali in bozza**. The web technical
@@ -1208,11 +1212,11 @@ Config never resolves an arbitrary latest version.
 
 ### Install and build
 
-Config installs `rpsd-core==0.2.0` from the sibling directory
+Config installs `rpsd-core==0.3.0` from the sibling directory
 `../rpsd-tools/packages/rpsd-core`, declared in `[tool.uv.sources]`.
 `uv.lock` records the local source and resolved package version; it does not pin
 a Git commit for a directory dependency. The reviewed release baseline is
-`e58588b38f848c84bf58495bfb34f64f4ea14ef1`; keep a compatible local checkout and
+`27f74313648dea3b58d12bca2285efa18e04ef62`; keep a compatible local checkout and
 review updates before changing the expected version.
 
 The workspace must contain these sibling directories:
@@ -1250,7 +1254,7 @@ docker build --build-context rpsd-commons=../rpsd-commons \
   -t rpsd-config:033 .
 ```
 
-CI checks out Tools at `v0.2.0` beside Config before installing or building,
+CI checks out Tools at `v0.3.0` beside Config before installing or building,
 and supplies the same local build contexts. The runner needs read access to that
 repository while it remains private; no SSH build secret is configured.
 
@@ -1313,11 +1317,13 @@ unsupported requirements. Each indicator also carries an explicit review gate
 for the initial conservative `calculation` impact mapping; source parameter
 defaults are reported for review, not assigned to contracts. These limitations
 prevent publication until reviewed and resolved explicitly. A current static
-proof does not mean that the indicator is ready for calculation.
+proof does not mean that the indicator is ready for calculation. The original
+0.2.0 package and its limitations remain historical evidence; importing the
+standalone 0.3.0 dbt contexts does not silently rewrite these indicator drafts.
 
 The `tools-fid_001` profile template is reported with missing published versions,
 input flows and orchestrator. It is not created with fake references. After
-implementing the missing validators/calculation flows, revise the mapping and
+resolving the operational validators and reviewing the limitations, revise the mapping and
 bindings, verify and publish in dependency order, create a profile using real
 input/orchestration references, then select FID in a contract draft. Configure
 parameters of implicit prerequisites in their existing contractual owner. Review
@@ -1346,3 +1352,128 @@ revisions, preview the seed, then apply explicitly. Do not downgrade a service
 that already has approved v4 snapshots to an incompatible reader; restore the
 matching application/database backup if rollback is required. No reset, automatic
 publication, local service restart or production rollout is part of the importer.
+
+
+## Contesti documentali dbt e riferimenti facoltativi (034–035)
+
+In **DatasetExchange → ValidationRuleVersions**, scegliere **dbt / 1** per un
+contesto destinato a chi scrive i test sulle trasformazioni. `1` identifica il
+formato `dbt-context-v1`, non una versione del software dbt. Compilare nome,
+descrizione e definizione JSON; gli esempi sono disponibili nel form. Il contesto
+non può essere associato a dataset, indicatori o profili. Non compare nei piani,
+negli snapshot o nei manifest di esecuzione. La pubblicazione ne congela il
+contenuto editoriale con audit, senza creare o eseguire un test.
+
+Prefect e opzioni esecutive non si applicano: il form nasconde/disabilita i campi
+corrispondenti. Il valore interno `structured_report` serve solo a conservare
+il contratto del modello esistente. La definizione preserva requisito, regola,
+relazioni citate, note e provenienza. Eventuali `when`, `expect` o prove della
+fonte sono documentazione; Config non li interpreta.
+
+Il pacchetto offline contiene gli **11 contesti di Tools 0.3.0**, incluso
+`SIRI_PT_COVERS_PDE`, con identità Config `siri-pt-covers-pde@tools-001`.
+Dalla directory Config, usando un account platform admin esistente:
+
+```bash
+uv run manage seed_tools_catalog --actor rpsd-admin --dbt-contexts-only \
+  --report /tmp/dbt-contexts-preview.json
+uv run manage seed_tools_catalog --actor rpsd-admin --dbt-contexts-only --apply \
+  --report /tmp/dbt-contexts-applied.json
+```
+
+L'anteprima non scrive. `--apply` crea le regole **in bozza**, senza creare o
+modificare dataset, indicatori, profili, contratti o collegamenti operativi.
+La ripetizione riusa il contenuto identico; un conflitto annulla l'importazione.
+Non pubblica automaticamente i contesti. Il report distingue
+`documentary_contexts` e `previous_dbt_limitations`: queste ultime sono un
+inventario delle vecchie segnalazioni sulle bozze degli indicatori, da revisionare
+esplicitamente. Non vengono cancellate e le altre limitazioni restano valide.
+
+Per rigenerare il pacchetto da una copia locale pulita sul commit dichiarato
+nel mapping:
+
+```bash
+uv run manage export_tools_catalog --source ../rpsd-tools \
+  --mapping src/rpsd_config/exchange_agreement/seed_data/tools_v030/dbt-mapping.json \
+  --dbt-contexts-only --out /tmp/dbt-contexts.json
+```
+
+Il producer riporta core 0.3.0 e la provenienza effettiva. I pacchetti 0.2.0
+restano leggibili: non sono rietichettati come 0.3.0. Le prove pregresse con
+provenienza 0.2.0 verificabile restano correnti soltanto se tutti i metadati e
+l'analisi coincidono; provenienze sconosciute o modifiche semantiche le invalidano.
+Gli snapshot storici non vengono rigenerati. Per le nuove composizioni,
+`effective_indicators` conserva la forma precedente nel caso Prefect e aggiunge
+`execution_engine` per un motore diverso o vuoto; la sezione `indicator_version`
+contiene già sempre il motore effettivo.
+
+## Relazioni e messaggi nell'admin Django (036)
+
+I riferimenti ai cataloghi e alle versioni usano la ricerca nativa Django;
+le dimensioni multiple usano le due liste con ricerca. Le relazioni con dati
+propri restano inline, mantenendo origine, motivazioni, ruoli e altri attributi.
+Il pulsante **+** apre il form correlato solo quando permessi e contesto lo
+consentono. I percorsi concreti e quelli dei proxy condividono form, servizi e
+protezioni; non occorre essere superuser se il ruolo platform admin autorizza
+l'operazione.
+
+Se il campo accetta soltanto versioni pubblicate, una nuova bozza non è ancora
+selezionabile: il form indica il percorso al catalogo, dove completarla e
+pubblicarla. La ricerca applica gli stessi vincoli del salvataggio. Le regole
+dbt documentali non vengono proposte per associazioni operative. I campi
+contrattuali mantengono le scelte ammesse dal proprietario e dal profilo;
+resta la pagina intermedia per scegliere l'indicatore della revisione prima di
+aggiungere soglie o penali.
+
+Gli errori delle azioni riportano identità del record, motivo e collegamento
+al dettaglio. Le limitazioni della verifica formale sono elencate per codice e
+ragione. Nelle azioni multiple, il conteggio dei successi comprende soltanto
+le pubblicazioni riuscite; ogni record mantiene la propria transazione.
+
+
+## Pubblicazione del catalogo FID — revisione del 10/11/2026
+
+La pubblicazione delle regole di validazione, come quella degli indicatori,
+congela una configurazione editoriale: il processo esterno può essere registrato
+in seguito in una nuova versione, senza riferimenti fittizi. Interprete,
+definizione, opzioni e convenzione del risultato restano controllati. Un
+riferimento Prefect compilato deve essere valido; i contesti documentali dbt
+continuano a non ammetterlo. Input flow e orchestratori conservano i loro vincoli.
+
+Il catalogo FID mantiene la scelta conservativa `calculation` per i requisiti
+associati: una violazione riguarda la calcolabilità dell’indicatore, mentre
+la politica di rifiuto del dataset resta separata. I sei parametri di CORSE_PS
+restano obbligatori nella revisione contrattuale; i default dei Tools non sono
+assegnati ai contratti. La revisione delle precedenti segnalazioni è tracciata
+nelle prove formali e nell’audit, senza cancellarne la provenienza.
+
+Il supplemento offline
+`seed_data/tools_v030/fid-validation-supplement.json` aggiunge soltanto la regola
+`tools-netex-passing-times-increasing@tools-001`, in forma XPath 3.1 equivalente
+alla funzione Python dei Tools. Non introduce un interprete Python in Config.
+La provenienza identifica l’XPath approvato mantenuto nei test di core 0.3.0.
+Confronto isolato con la funzione: 47 violazioni sull’esempio originale, zero
+sul corretto, una sulla mutazione prevista; stessi nodi nei due casi esecutivi.
+
+Per importare soltanto tale regola in un nuovo ambiente, prima anteprima e poi
+applicazione esplicita:
+
+```bash
+uv run manage import_tools_catalog \
+  --package src/rpsd_config/exchange_agreement/seed_data/tools_v030/fid-validation-supplement.json \
+  --actor rpsd-admin
+uv run manage import_tools_catalog \
+  --package src/rpsd_config/exchange_agreement/seed_data/tools_v030/fid-validation-supplement.json \
+  --actor rpsd-admin --apply
+```
+
+La regola è un requisito di CORSE_PDE, CORSE_CONF_SIRI, CORSE_LIM_PROG e
+CORSE_LIM_ES, sulla specifica `netex-it-lev5_002`, con impatto `calculation`.
+Il supplemento importa una bozza; i binding e la pubblicazione sono operazioni
+di revisione esplicite. Il pacchetto storico Tools 0.2.0 resta un seed
+conservativo in bozza: non va usato per sovrascrivere una composizione già
+revisionata e pubblicata. I conflitti di composizione sono mantenuti.
+
+La pubblicazione locale segue l’ordine regole → specifiche → verifica formale
+→ indicatori dai prerequisiti ai dipendenti. Il report operativo è in
+[docs/operations/fid-catalog-publication-20261110.md](docs/operations/fid-catalog-publication-20261110.md).

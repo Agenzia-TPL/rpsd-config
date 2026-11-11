@@ -25,6 +25,7 @@ from rpsd_config.exchange_agreement.services.validation_presentation import (
 from rpsd_config.exchange_agreement.validation_forms import (
     DatasetRuleForm,
     IndicatorRuleForm,
+    ValidationRuleVersionForm,
 )
 
 from .models import (
@@ -109,7 +110,10 @@ IndicatorVersionForm = modelform_factory(
 )
 IndicatorVersionForm.base_fields["formula_language_version"] = forms.ChoiceField(
     required=False,
-    choices=[("", "---------"), ("rpsd-formula-v1", "rpsd-formula-v1 — core 0.2.0")],
+    choices=[
+        ("", "---------"),
+        ("rpsd-formula-v1", "rpsd-formula-v1 — linguaggio verificato"),
+    ],
     label="Versione del linguaggio",
     help_text="Grammatica controllata; nessuna esecuzione della formula.",
 )
@@ -117,7 +121,7 @@ IndicatorVersionForm.base_fields["input_schema"].label = "Schema input"
 IndicatorVersionForm.base_fields["output_schema"].label = "Schema output"
 IndicatorVersionForm.base_fields[
     "execution_reference"
-].label = "Processo di calcolo Prefect"
+].label = "Riferimento del processo di calcolo"
 
 InputFlowVersionForm = modelform_factory(
     InputFlowVersion,
@@ -261,8 +265,8 @@ CATALOGS.update(
                 ),
             ),
             "description": (
-                "Definizione completa, interprete e deployment Prefect "
-                "della validazione."
+                "Definizioni delle validazioni e contesti documentali dbt. "
+                "I contesti dbt non richiedono Prefect e non generano o eseguono test."
             ),
             "transitions": {"publish": None, "deprecate": None, "withdraw": None},
         },
@@ -330,6 +334,7 @@ CATALOGS.update(
 )
 
 
+CATALOGS["validation-rule-versions"]["form"] = ValidationRuleVersionForm
 CATALOGS["validation-rule-versions"]["form"].base_fields[
     "execution_reference"
 ].label = "Processo di validazione Prefect"

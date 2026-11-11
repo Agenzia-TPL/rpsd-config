@@ -258,6 +258,17 @@ def plan_catalog(package: CatalogPackage, *, actor) -> CatalogPlan:
         capability = domain.ValidationTypeVersion.objects.filter(
             validation_type=item.validation_type, language_version=item.language_version
         ).first()
+        if (
+            capability is None
+            and item.validation_type == "dbt"
+            and item.language_version == "1"
+        ):
+            capability = plan.stage(
+                domain.ValidationTypeVersion,
+                "dbt/1",
+                {"validation_type": "dbt", "language_version": "1"},
+                {},
+            )
         if capability is None or item.validation_type not in CAPABILITIES:
             plan.fail(
                 item.code,
@@ -585,6 +596,20 @@ def plan_catalog(package: CatalogPackage, *, actor) -> CatalogPlan:
     plan.report["counts"] = dict(
         Counter(op["action"] for op in plan.report["operations"])
     )
+    documentary = [r for r in package.rule_versions if r.validation_type == "dbt"]
+    if documentary:
+        from rpsd_config.exchange_agreement.services.dbt_contexts import (
+            load_dbt_context,
+        )
+
+        codes = {load_dbt_context(r.definition).rule["code"] for r in documentary}
+        plan.report["documentary_contexts"] = [r.code for r in documentary]
+        plan.report["previous_dbt_limitations"] = [
+            {"indicator_version": version.code, "limitation": limit}
+            for version in domain.IndicatorVersion.objects.filter(status="draft")
+            for limit in version.formal_verification.get("limitations", [])
+            if limit.get("code") == "unsupported_rule" and limit.get("rule") in codes
+        ]
     return plan
 
 

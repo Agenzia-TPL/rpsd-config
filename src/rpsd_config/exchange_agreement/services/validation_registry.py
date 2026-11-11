@@ -21,6 +21,7 @@ class ValidationCapability:
 
 
 CAPABILITIES = {
+    "dbt": ValidationCapability("dbt", (), ("1",), ("structured_report",), ()),
     "xpath": ValidationCapability(
         "xpath",
         ("xml",),
@@ -94,7 +95,13 @@ def validate_rule_definition(
         raise ValidationError(
             "Unknown interpreter options.", code="invalid_definition_options"
         )
-    if validation_type == "xpath":
+    if validation_type == "dbt":
+        from rpsd_config.exchange_agreement.services.dbt_contexts import (
+            load_dbt_context,
+        )
+
+        load_dbt_context(definition)
+    elif validation_type == "xpath":
         namespaces = options.get("namespaces", {})
         if not isinstance(namespaces, dict) or any(
             not isinstance(k, str)
@@ -248,4 +255,5 @@ def capability_manifest() -> list[dict]:
             "runtime_status": "external_not_verified",
         }
         for key in sorted(CAPABILITIES)
+        if key != "dbt"
     ]

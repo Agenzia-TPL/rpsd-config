@@ -41,14 +41,18 @@ def build_validation_snapshot(revision, base: dict) -> dict:
     result["effective_indicators"] = []
     result["indicator_configurations"] = []
     for version in closure["versions"]:
-        if (
-            version.status != "published"
-            or version.execution_engine != "prefect"
-            or not version.execution_reference
-        ):
-            raise ValidationError(
-                "Effective indicator must be published with a Prefect reference."
-            )
+        if version.status != "published":
+            raise ValidationError("La versione dell’indicatore deve essere pubblicata.")
+        from rpsd_config.exchange_agreement.services.indicator_registry import (
+            validate_execution_reference_fields,
+        )
+
+        validate_execution_reference_fields(
+            engine=version.execution_engine,
+            execution_reference=version.execution_reference,
+            artifact_identifier=version.artifact_identifier,
+            require_complete=True,
+        )
         config = selected.get(version.pk) or dependencies.get(version.pk)
         values = {
             field: getattr(config, field) if config is not None else {}
@@ -78,6 +82,11 @@ def build_validation_snapshot(revision, base: dict) -> dict:
                 "output_schema": version.output_schema,
                 "parameter_schema": version.parameter_schema,
                 "execution_reference": version.execution_reference,
+                **(
+                    {"execution_engine": version.execution_engine}
+                    if version.execution_engine != "prefect"
+                    else {}
+                ),
                 "artifact_identifier": version.artifact_identifier,
             }
         )

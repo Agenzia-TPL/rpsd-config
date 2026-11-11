@@ -114,6 +114,86 @@ class ValidationPlanTests(TestCase):
             (ValidationRuleVersion.objects.count(), IndicatorVersion.objects.count()),
         )
 
+    def test_profile_revision_and_plan_allow_root_and_dependency_without_executor(self):
+        self._assert_optional_executor_pipeline("")
+
+    def test_profile_revision_and_plan_allow_dbt_without_prefect(self):
+        self._assert_optional_executor_pipeline("dbt")
+
+    def _assert_optional_executor_pipeline(self, root_engine):
+        from rpsd_config.exchange_agreement.models import (
+            ProcessingProfileIndicatorVersion,
+        )
+        from rpsd_config.exchange_agreement.services.indicator_catalog import (
+            clone_indicator_version,
+            publish_indicator_version,
+        )
+        from rpsd_config.exchange_agreement.services.indicator_dependencies import (
+            add_indicator_dependency,
+        )
+        from rpsd_config.exchange_agreement.services.processing_profiles import (
+            duplicate_processing_profile,
+            publish_processing_profile,
+        )
+
+        original_root = self.profile.indicator_version_links.get().indicator_version
+        original_dependency = original_root.dependency_links.get().prerequisite
+        versions = []
+        for original in (original_dependency, original_root):
+            version = clone_indicator_version(
+                original,
+                code=original.code + "-no-executor",
+                version="no-executor",
+                actor=self.admin,
+            )
+            version.execution_engine = ""
+            version.execution_reference = ""
+            version.artifact_identifier = ""
+            version.save()
+            if original.pk == original_root.pk:
+                if root_engine:
+                    version.execution_engine = root_engine
+                    version.execution_reference = "journey_quality"
+                    version.artifact_identifier = "git:rpsd-transform@test"
+                    version.save()
+                version.dependency_links.all().delete()
+                add_indicator_dependency(
+                    dependent=version, prerequisite=versions[0], actor=self.admin
+                )
+            versions.append(publish_indicator_version(version, actor=self.admin))
+        profile = duplicate_processing_profile(
+            self.profile, code="no-executor-profile", version="no-executor"
+        )
+        profile.indicator_version_links.all().delete()
+        ProcessingProfileIndicatorVersion.objects.create(
+            processing_profile_version=profile,
+            indicator_version=versions[-1],
+            proposed_by_default=True,
+        )
+        profile = publish_processing_profile(profile, actor=self.admin)
+        self.revision.delete()
+        self.revision = create_revision_draft(
+            self.contract,
+            profile,
+            timezone.localdate(),
+            self.admin,
+            change_reason="No executor configuration",
+        )
+        revision = self.approve()
+        checksum = revision.snapshot_checksum
+        resolution = resolve_current_ingest_configuration(self.contract, "netex")
+        plan = validation_plan_from_resolution(resolution)
+        self.assertEqual(len(plan["effective_indicators"]), 2)
+        for indicator in plan["effective_indicators"]:
+            is_root = indicator["code"] == versions[-1].code
+            self.assertEqual(
+                indicator["execution_engine"], root_engine if is_root else ""
+            )
+            if not root_engine or not is_root:
+                self.assertEqual(indicator["execution_reference"], "")
+        revision.refresh_from_db()
+        self.assertEqual(revision.snapshot_checksum, checksum)
+
     def test_plan_filters_dataset_and_keeps_dependency_provenance(self):
         revision = self.approve()
         self.assertEqual(revision.snapshot_schema_version, "canonical-json-v2")

@@ -4,6 +4,7 @@
 
 from django import forms
 from django.contrib import admin, messages
+from django.contrib.admin.widgets import FilteredSelectMultiple
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
@@ -24,6 +25,7 @@ from rpsd_config.exchange_agreement.services.validation_catalog import (
 from rpsd_config.exchange_agreement.validation_forms import (
     DatasetRuleForm,
     IndicatorRuleForm,
+    ValidationRuleVersionForm,
 )
 from rpsd_config.exchange_agreement.validation_models import FrozenComposition
 
@@ -116,8 +118,32 @@ class DatasetRuleAdmin(FrozenCompositionAdmin):
 class IndicatorRuleAdminForm(IndicatorRuleForm):
     """Use the same replacement semantics as the web catalog."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "dimensions" in self.fields:
+            widget = self.fields["dimensions"].widget
+            native = FilteredSelectMultiple("Dimensioni interessate", False)
+            if hasattr(widget, "widget"):
+                widget.widget = native
+            else:
+                self.fields["dimensions"].widget = native
+
 
 class RuleVersionAdmin(admin.ModelAdmin):
+    form = ValidationRuleVersionForm
+
+    def get_fieldsets(self, request, obj=None):
+        if obj is not None and obj.validation_type == "dbt":
+            return (
+                self.fieldsets[0],
+                (
+                    "Contesto documentale dbt",
+                    {"fields": ("validation_type_version", "definition")},
+                ),
+                self.fieldsets[-1],
+            )
+        return super().get_fieldsets(request, obj)
+
     fieldsets = (
         ("Identità e versione", {"fields": ("rule", "version", "name", "description")}),
         (
@@ -183,6 +209,7 @@ class RuleVersionAdmin(admin.ModelAdmin):
         return actions
 
     def transition(self, request, queryset, status):
+        completed = 0
         for obj in queryset:
             try:
                 transition_validation_rule(
@@ -191,8 +218,13 @@ class RuleVersionAdmin(admin.ModelAdmin):
                     actor=request.user,
                     reason="Administrator lifecycle action",
                 )
+                completed += 1
             except ValidationError as exc:
-                self.message_user(request, "; ".join(exc.messages), messages.ERROR)
+                self.report_validation_error(request, obj, exc)
+        if completed:
+            self.message_user(
+                request, f"Versioni di regola aggiornate: {completed}", messages.SUCCESS
+            )
 
     @admin.action(description="Pubblica le regole selezionate")
     def publish_rules(self, request, queryset):
@@ -352,6 +384,7 @@ class IndicatorDimensionInline(FrozenCompositionInline):
 class DependencyInlineForm(CompositionAdminForm):
     dimensions = forms.ModelMultipleChoiceField(
         queryset=proxies.IndicatorDimension.objects.all(),
+        widget=FilteredSelectMultiple("Dimensioni richieste", False),
         required=False,
         label="Dimensioni richieste al prerequisito",
         help_text=(

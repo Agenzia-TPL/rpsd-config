@@ -1,0 +1,52 @@
+{
+  "datasets": [],
+  "indicators": {},
+  "roots": [],
+  "rules": {
+    "SIRI_ET_LINE_MATCHES_PLANNED": {
+      "code": "siri-et-line-matches-planned",
+      "version": "tools-001"
+    },
+    "SIRI_ET_ORDER_MATCHES_NETEX": {
+      "code": "siri-et-order-matches-netex",
+      "version": "tools-001"
+    },
+    "SIRI_ET_STOPS_IN_NETEX": {
+      "code": "siri-et-stops-in-netex",
+      "version": "tools-001"
+    },
+    "SIRI_ET_TRIP_KNOWN": {
+      "code": "siri-et-trip-known",
+      "version": "tools-001"
+    },
+    "SIRI_PT_CALLS_COMPLETE": {
+      "code": "siri-pt-calls-complete",
+      "version": "tools-001"
+    },
+    "SIRI_PT_COVERS_PDE": {
+      "code": "siri-pt-covers-pde",
+      "version": "tools-001"
+    },
+    "SIRI_PT_EXTRA_NOT_IN_NETEX": {
+      "code": "siri-pt-extra-not-in-netex",
+      "version": "tools-001"
+    },
+    "SIRI_PT_LINE_IN_NETEX": {
+      "code": "siri-pt-line-in-netex",
+      "version": "tools-001"
+    },
+    "SIRI_PT_ORDER_MATCHES_NETEX": {
+      "code": "siri-pt-order-matches-netex",
+      "version": "tools-001"
+    },
+    "SIRI_PT_STOPS_IN_NETEX": {
+      "code": "siri-pt-stops-in-netex",
+      "version": "tools-001"
+    },
+    "SIRI_PT_TRIP_IN_NETEX": {
+      "code": "siri-pt-trip-in-netex",
+      "version": "tools-001"
+    }
+  },
+  "source_commit": "27f74313648dea3b58d12bca2285efa18e04ef62"
+}

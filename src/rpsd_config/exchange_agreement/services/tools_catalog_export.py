@@ -3,6 +3,7 @@
 """Offline authoring adapter for the released Tools inputs, owned by Config."""
 
 import hashlib
+import json
 import subprocess
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from pydantic import Field
 from rpsd_core.config_input import load
 from rpsd_core.validation_rules.export import used_namespaces
 from rpsd_core.validation_rules.loader import load_rules
-from rpsd_core.validation_rules.models import XPathRule
+from rpsd_core.validation_rules.models import DbtRule, XPathRule
 
 from rpsd_config.exchange_agreement.services.catalog_contract import (
     CatalogDataset,
@@ -97,7 +98,9 @@ def _parameters(indicator) -> dict:
     )
 
 
-def export_tools_catalog(source: Path, mapping: ToolsMapping) -> CatalogPackage:
+def export_tools_catalog(
+    source: Path, mapping: ToolsMapping, *, contexts_only: bool = False
+) -> CatalogPackage:
     """Read a clean pinned source checkout and produce deterministic JSON metadata."""
     result = subprocess.run(
         ["git", "-C", str(source), "rev-parse", "HEAD"],
@@ -150,6 +153,14 @@ def export_tools_catalog(source: Path, mapping: ToolsMapping) -> CatalogPackage:
     if not loaded.ok or not rules.ok:
         raise ValidationError([str(i) for i in [*loaded.issues, *rules.issues]])
     inputs = loaded.inputs
+    if contexts_only:
+        mapping = ToolsMapping(
+            source_commit=mapping.source_commit,
+            roots=[],
+            indicators={},
+            datasets=[],
+            rules=mapping.rules,
+        )
     definitions, dimensions, edges, rule_defs, bindings, exclusions = (
         [],
         [],
@@ -281,6 +292,51 @@ def export_tools_catalog(source: Path, mapping: ToolsMapping) -> CatalogPackage:
     for group in sorted(rules.groups):
         for rule in sorted(rules.groups[group].rules, key=lambda r: r.code):
             requirement = requirements[rule.requirement]
+            if isinstance(rule, DbtRule):
+                policy = mapping.rules.get(rule.code)
+                if policy is None:
+                    raise ValidationError(
+                        f"Mapping del contesto dbt assente: {rule.code}."
+                    )
+                refs = sorted(set(requirement.relations) | set(rule.relations))
+                document = {
+                    "schema_version": "dbt-context-v1",
+                    "requirement": requirement.model_dump(mode="json"),
+                    "rule": rule.model_dump(mode="json"),
+                    "relations": [
+                        inputs.relations_by_code[ref].model_dump(
+                            mode="json", by_alias=True
+                        )
+                        for ref in refs
+                    ],
+                    "notes": ["Contesto editoriale: non genera né esegue un test dbt."],
+                    "provenance": {
+                        "repository": "https://github.com/Agenzia-TPL/rpsd-tools",
+                        "commit": mapping.source_commit,
+                        "files": [
+                            "inputs/requirements.yaml",
+                            "inputs/relations.yaml",
+                            "rules/cross-dataset.yaml",
+                        ],
+                    },
+                }
+                rule_defs.append(
+                    {
+                        "code": policy.code,
+                        "version": policy.version,
+                        "name": rule.name,
+                        "description": rule.description,
+                        "validation_type": "dbt",
+                        "language_version": "1",
+                        "definition": json.dumps(
+                            document, sort_keys=True, ensure_ascii=False, indent=2
+                        ),
+                        "options": {},
+                        "result_contract": "structured_report",
+                        "execution_reference": "",
+                    }
+                )
+                continue
             consumers = sorted(set(requirement.consumers) & needed)
             if not consumers:
                 continue

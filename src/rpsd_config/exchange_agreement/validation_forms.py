@@ -16,7 +16,73 @@ from rpsd_config.exchange_agreement.models import (
     IndicatorDimension,
     IndicatorVersionRule,
     IndicatorVersionRuleDimension,
+    ValidationRuleVersion,
+    ValidationTypeVersion,
 )
+
+
+class ValidationRuleVersionForm(forms.ModelForm):
+    """Keep documentary dbt records independent from execution fields."""
+
+    class Meta:
+        model = ValidationRuleVersion
+        fields = (
+            "rule",
+            "version",
+            "name",
+            "description",
+            "validation_type_version",
+            "definition",
+            "options",
+            "result_contract",
+            "execution_reference",
+        )
+
+    class Media:
+        js = ("admin/dbt_context_form.js",)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from rpsd_config.exchange_agreement.services.dbt_contexts import (
+            DBT_CONTEXT_HELP,
+        )
+
+        selected = (
+            self.data.get(self.add_prefix("validation_type_version"))
+            if self.is_bound
+            else self.initial.get("validation_type_version")
+        )
+        if isinstance(selected, ValidationTypeVersion):
+            selected = selected.pk
+        if selected is None:
+            selected = self.instance.validation_type_version_id
+        pair = ValidationTypeVersion.objects.filter(
+            validation_type="dbt", language_version="1"
+        ).first()
+        is_dbt = bool(pair and str(selected) == str(pair.pk))
+        if "validation_type_version" in self.fields:
+            self.fields["validation_type_version"].widget.attrs[
+                "data-dbt-context-type"
+            ] = str(pair.pk) if pair else ""
+        if is_dbt:
+            self.instance.result_contract = "structured_report"
+            self.instance.options = {}
+            self.instance.execution_reference = ""
+            for name, initial in (
+                ("options", {}),
+                ("result_contract", "structured_report"),
+                ("execution_reference", ""),
+            ):
+                if name in self.fields:
+                    self.fields[name].initial = initial
+                    self.fields[name].disabled = True
+                    self.fields[
+                        name
+                    ].help_text = "Non applicabile ai contesti documentali dbt."
+            if "definition" in self.fields:
+                self.fields["definition"].help_text = DBT_CONTEXT_HELP
+            if "description" in self.fields:
+                self.fields["description"].required = True
 
 
 class IndicatorRuleForm(forms.ModelForm):
@@ -41,6 +107,10 @@ class IndicatorRuleForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if "rule_version" in self.fields:
+            self.fields["rule_version"].queryset = self.fields[
+                "rule_version"
+            ].queryset.exclude(validation_type_version__validation_type="dbt")
         if "impact" in self.fields:
             self.fields["impact"].help_text = IMPACT_HELP
         if self.instance.pk and "dimensions" in self.fields:
@@ -119,6 +189,10 @@ class DatasetRuleForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if "rule_version" in self.fields:
+            self.fields["rule_version"].queryset = self.fields[
+                "rule_version"
+            ].queryset.exclude(validation_type_version__validation_type="dbt")
         # Django removes frozen fields before constructing a readonly admin form.
         if "failure_policy" not in self.fields:
             return

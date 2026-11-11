@@ -1357,7 +1357,10 @@ class IndicatorVersion(TimeStampedModel):
                 require_complete=self.status == self.Status.PUBLISHED,
             )
         except ValidationError as exc:
-            errors["execution_engine"] = exc.messages
+            if hasattr(exc, "message_dict"):
+                errors.update(exc.message_dict)
+            else:
+                errors["execution_engine"] = exc.messages
 
         if not self.pk and (
             self.status != self.Status.DRAFT

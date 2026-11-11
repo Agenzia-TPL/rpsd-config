@@ -202,7 +202,7 @@ class DatasetSpecificationAdmin(
                 transition(specification, actor=request.user)
                 completed += 1
             except (DatasetSpecificationTransitionError, ValidationError) as exc:
-                self.message_user(request, str(exc), level="ERROR")
+                self.report_validation_error(request, specification, exc)
         if completed:
             self.message_user(request, f"Specifiche aggiornate: {completed}")
 
@@ -380,14 +380,14 @@ class IndicatorVersionAdmin(
                     request, f"{version.code}: verifica statica aggiornata."
                 )
             except ValidationError as exc:
-                self.message_user(request, str(exc), level="ERROR")
+                self.report_validation_error(request, version, exc)
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
         labels = {
             "input_schema": "Schema input",
             "output_schema": "Schema output",
-            "execution_reference": "Processo di calcolo Prefect",
+            "execution_reference": "Riferimento del processo di calcolo",
         }
         for name, label in labels.items():
             if name in form.base_fields:
@@ -396,7 +396,7 @@ class IndicatorVersionAdmin(
             form.base_fields["formula_language_version"].widget = forms.Select(
                 choices=[
                     ("", "---------"),
-                    ("rpsd-formula-v1", "rpsd-formula-v1 — core 0.2.0"),
+                    ("rpsd-formula-v1", "rpsd-formula-v1 — linguaggio verificato"),
                 ]
             )
         return form
@@ -439,7 +439,7 @@ class IndicatorVersionAdmin(
                 transition(version, actor=request.user)
                 completed += 1
             except (IndicatorVersionTransitionError, ValidationError) as exc:
-                self.message_user(request, str(exc), level="ERROR")
+                self.report_validation_error(request, version, exc)
         if completed:
             self.message_user(
                 request, f"Versioni di indicatore aggiornate: {completed}"
@@ -536,7 +536,7 @@ class _FlowVersionAdminBase(
                 transition(flow, actor=request.user)
                 completed += 1
             except (FlowCatalogTransitionError, ValidationError) as exc:
-                self.message_user(request, str(exc), level="ERROR")
+                self.report_validation_error(request, flow, exc)
         if completed:
             self.message_user(request, f"Flussi aggiornati: {completed}")
 
@@ -776,7 +776,7 @@ class ProcessingProfileVersionAdmin(
                 transition(profile, actor=request.user)
                 completed += 1
             except (ProcessingProfileTransitionError, ValidationError) as exc:
-                self.message_user(request, str(exc), level="ERROR")
+                self.report_validation_error(request, profile, exc)
         if completed:
             self.message_user(request, f"Profili tecnici aggiornati: {completed}")
 

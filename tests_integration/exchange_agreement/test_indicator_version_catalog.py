@@ -110,18 +110,20 @@ class IndicatorVersionCatalogTests(TestCase):
                 },
             )
 
-    def test_execution_reference_is_required_for_publication_but_not_draft(self):
+    def test_execution_group_is_optional_but_coherent_when_declared(self):
         external = self._version(
             execution_engine="", execution_reference="", artifact_identifier=""
         )
-        with self.assertRaises(ValidationError):
-            publish_indicator_version(external, actor=self.user)
-        self.assertEqual(external.status, "draft")
+        external = publish_indicator_version(external, actor=self.user)
+        self.assertEqual(external.status, "published")
+        self.assertFalse(external.execution_reference)
 
         incomplete = self._version(
             code="commercial-speed_002",
             version="002",
             execution_engine=IndicatorVersion.ExecutionEngine.DBT,
+            execution_reference="",
+            artifact_identifier="",
         )
         with self.assertRaises(ValidationError):
             publish_indicator_version(incomplete, actor=self.user)
@@ -142,6 +144,26 @@ class IndicatorVersionCatalogTests(TestCase):
                 execution_reference="dbt/model",
                 artifact_identifier="not-an-artifact",
             )
+
+    def test_dbt_and_external_references_do_not_use_prefect_syntax(self):
+        for i, engine in enumerate(("dbt", "external"), start=1):
+            with self.subTest(engine=engine):
+                version = self._version(
+                    code=f"commercial-speed_{i:03}",
+                    version=f"{i:03}",
+                    execution_engine=engine,
+                    execution_reference="commercial_speed",
+                    artifact_identifier="git:rpsd-transform@reviewed",
+                )
+                self.assertEqual(
+                    publish_indicator_version(version, actor=self.user).status,
+                    "published",
+                )
+
+    def test_invalid_prefect_reference_is_associated_with_its_field(self):
+        with self.assertRaises(ValidationError) as error:
+            self._version(execution_reference="not-a-flow-and-deployment")
+        self.assertIn("execution_reference", error.exception.message_dict)
 
     def test_lifecycle_is_audited_and_published_version_is_immutable(self):
         version = self._version(

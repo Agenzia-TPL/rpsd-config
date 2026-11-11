@@ -100,7 +100,7 @@ class GeneralSettings(BaseSettings):
 
     # Application definition
     INSTALLED_APPS: list[str] = [
-        "django.contrib.admin",
+        "rpsd_config.admin_apps.RpsdAdminConfig",
         "django.contrib.auth",
         "django.contrib.contenttypes",
         "django.contrib.sessions",

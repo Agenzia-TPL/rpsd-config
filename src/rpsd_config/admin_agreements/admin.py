@@ -610,7 +610,7 @@ class ContractConfigurationRevisionAdmin(
                 transition(revision, actor=request.user)
                 completed += 1
             except (ContractRevisionError, ValidationError) as exc:
-                self.message_user(request, str(exc), level=messages.ERROR)
+                self.report_validation_error(request, revision, exc)
         if completed:
             self.message_user(
                 request,

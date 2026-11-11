@@ -601,14 +601,16 @@
       "additionalProperties": false,
       "properties": {
         "core_commit": {
-          "const": "e58588b38f848c84bf58495bfb34f64f4ea14ef1",
-          "default": "e58588b38f848c84bf58495bfb34f64f4ea14ef1",
+          "default": "27f74313648dea3b58d12bca2285efa18e04ef62",
           "title": "Core Commit",
           "type": "string"
         },
         "core_version": {
-          "const": "0.2.0",
-          "default": "0.2.0",
+          "default": "0.3.0",
+          "enum": [
+            "0.2.0",
+            "0.3.0"
+          ],
           "title": "Core Version",
           "type": "string"
         },

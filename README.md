@@ -471,7 +471,14 @@ rimossi; vedere [USAGE.md](USAGE.md) per recupero file e aggiornamento senza res
 
 
 Feature 033 adds formal indicator metadata and an offline, transactional Tools
-catalog import. Formulas are verified statically with pinned `rpsd-core` 0.2.0;
+catalog import. Formulas are verified statically with pinned `rpsd-core` 0.3.0;
 calculation remains external. See [USAGE](USAGE.md#formal-indicator-catalog-feature-033)
 for local dependency builds, preview/apply commands, pilot limitations and the
 formal-aware M2M v5 API.
+
+
+Features 034–036 add an independent documentary dbt context catalog, optional
+indicator execution references at publication, and native Django admin relation
+widgets with permission-aware popups and readable publication feedback.
+See [USAGE](USAGE.md#contesti-documentali-dbt-e-riferimenti-facoltativi-034035)
+for the standalone draft context seed and the execution metadata rules.

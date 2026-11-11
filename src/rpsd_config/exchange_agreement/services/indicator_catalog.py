@@ -5,7 +5,6 @@
 import json
 from copy import deepcopy
 
-from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -122,22 +121,6 @@ def _validate_for_publication(version: IndicatorVersion) -> None:
     require_current_verification(version)
     if version.indicator.status != Indicator.Status.ACTIVE:
         raise IndicatorVersionTransitionError("The logical indicator is not active.")
-    if version.execution_engine != "prefect":
-        raise ValidationError(
-            "Published indicators require a Prefect calculation flow.",
-            code="missing_calculation_reference",
-        )
-    from rpsd_config.exchange_agreement.services.validation_registry import (
-        validate_prefect_reference,
-    )
-
-    try:
-        validate_prefect_reference(version.execution_reference)
-    except ValidationError as exc:
-        raise ValidationError(
-            "A Prefect calculation reference is required.",
-            code="missing_calculation_reference",
-        ) from exc
     validate_execution_reference_fields(
         engine=version.execution_engine,
         execution_reference=version.execution_reference,

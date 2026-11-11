@@ -64,8 +64,18 @@ class ValidationCatalogTests(TestCase):
             )
         self.assertFalse(self.version.status_events.exists())
 
-    def test_incomplete_publication_is_atomic(self):
+    def test_publication_without_execution_reference_is_editorial(self):
         self.version.execution_reference = ""
+        self.version.save()
+        self.publish()
+        self.assertEqual(self.version.status, "published")
+        self.assertEqual(self.version.status_events.count(), 1)
+        self.assertEqual(
+            validation_execution_manifest()["rules"][0]["execution_reference"], ""
+        )
+
+    def test_malformed_execution_reference_is_atomic(self):
+        self.version.execution_reference = "not-a-flow-deployment"
         self.version.save()
         with self.assertRaises(ValidationError):
             self.publish()

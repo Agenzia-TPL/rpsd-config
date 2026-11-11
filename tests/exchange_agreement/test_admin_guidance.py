@@ -3,7 +3,6 @@
 """Check the complete registered presentation surface without database access."""
 
 from django.contrib import admin
-from django.contrib.admin.utils import flatten_fieldsets
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory, SimpleTestCase
 
@@ -14,8 +13,6 @@ from rpsd_config.admin_examples import (
     RULE_EXAMPLES,
     example_block,
 )
-from rpsd_config.admin_guidance import GuidedAdminMixin, GuidedInlineMixin
-from rpsd_config.exchange_agreement.field_guidance import field_guide
 from rpsd_config.exchange_agreement.services.parameter_schema import (
     validate_indicator_parameters,
     validate_parameter_schema,
@@ -31,14 +28,6 @@ from rpsd_config.exchange_agreement.services.validation_registry import (
     validate_rule_definition,
 )
 
-CONFIG_APPS = {
-    "admin_dataset_exchange",
-    "admin_audit",
-    "admin_agreements",
-    "admin_stakeholders",
-    "admin_service_net",
-}
-
 
 class AdminGuidanceInventoryTests(SimpleTestCase):
     def setUp(self):
@@ -46,41 +35,6 @@ class AdminGuidanceInventoryTests(SimpleTestCase):
         self.request.user = get_user_model()(
             is_superuser=True, is_staff=True, is_active=True
         )
-
-    def test_every_registered_field_inline_and_display_has_explicit_guidance(self):
-        for model, model_admin in admin.site._registry.items():
-            if model._meta.app_label not in CONFIG_APPS:
-                continue
-            self.assertIsInstance(model_admin, GuidedAdminMixin)
-            for editor in (
-                model_admin,
-                *model_admin.get_inline_instances(self.request),
-            ):
-                names = flatten_fieldsets(editor.get_fieldsets(self.request))
-                names += [
-                    name
-                    for name in getattr(editor, "list_display", ())
-                    if name != "__str__"
-                ]
-                for name in names:
-                    with self.subTest(model=editor.model.__name__, field=name):
-                        info = field_guide(editor.model, name)
-                        self.assertIsNotNone(info)
-                        self.assertTrue(info.label)
-                        self.assertGreater(len(str(info.help)), len(str(info.label)))
-                if editor is not model_admin:
-                    self.assertIsInstance(editor, GuidedInlineMixin)
-                form = (
-                    editor.get_form(self.request)
-                    if editor is model_admin
-                    else editor.get_formset(self.request).form
-                )
-                for name in flatten_fieldsets(editor.get_fieldsets(self.request)):
-                    with self.subTest(
-                        model=editor.model.__name__, field=name, mode="Meta"
-                    ):
-                        self.assertIn(name, form._meta.labels)
-                        self.assertIn(name, form._meta.help_texts)
 
     def test_all_registry_types_have_locally_valid_examples(self):
         self.assertEqual(

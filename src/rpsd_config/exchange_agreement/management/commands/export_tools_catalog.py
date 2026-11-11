@@ -25,11 +25,16 @@ class Command(BaseCommand):
         parser.add_argument("--source", type=Path, required=True)
         parser.add_argument("--mapping", type=Path, required=True)
         parser.add_argument("--out", type=Path, required=True)
+        parser.add_argument("--dbt-contexts-only", action="store_true")
 
     def handle(self, *args, **options):
         try:
             mapping = ToolsMapping.model_validate_json(options["mapping"].read_text())
-            package = export_tools_catalog(options["source"].resolve(), mapping)
+            package = export_tools_catalog(
+                options["source"].resolve(),
+                mapping,
+                contexts_only=options["dbt_contexts_only"],
+            )
             options["out"].write_text(
                 json.dumps(
                     package.model_dump(), sort_keys=True, ensure_ascii=False, indent=2
@@ -46,5 +51,6 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Catalog {package.package_digest}: "
             f"{len(package.indicator_versions)} indicator versions, "
+            f"{len(package.rule_versions)} rule/context versions, "
             f"{len(package.selection.exclusions)} explicit exclusions."
         )

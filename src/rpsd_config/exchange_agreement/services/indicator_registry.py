@@ -111,18 +111,53 @@ def validate_execution_reference_fields(
     if not engine:
         if reference or artifact:
             raise ValidationError(
-                "Execution reference and artifact identifier require an engine."
+                {
+                    "execution_engine": (
+                        "Scegliere un motore quando si compila il riferimento "
+                        "o l’artefatto."
+                    )
+                }
             )
         return "", ""
     if engine not in SUPPORTED_EXECUTION_ENGINES:
         raise ValidationError(f"Unsupported execution engine: {engine!r}.")
     if require_complete and (not reference or not artifact):
         raise ValidationError(
-            "Published versions with an execution engine require both "
-            "execution_reference and artifact_identifier."
+            {
+                field: (
+                    "Completare il campo per il motore dichiarato oppure "
+                    "lasciare vuoto l’intero gruppo esecutivo."
+                )
+                for field, value in (
+                    ("execution_reference", reference),
+                    ("artifact_identifier", artifact),
+                )
+                if not value
+            }
         )
+    if engine == EXECUTION_PREFECT and reference:
+        from rpsd_config.exchange_agreement.services.validation_registry import (
+            validate_prefect_reference,
+        )
+
+        try:
+            validate_prefect_reference(reference)
+        except ValidationError as exc:
+            raise ValidationError(
+                {"execution_reference": "Per Prefect usare il formato flow/deployment."}
+            ) from exc
     if reference and len(reference) > 255:
         raise ValidationError("execution_reference exceeds 255 characters.")
     if artifact:
-        artifact = validate_artifact_identifier(artifact)
+        try:
+            artifact = validate_artifact_identifier(artifact)
+        except ValidationError as exc:
+            raise ValidationError(
+                {
+                    "artifact_identifier": (
+                        "Indicare un riferimento versionato valido all’artefatto "
+                        "del processo, per esempio git:rpsd-transform@revisione."
+                    )
+                }
+            ) from exc
     return reference, artifact

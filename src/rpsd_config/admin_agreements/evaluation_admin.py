@@ -4,6 +4,7 @@
 
 from django import forms
 from django.contrib import admin
+from django.contrib.admin.widgets import FilteredSelectMultiple
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.template.response import TemplateResponse
@@ -154,6 +155,9 @@ class EvaluationAdmin(GuidedAdminMixin, admin.ModelAdmin):
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "group_by_dimensions":
+            kwargs["widget"] = FilteredSelectMultiple(
+                "Dimensioni di raggruppamento", False
+            )
             return db_field.formfield(**kwargs)
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 
@@ -221,6 +225,9 @@ class EvaluationInline(GuidedInlineMixin, admin.StackedInline):
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "group_by_dimensions":
             # Explicit through models are written by save_evaluation, not save_m2m.
+            kwargs["widget"] = FilteredSelectMultiple(
+                "Dimensioni di raggruppamento", False
+            )
             return db_field.formfield(**kwargs)
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 

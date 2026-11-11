@@ -22,7 +22,11 @@ from rpsd_core.formula_language.parser import (
 )
 
 LANGUAGE_VERSION = "rpsd-formula-v1"
-CORE_COMMIT = "e58588b38f848c84bf58495bfb34f64f4ea14ef1"
+CORE_RELEASES = {
+    "0.2.0": "e58588b38f848c84bf58495bfb34f64f4ea14ef1",
+    "0.3.0": "27f74313648dea3b58d12bca2285efa18e04ef62",
+}
+CORE_COMMIT = CORE_RELEASES.get(core_version, "")
 KINDS = {"base": "base", "proiezione": "projection", "composto": "composite"}
 VALUES = {"insieme": "set", "numero": "number"}
 FORMAL_FIELDS = (
@@ -111,8 +115,10 @@ def validate_formal_fields(version) -> None:
 
 def analyze_records(records: list[dict]) -> dict:
     """Analyze normalized records using the one pinned rpsd-core grammar."""
-    if core_version != "0.2.0":
-        raise ValidationError("Installare la release verificata rpsd-core 0.2.0.")
+    if core_version not in CORE_RELEASES:
+        raise ValidationError(
+            "Installare una release verificata rpsd-core 0.2.0/0.3.0."
+        )
     formal = [r for r in records if r["definition_kind"]]
     symbols = [r["symbol"] for r in formal]
     if any(not s for s in symbols) or len(symbols) != len(set(symbols)):
@@ -427,9 +433,18 @@ def verification_state(version) -> str:
         current = evaluate_definition(version)
     except (ValidationError, KeyError, ValueError):
         return "stale"
+    proof = version.formal_verification
+    compatible = proof.get("core_version") in CORE_RELEASES and CORE_RELEASES[
+        proof["core_version"]
+    ] == proof.get("core_commit")
     return (
         "current"
-        if all(version.formal_verification.get(k) == v for k, v in current.items())
+        if compatible
+        and all(
+            proof.get(k) == v
+            for k, v in current.items()
+            if k not in {"core_version", "core_commit"}
+        )
         else "stale"
     )
 

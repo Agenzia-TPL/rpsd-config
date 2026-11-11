@@ -9,15 +9,24 @@ from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = "Preview the packaged Tools 0.2.0 catalog; --apply creates drafts only."
+    help = (
+        "Preview the packaged indicator catalog or --dbt-contexts-only; "
+        "--apply creates drafts only, without publication."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument("--actor", required=True)
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--report", type=Path)
+        parser.add_argument("--dbt-contexts-only", action="store_true")
 
     def handle(self, *args, **options):
-        path = Path(__file__).resolve().parents[2] / "seed_data/tools_v020/catalog.json"
+        seed = (
+            "tools_v030/dbt-contexts.json"
+            if options["dbt_contexts_only"]
+            else "tools_v020/catalog.json"
+        )
+        path = Path(__file__).resolve().parents[2] / "seed_data" / seed
         call_command(
             "import_tools_catalog",
             package=path,

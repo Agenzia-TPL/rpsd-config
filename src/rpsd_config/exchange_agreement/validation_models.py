@@ -242,7 +242,7 @@ class ValidationRuleVersion(TimeStampedModel):
         return self.validation_type_version.language_version
 
     def validate_for_publication(self) -> None:
-        """Check the declared interpreter and Prefect reference locally."""
+        """Check the definition and an optional execution reference locally."""
         validate_rule_definition(
             validation_type=self.validation_type,
             definition=self.definition,
@@ -250,12 +250,42 @@ class ValidationRuleVersion(TimeStampedModel):
             options=self.options,
             result_contract=self.result_contract,
         )
-        validate_prefect_reference(self.execution_reference)
+        if self.validation_type == "dbt":
+            if not self.description.strip():
+                raise ValidationError({"description": "Descrivere il requisito dbt."})
+        elif self.execution_reference:
+            validate_prefect_reference(self.execution_reference)
 
     def clean(self):
         super().clean()
         if not isinstance(self.options, dict):
             raise ValidationError({"options": "Options must be an object."})
+        if self.validation_type_version_id or self._state.fields_cache.get(
+            "validation_type_version"
+        ):
+            if self.validation_type == "dbt":
+                errors = {}
+                if self.execution_reference:
+                    errors["execution_reference"] = (
+                        "Un contesto documentale dbt non ha un processo Prefect."
+                    )
+                if self.options:
+                    errors["options"] = "Un contesto dbt non ha opzioni esecutive."
+                if self.result_contract != self.ResultContract.STRUCTURED_REPORT:
+                    errors["result_contract"] = (
+                        "Usare structured_report come convenzione non esecutiva."
+                    )
+                if self.definition:
+                    from rpsd_config.exchange_agreement.services.dbt_contexts import (
+                        load_dbt_context,
+                    )
+
+                    try:
+                        load_dbt_context(self.definition)
+                    except ValidationError as exc:
+                        errors["definition"] = exc.messages
+                if errors:
+                    raise ValidationError(errors)
         if not self.pk:
             if (
                 self.status != self.Status.DRAFT
@@ -482,6 +512,15 @@ class DatasetVersionRule(FrozenComposition):
                 )
         spec = current_related(self, "dataset_specification")
         rule = current_related(self, "rule_version")
+        if rule.validation_type == "dbt":
+            raise ValidationError(
+                {
+                    "rule_version": (
+                        "I contesti dbt non sono associabili a dataset o indicatori."
+                    )
+                },
+                code="documentary_rule_binding",
+            )
         staging = (
             spec.status == "draft" or allow_draft_rule
         ) and rule.status == "draft"

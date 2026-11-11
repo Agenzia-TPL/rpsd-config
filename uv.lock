@@ -1561,7 +1561,7 @@ dev = [
 
 [[package]]
 name = "rpsd-core"
-version = "0.2.0"
+version = "0.3.0"
 source = { directory = "../rpsd-tools/packages/rpsd-core" }
 dependencies = [
     { name = "elementpath" },

@@ -248,22 +248,24 @@ FIELDS = {
     ),
     "execution_engine": guide(
         "Motore di calcolo",
-        "Motore dichiarato per il calcolo dell’indicatore. Conservare il valore "
-        "tecnico previsto; la pubblicazione verifica i riferimenti locali, non avvia "
-        "il motore.",
+        "Facoltativo, anche alla pubblicazione. Lasciare vuoto se non è registrato "
+        "un processo di calcolo. Se scelto, richiede riferimento e artefatto coerenti "
+        "prima della pubblicazione. Django non avvia il motore.",
         "Processi e riferimenti",
     ),
     "execution_reference": guide(
-        "Processo di calcolo Prefect",
-        "Riferimento flow/deployment del processo di calcolo (es. "
-        "indicators/corse-pde). Richiesto per pubblicare la versione; Django "
-        "gestisce il catalogo, senza verificare o eseguire il deployment esterno.",
+        "Riferimento del processo di calcolo",
+        "Gruppo esecutivo facoltativo, anche alla pubblicazione. Se si dichiara "
+        "un motore, compilare riferimento e artefatto; solo per Prefect usare "
+        "flow/deployment (es. indicators/corse-pde). Per dbt/external usare il "
+        "riferimento previsto dall’implementazione. Django non lo esegue.",
         "Processi e riferimenti",
     ),
     "artifact_identifier": guide(
         "Identificativo dell’artefatto",
         "Riferimento riproducibile al codice del processo (es. "
-        "git:rpsd-flows@revisione). Deve identificare un artefatto reale prima "
+        "git:rpsd-flows@revisione). Fa parte del gruppo esecutivo facoltativo; "
+        "se si dichiara un motore deve identificare un artefatto reale prima "
         "dell’uso operativo; non carica un file nell’admin.",
         "Processi e riferimenti",
     ),
@@ -350,7 +352,8 @@ FIELDS = {
     "language_version": guide(
         "Versione del linguaggio",
         "xpath: 1.0, 2.0 o 3.1; xsd_bundle: 1.0; CSV/XLSX/TXT: 1. Usare una "
-        "combinazione supportata dal registro e dal futuro validator.",
+        "combinazione supportata dal registro e dal futuro validator. dbt / 1 "
+        "identifica il formato documentale, non la versione del software dbt.",
         "Definizione della regola",
     ),
     "options": guide(
@@ -918,7 +921,7 @@ FIELDS.update(
         "formula_language_version": guide(
             "Versione del linguaggio",
             (
-                "Seleziona la grammatica rpsd-formula-v1 di core 0.2.0. "
+                "Seleziona la grammatica verificata rpsd-formula-v1. "
                 "È distinta dalla versione tecnica dell'indicatore."
             ),
         ),
@@ -1069,8 +1072,11 @@ OVERRIDES = {
     ("ValidationRuleVersion", "execution_reference"): guide(
         "Processo di validazione Prefect",
         "Riferimento flow/deployment del validator (es. validators/netex-default), "
-        "distinto dal calcolo dell’indicatore. Obbligatorio per pubblicare; Django "
-        "verifica il riferimento localmente, senza avviare o contattare Prefect.",
+        "distinto dal calcolo dell’indicatore. Facoltativo anche alla pubblicazione: "
+        "se compilato deve rispettare il formato flow/deployment. Non applicabile "
+        "ai contesti documentali dbt. Django verifica il riferimento localmente, "
+        "senza avviare o contattare Prefect; pubblicare la configurazione non "
+        "certifica la disponibilità del validator.",
         "Processi e riferimenti",
     ),
     ("IndicatorVersionInput", "dataset_specification"): guide(
