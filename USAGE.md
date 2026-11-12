@@ -1477,3 +1477,147 @@ revisionata e pubblicata. I conflitti di composizione sono mantenuti.
 La pubblicazione locale segue l’ordine regole → specifiche → verifica formale
 → indicatori dai prerequisiti ai dipendenti. Il report operativo è in
 [docs/operations/fid-catalog-publication-20261110.md](docs/operations/fid-catalog-publication-20261110.md).
+
+## Bozze contrattuali ed export per il validatore (037)
+
+Un amministratore di catalogo che può anche preparare il contratto può scegliere
+un profilo **in bozza** nella revisione. Profilo, flow, specifiche dataset,
+indicatori e regole possono essere completati salvando gli stessi record.
+I valori forniti vengono controllati per tipo e chiavi; i parametri obbligatori
+mancanti sono segnalati nell’export e bloccano l’approvazione.
+Un operatore del solo contratto può lavorare sulle selezioni e sui valori del
+profilo già assegnato; non può scegliere altri profili draft del catalogo.
+
+La pubblicazione del profilo richiede ancora tutti i suoi componenti pubblicati.
+L’approvazione della revisione conserva i controlli completi e non pubblica nulla
+implicitamente. Le API operative di ingestione continuano a leggere solo la
+revisione approvata corrente. I riferimenti runtime degli indicatori e delle
+regole restano facoltativi secondo la 035; i flow demo non attestano deployment.
+
+Nell’admin aprire **Revisione contrattuale → Scarica JSON salvato**. La stessa
+funzione è nella pagina web della revisione. Prima dell’export salvare il modulo:
+i valori ancora presenti soltanto nel browser non vengono esportati.
+Sono disponibili la revisione completa, un dataset selezionato oppure un
+indicatore effettivo con i suoi prerequisiti. Il riepilogo mostra problemi,
+perimetro e digest. Un profilo draft condiviso mostra nell’admin quali revisioni
+lo usano: modificarlo cambia la successiva anteprima di quelle bozze.
+
+API utente autenticata, con gli stessi permessi di lettura del contratto:
+
+```text
+GET /exchange_agreement/api/v1/contracts/DEMO-FID-DEMO/configuration-revisions/DEMO-FID-DEMO-r001/export?scope=revision
+GET /exchange_agreement/api/v1/contracts/DEMO-FID-DEMO/configuration-revisions/DEMO-FID-DEMO-r001/export?scope=dataset&dataset_code=netex
+GET /exchange_agreement/api/v1/contracts/DEMO-FID-DEMO/configuration-revisions/DEMO-FID-DEMO-r001/export?scope=indicator&indicator_version_code=fid-demo-fid-tools_001
+```
+
+Un token di servizio del validatore non acquisisce accesso alle bozze da questa
+API. Per le prove iniziali condividere gli artefatti scaricati dall’operatore.
+Accessi fuori contratto sono negati; target estranei danno 400, snapshot
+incoerenti o transazioni incompatibili danno 409. Il collector legge un unico
+snapshot PostgreSQL REPEATABLE READ, READ ONLY. Non richiamarlo dentro una
+transazione READ COMMITTED già aperta.
+
+Il formato è `contract-configuration-export-v1`, descritto nello schema in
+`src/rpsd_config/exchange_agreement/contracts/`. `draft_preview` rappresenta dati
+correnti salvati e può contenere `issues`; `frozen_revision` legge esclusivamente
+la configurazione congelata. Gli stati dei componenti non registrati nei vecchi
+snapshot restano assenti/null. L’anagrafica corrente del contratto è identificata
+separatamente. `content_digest` copre source, selection, contract, configuration,
+issues; esclude exported_at. Decimali e numeri JSON non interi sono stringhe
+esatte nell’export. Definizioni necessarie alle sole verifiche formali restano
+contesto, senza aggiungere input o dipendenze esecutive. I contesti dbt globali
+non vengono associati al contratto. `failure_policy`, `impact` e la severity
+della fonte non vengono convertiti tra loro.
+
+CLI (sostituire `dummy_admin` con l’utenza locale autorizzata):
+
+```bash
+uv run manage export_contract_configuration --actor dummy_admin \
+  --contract-code DEMO-FID-DEMO --revision-code DEMO-FID-DEMO-r001 \
+  --output /tmp/fid-preview.json
+
+uv run manage export_contract_configuration --actor dummy_admin \
+  --contract-code DEMO-FID-DEMO --revision-code DEMO-FID-DEMO-r001 \
+  --handoff-dir /tmp/fid-handoff-001 --include-assets
+```
+
+La cartella di consegna deve essere vuota. Contiene `revision.json`, un
+`dataset-N.json` per input, un `indicator-N.json` per selezionato, README e
+`manifest.json` con target, digest e checksum dei file. `--include-assets` copia
+i bundle originali tramite lo storage configurato e ne verifica checksum e
+manifest, senza estrarli. Un errore di lettura/integrità fa fallire la consegna
+con errori nel manifest; i JSON diagnostici rimangono disponibili. Conservare
+ogni consegna in una cartella diversa. Il JSON non contiene credenziali, URL
+firmati o byte dei file. Il download web degli asset verifica che identità,
+versione e checksum siano raggiungibili dalla revisione salvata.
+
+### Seed FID interamente in bozza
+
+Prima predisporre gli asset iniziali con i seed NeTEx italiano e SIRI 2.2.1 già
+esistenti. Questo seed riusa i due bundle fissati per identità/versione/digest;
+se mancano o non sono integri, si ferma. Non esegue download di sorgenti né
+provisioning IAM. La prima creazione dell’agenzia demo richiede un superuser;
+per riusarla servono sia gestione del catalogo sia preparazione del contratto.
+
+```bash
+# Piano di sola lettura.
+uv run manage seed_contract_configuration_demo --actor dummy_admin \
+  --namespace fid-demo --report /tmp/fid-demo-manifest.json
+
+# Creazione atomica: conservare questo report anche per la pulizia.
+uv run manage seed_contract_configuration_demo --actor dummy_admin \
+  --namespace fid-demo --apply --report /tmp/fid-demo-manifest.json
+```
+
+Il report riusato mantiene l’elenco originale dei record creati. Non sostituirlo
+con un report appartenente a un altro tentativo. Namespace: 1–20 caratteri
+minuscoli, cifre o trattini, iniziale alfabetica. La fixture `contract_demo/fid-v1.json`
+fissa periodo 01/01/2027–31/12/2027, pacchetto Tools e supplemento XPath verificato.
+La configurazione include versioni demo delle stesse identità logiche, anche
+quelle richieste soltanto dal contesto formale; non modifica il catalogo FID
+pubblicato. Il profilo e la revisione selezionano FID: chiusura esecutiva di sei
+indicatori, input NeTEx e SIRI-ET con 27 e 15 regole applicabili.
+
+I sei parametri CORSE_PS sono valori demo espliciti: 20 minuti di cadenzamento,
+regimi OLTRE_SOGLIA e ULTIMA_CORSA_GIORNO, finestre di sostituzione da 40 minuti
+e copertura fermate 100%. Non costituiscono valori contrattuali impliciti.
+Soglie e penali non sono inventate. Le limitazioni di revisione presenti nel
+pacchetto sorgente sono conservate e visibili nella preview.
+
+Ripetere invariato il comando riusa i record. Se l’operatore modifica dati o
+pubblica componenti, il seed segnala un conflitto senza sovrascriverli. Continuare
+le prove modificando quelle bozze oppure scegliere esplicitamente un altro
+namespace; non pubblicare soltanto per ottenere un export.
+
+### Rimozione delle bozze
+
+La conferma di eliminazione nell’admin dei cataloghi e delle revisioni elenca
+anche le associazioni possedute. Prerequisiti, regole e specifiche condivise non
+vengono eliminati con l’indicatore. Riferimenti esterni e contesti formali
+conservati impediscono la rimozione. Gli audit sopravvivono.
+
+Per uno scenario seed non modificato:
+
+```bash
+uv run manage cleanup_contract_configuration_demo --actor dummy_admin \
+  --manifest /tmp/fid-demo-manifest.json --report /tmp/fid-cleanup-plan.json
+
+uv run manage cleanup_contract_configuration_demo --actor dummy_admin \
+  --manifest /tmp/fid-demo-manifest.json --apply --report /tmp/fid-cleanup-result.json
+```
+
+La pulizia rivalida provenienza negli audit, identità, impronte, permessi, stati
+e tutti i riferimenti. Il prefisso non basta e il manifest non concede permessi.
+Si ferma su dati modificati, pubblicati o condivisi con record conservati, senza
+`force`. Eventuali identità logiche nuove e non condivise vengono eliminate con
+lo scenario; quelle riusate restano. Nessun asset fisico, evento o credenziale
+viene cancellato. Per bozze modificate usare la revisione esplicita dei dati e
+la conferma di eliminazione ordinaria; il seed non è un comando di reset.
+
+Per gli snapshot storici privi della chiusura delle dipendenze, la proiezione
+su un indicatore selezionato conserva gli input storici come contesto e dichiara
+`legacy_indicator_scope_limit` e `input_scope=historical_context_unresolved`.
+Non deduce retroattivamente quali input o prerequisiti fossero necessari.
+Negli export moderni di un prerequisito i percorsi delle dipendenze sono
+riferiti al target richiesto (`export_root_indicators`); il ruolo selezionato/
+implicito conserva il significato che aveva nella revisione contrattuale.

@@ -17,7 +17,12 @@ class CatalogAutocompleteJsonView(AutocompleteJsonView):
         field = self.source_field
         source = field.model._meta.concrete_model.__name__
         if requires_published_choice(field):
-            queryset = queryset.filter(status="published")
+            from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
+
+            states = ["published"]
+            if resolve_user_agency_scope(self.request.user).is_platform_admin:
+                states.append("draft")
+            queryset = queryset.filter(status__in=states)
         if (
             source in {"DatasetVersionRule", "IndicatorVersionRule"}
             and field.name == "rule_version"
@@ -37,10 +42,14 @@ class CatalogAutocompleteJsonView(AutocompleteJsonView):
         return queryset
 
     def _draft_composition_allowed(self):
+        from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
+
+        if not resolve_user_agency_scope(self.request.user).is_platform_admin:
+            return False
         label = self.request.GET.get("owner_model", "")
         pk = self.request.GET.get("owner_pk", "")
         if not label or not pk:
-            return True  # An unsaved formal definition may compose draft versions.
+            return True  # An authorized unsaved draft may compose draft versions.
         if not pk.isdecimal():
             return False
         try:
@@ -68,9 +77,7 @@ class CatalogAutocompleteJsonView(AutocompleteJsonView):
             owner = getattr(owner, owner_fields[model.__name__])
         if owner is None or owner.status != "draft":
             return False
-        return owner._meta.concrete_model.__name__ == "DatasetSpecification" or bool(
-            owner.definition_kind
-        )
+        return True
 
 
 class RpsdAdminSite(AdminSite):

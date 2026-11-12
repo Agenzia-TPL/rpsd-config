@@ -725,7 +725,7 @@ class IndicatorVersionRule(FrozenComposition):
             return
         specification = current_related(self, "dataset_specification")
         owner = current_related(self, "indicator_version")
-        staging = owner.status == "draft" and bool(owner.definition_kind)
+        staging = owner.status == "draft"
         if specification.status != "published" and not (
             staging and specification.status == "draft"
         ):
@@ -820,7 +820,7 @@ class IndicatorVersionInput(FrozenComposition):
             return
         specification = current_related(self, "dataset_specification")
         owner = current_related(self, "indicator_version")
-        staging = owner.status == "draft" and bool(owner.definition_kind)
+        staging = owner.status == "draft"
         if specification.status != "published" and not (
             staging and specification.status == "draft"
         ):
@@ -904,7 +904,7 @@ class IndicatorVersionDependency(FrozenComposition):
             )
         owner = current_related(self, "dependent")
         prerequisite = current_related(self, "prerequisite")
-        staging = owner.status == "draft" and bool(owner.definition_kind)
+        staging = owner.status == "draft"
         if (
             self.origin in {"technical", "both"}
             and owner.definition_kind
@@ -1002,8 +1002,19 @@ class ContractDependencyConfiguration(FrozenComposition):
                 "processing_profile_indicator_version__indicator_version"
             )
         ]
-        closure = resolve_indicator_closure(roots)
+        closure = resolve_indicator_closure(
+            roots, allow_drafts=self.revision.status == "draft"
+        )
         effective = {version.pk for version in closure["versions"]}
+        from rpsd_config.exchange_agreement.services.parameter_schema import (
+            validate_indicator_parameters,
+        )
+
+        validate_indicator_parameters(
+            self.indicator_version.parameter_schema,
+            self.parameters,
+            partial=True,
+        )
         if self.indicator_version_id not in effective - closure["root_ids"]:
             raise ValidationError(
                 "Only implicit indicators belong in dependency configuration.",

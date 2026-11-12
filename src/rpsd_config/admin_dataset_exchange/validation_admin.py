@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from rpsd_config.admin_dataset_exchange import proxies
+from rpsd_config.admin_draft_deletion import DraftDeletionAdminMixin
 from rpsd_config.admin_guidance import GuidedInlineMixin
 from rpsd_config.exchange_agreement.formal_forms import IndicatorDimensionForm
 from rpsd_config.exchange_agreement.models import IndicatorVersionDimension
@@ -129,7 +130,7 @@ class IndicatorRuleAdminForm(IndicatorRuleForm):
                 self.fields["dimensions"].widget = native
 
 
-class RuleVersionAdmin(admin.ModelAdmin):
+class RuleVersionAdmin(DraftDeletionAdminMixin, admin.ModelAdmin):
     form = ValidationRuleVersionForm
 
     def get_fieldsets(self, request, obj=None):

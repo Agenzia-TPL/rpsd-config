@@ -86,6 +86,8 @@ def resolve_revision_inputs(
     profile: ProcessingProfileVersion,
     indicator_links: Iterable[ProcessingProfileIndicatorVersion | int],
     selected_optional_inputs: Iterable[ProcessingProfileInputFlow | int] = (),
+    *,
+    allow_drafts: bool = False,
 ) -> RevisionInputResolution:
     """Resolve mandatory inputs without trusting browser-provided selections."""
 
@@ -127,7 +129,7 @@ def resolve_revision_inputs(
             resolve_indicator_closure,
         )
 
-        closure = resolve_indicator_closure([version])
+        closure = resolve_indicator_closure([version], allow_drafts=allow_drafts)
         required_specification_ids.update(spec.pk for spec in closure["specifications"])
 
     profile_inputs = list(
@@ -607,17 +609,66 @@ def available_processing_profiles(
     """Return technically valid published profiles available to the operator."""
 
     require_revision_preparer(user=actor, contract=contract)
+    from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
+
+    states = ["published"]
+    if resolve_user_agency_scope(actor).is_platform_admin:
+        states.append("draft")
     profiles = ProcessingProfileVersion.objects.filter(
-        status=ProcessingProfileVersion.Status.PUBLISHED
+        status__in=states
     ).prefetch_related("indicator_version_links__indicator_version")
     applicable = []
     for profile in profiles:
+        if profile.status == "draft":
+            applicable.append(profile)
+            continue
         try:
             validate_processing_profile_for_publication(profile)
         except ProcessingProfileTransitionError:
             continue
         applicable.append(profile)
     return tuple(applicable)
+
+
+def require_preparable_profile(profile, *, actor):
+    """Draft catalogs require catalog authority, independently from contract rights."""
+    from rpsd_config.exchange_agreement.services.validation_catalog import (
+        require_catalog_admin,
+    )
+
+    if profile.status == "draft":
+        require_catalog_admin(actor)
+    elif profile.status == "published":
+        try:
+            validate_processing_profile_for_publication(profile)
+        except ProcessingProfileTransitionError as exc:
+            raise ContractRevisionValidationError(
+                [
+                    RevisionValidationIssue(
+                        code="profile_not_applicable",
+                        message=str(exc),
+                        details={"profile_code": profile.code},
+                    )
+                ]
+            ) from exc
+    else:
+        raise ContractRevisionValidationError(
+            [
+                RevisionValidationIssue(
+                    code="profile_not_applicable",
+                    message="Selezionare un profilo in bozza o pubblicato.",
+                    details={"profile_code": profile.code},
+                )
+            ]
+        )
+
+
+def _draft_resolution_issues(resolution):
+    return [
+        issue
+        for issue in resolution.issues
+        if issue.code != "required_input_not_available_in_profile"
+    ]
 
 
 @transaction.atomic
@@ -638,28 +689,7 @@ def create_revision_draft(
     locked_profile = ProcessingProfileVersion.objects.select_related(
         "orchestration_flow_version"
     ).get(pk=profile.pk)
-    if locked_profile.status != ProcessingProfileVersion.Status.PUBLISHED:
-        raise ContractRevisionValidationError(
-            [
-                RevisionValidationIssue(
-                    code="profile_not_published",
-                    message="The processing profile must be published.",
-                    details={"profile_code": locked_profile.code},
-                )
-            ]
-        )
-    try:
-        validate_processing_profile_for_publication(locked_profile)
-    except ProcessingProfileTransitionError as exc:
-        raise ContractRevisionValidationError(
-            [
-                RevisionValidationIssue(
-                    code="profile_not_applicable",
-                    message=f"The processing profile is not applicable: {exc}",
-                    details={"profile_code": locked_profile.code},
-                )
-            ]
-        ) from exc
+    require_preparable_profile(locked_profile, actor=actor)
     if (
         replaces_revision is not None
         and replaces_revision.contract_id != locked_contract.pk
@@ -699,9 +729,11 @@ def create_revision_draft(
             proposed_by_default=True
         ).select_related("indicator_version__indicator")
     )
-    resolution = resolve_revision_inputs(locked_profile, proposed_links)
-    if resolution.issues:
-        raise ContractRevisionValidationError(resolution.issues)
+    resolution = resolve_revision_inputs(
+        locked_profile, proposed_links, allow_drafts=True
+    )
+    if _draft_resolution_issues(resolution):
+        raise ContractRevisionValidationError(_draft_resolution_issues(resolution))
     for profile_input in resolution.selected_inputs:
         ContractInputSelection.objects.create(
             revision=revision,
@@ -841,9 +873,10 @@ def replace_draft_configuration(
         locked.processing_profile_version,
         selected_profile_indicators,
         requested_inputs,
+        allow_drafts=True,
     )
-    if resolution.issues:
-        raise ContractRevisionValidationError(resolution.issues)
+    if _draft_resolution_issues(resolution):
+        raise ContractRevisionValidationError(_draft_resolution_issues(resolution))
 
     locked.input_selections.all().delete()
     requested_profile_ids = {
@@ -878,7 +911,8 @@ def replace_draft_configuration(
     )
 
     closure = resolve_indicator_closure(
-        [link.indicator_version for link in selected_profile_indicators]
+        [link.indicator_version for link in selected_profile_indicators],
+        allow_drafts=True,
     )
     implicit_ids = {v.pk for v in closure["versions"]} - closure["root_ids"]
     locked.dependency_configurations.exclude(

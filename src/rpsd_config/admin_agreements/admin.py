@@ -12,6 +12,7 @@ from django.utils import timezone
 from django.utils.formats import date_format
 
 from rpsd_config import admin_hidden  # noqa: F401
+from rpsd_config.admin_draft_deletion import DraftDeletionAdminMixin
 from rpsd_config.admin_guidance import GuidedAdminMixin, GuidedInlineMixin
 from rpsd_config.exchange_agreement.models import (
     Contract,
@@ -286,9 +287,20 @@ class ContractInputSelectionInline(GuidedInlineMixin, admin.TabularInline):
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "processing_profile_input_flow":
             kwargs["queryset"] = ProcessingProfileInputFlow.objects.filter(
-                processing_profile_version__status=ProcessingProfileVersion.Status.PUBLISHED
+                processing_profile_version__status__in=("draft", "published")
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        field = formset.form.base_fields.get("processing_profile_input_flow")
+        if field:
+            field.queryset = ProcessingProfileInputFlow.objects.filter(
+                processing_profile_version_id=obj.processing_profile_version_id
+                if obj
+                else None
+            )
+        return formset
 
     def has_add_permission(self, request, obj=None):
         return bool(obj is None or obj.status == obj.Status.DRAFT)
@@ -388,7 +400,7 @@ class DependencyValuesForm(forms.ModelForm):
             )
 
             validate_indicator_parameters(
-                version.parameter_schema, values["parameters"]
+                version.parameter_schema, values["parameters"], partial=True
             )
         return values
 
@@ -504,7 +516,9 @@ class ContractDependencyValuesInline(GuidedInlineMixin, admin.TabularInline):
                     "processing_profile_indicator_version__indicator_version"
                 )
             ]
-            closure = resolve_indicator_closure(roots)
+            closure = resolve_indicator_closure(
+                roots, allow_drafts=obj.status == "draft"
+            )
             ids = {v.pk for v in closure["versions"]} - closure["root_ids"]
             ScopedFormSet.form.base_fields[
                 "indicator_version"
@@ -534,9 +548,93 @@ class ContractConfigurationRevisionStatusEventInline(
 
 @admin.register(ContractConfigurationRevisionAdminProxy)
 class ContractConfigurationRevisionAdmin(
+    DraftDeletionAdminMixin,
     _HumanReadableTimestampsMixin,
     admin.ModelAdmin,
 ):
+    change_form_template = "admin/contract_revision_change_form.html"
+
+    def get_urls(self):
+        from django.urls import path
+
+        return [
+            path(
+                "<int:object_id>/export/",
+                self.admin_site.admin_view(self.export_view),
+                name=f"{self.opts.app_label}_{self.opts.model_name}_export",
+            )
+        ] + super().get_urls()
+
+    def export_view(self, request, object_id):
+        from django.core.exceptions import PermissionDenied
+        from django.http import Http404
+
+        from rpsd_config.exchange_agreement.export_views import (
+            configuration_export_page,
+        )
+
+        obj = self.get_object(request, str(object_id))
+        if obj is None:
+            raise Http404
+        if not self.has_view_permission(request, obj):
+            raise PermissionDenied
+        return configuration_export_page(
+            request,
+            obj.contract.contract_code,
+            obj.pk,
+            admin_context=self.admin_site.each_context(request),
+        )
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        if obj and "processing_profile_version" in form.base_fields:
+            field = form.base_fields["processing_profile_version"]
+            field.queryset = ProcessingProfileVersion.objects.filter(
+                pk__in=field.queryset.values_list("pk", flat=True)
+            ) | ProcessingProfileVersion.objects.filter(
+                pk=obj.processing_profile_version_id
+            )
+
+        class AuthorizedRevisionForm(form):
+            def clean(self):
+                values = super().clean()
+                from rpsd_config.exchange_agreement.services import (
+                    contract_revision_permissions,
+                )
+                from rpsd_config.exchange_agreement.services.contract_revisions import (
+                    require_preparable_profile,
+                )
+
+                contract = values.get("contract") or (obj.contract if obj else None)
+                profile = values.get("processing_profile_version")
+                can_prepare = (
+                    contract_revision_permissions.can_prepare_contract_revision
+                )
+                if contract and not can_prepare(user=request.user, contract=contract):
+                    raise ValidationError(
+                        "Non puoi preparare revisioni di questo contratto."
+                    )
+                if profile and (
+                    obj is None or obj.processing_profile_version_id != profile.pk
+                ):
+                    try:
+                        require_preparable_profile(profile, actor=request.user)
+                    except (
+                        PermissionError,
+                        ValidationError,
+                        ContractRevisionError,
+                    ) as exc:
+                        self.add_error("processing_profile_version", str(exc))
+                return values
+
+        from rpsd_config.admin_guidance import guided_form
+
+        return guided_form(
+            AuthorizedRevisionForm,
+            self.model,
+            extra_fields=self.get_readonly_fields(request, obj),
+        )
+
     list_display = (
         "code",
         "contract",
@@ -577,8 +675,13 @@ class ContractConfigurationRevisionAdmin(
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "processing_profile_version":
+            from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
+
+            statuses = ["published"]
+            if resolve_user_agency_scope(request.user).is_platform_admin:
+                statuses.append("draft")
             kwargs["queryset"] = ProcessingProfileVersion.objects.filter(
-                status=ProcessingProfileVersion.Status.PUBLISHED
+                status__in=statuses
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 

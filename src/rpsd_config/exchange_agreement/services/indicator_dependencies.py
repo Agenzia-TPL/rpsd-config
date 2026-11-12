@@ -47,7 +47,9 @@ def would_create_cycle(
     return False
 
 
-def resolve_indicator_closure(roots, *, allow_drafts=False) -> dict:
+def resolve_indicator_closure(
+    roots, *, allow_drafts=False, validate_bindings=True
+) -> dict:
     """Return a deterministic AND closure, all paths, edges and required inputs."""
     root_ids = {version.pk for version in roots}
     roots = list(
@@ -78,7 +80,8 @@ def resolve_indicator_closure(roots, *, allow_drafts=False) -> dict:
         if path not in paths.setdefault(version.pk, []):
             paths[version.pk].append(path)
         versions[version.pk] = version
-        validate_indicator_bindings(version, allow_drafts=allow_drafts)
+        if validate_bindings:
+            validate_indicator_bindings(version, allow_drafts=allow_drafts)
         for spec in required_dataset_specifications(version):
             old = specs.get(spec.dataset.code)
             if old is not None and old.pk != spec.pk:
@@ -92,8 +95,10 @@ def resolve_indicator_closure(roots, *, allow_drafts=False) -> dict:
             .prefetch_related("required_dimensions")
             .order_by("prerequisite__code")
         ):
-            if edge.prerequisite.status != "published" and not (
-                allow_drafts and edge.prerequisite.status == "draft"
+            if (
+                validate_bindings
+                and edge.prerequisite.status != "published"
+                and not (allow_drafts and edge.prerequisite.status == "draft")
             ):
                 raise ValidationError(
                     "Unpublished prerequisite: "
@@ -160,7 +165,7 @@ def add_indicator_dependency(
     )
     for dimension in dimensions:
         DependencyRequiredDimension.objects.create(dependency=edge, dimension=dimension)
-    resolve_indicator_closure([dependent], allow_drafts=bool(dependent.definition_kind))
+    resolve_indicator_closure([dependent], allow_drafts=dependent.status == "draft")
     return edge
 
 

@@ -2712,3 +2712,42 @@ def m2m_validation_asset_download(
     )
     response["X-RPSD-Checksum-SHA256"] = asset.checksum_sha256
     return response
+
+
+@api.get("/v1/contracts/{contract_code}/configuration-revisions/{revision_code}/export")
+def contract_configuration_export(
+    request,
+    contract_code: str,
+    revision_code: str,
+    scope: str = "revision",
+    dataset_code: str | None = None,
+    indicator_version_code: str | None = None,
+):
+    from django.core.exceptions import PermissionDenied
+    from django.http import JsonResponse
+
+    from rpsd_config.exchange_agreement.export_views import export_response
+    from rpsd_config.exchange_agreement.models import ContractConfigurationRevision
+    from rpsd_config.exchange_agreement.services.configuration_exports import (
+        ConfigurationExportError,
+        export_contract_configuration,
+    )
+
+    _get_authorized_contract(request, contract_code)
+    try:
+        return export_response(
+            export_contract_configuration(
+                actor=_require_auth(request),
+                contract_code=contract_code,
+                revision_code=revision_code,
+                scope=scope,
+                dataset_code=dataset_code,
+                indicator_version_code=indicator_version_code,
+            )
+        )
+    except ContractConfigurationRevision.DoesNotExist as exc:
+        raise HttpError(404, "Revision not found.") from exc
+    except PermissionDenied as exc:
+        raise HttpError(403, str(exc)) from exc
+    except ConfigurationExportError as exc:
+        return JsonResponse({"code": exc.code, "message": str(exc)}, status=exc.status)

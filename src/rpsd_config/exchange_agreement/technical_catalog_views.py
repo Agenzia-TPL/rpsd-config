@@ -160,6 +160,14 @@ ProcessingProfileVersionForm = modelform_factory(
 )
 
 
+InputFlowVersionForm.base_fields[
+    "dataset_specification"
+].queryset = DatasetSpecification.objects.filter(status__in=("draft", "published"))
+ProcessingProfileVersionForm.base_fields[
+    "orchestration_flow_version"
+].queryset = OrchestrationFlowVersion.objects.filter(status__in=("draft", "published"))
+
+
 class IndicatorRuleCatalogForm(IndicatorRuleForm):
     """Shared form for impact and dimension editing."""
 
@@ -439,9 +447,7 @@ def _detail_context(slug: str, instance, *, dimension_data=None) -> dict:
         try:
             context["indicator_closure"] = resolve_indicator_closure(
                 [instance],
-                allow_drafts=bool(
-                    instance.definition_kind and instance.status == "draft"
-                ),
+                allow_drafts=bool(instance.status == "draft"),
             )
             context.update(catalog_validation_preview([instance]))
         except ValidationError as exc:
@@ -458,13 +464,13 @@ def _detail_context(slug: str, instance, *, dimension_data=None) -> dict:
             "dataset", "input_flow_version__dataset_specification"
         )
         context["available_input_flows"] = InputFlowVersion.objects.filter(
-            status=InputFlowVersion.Status.PUBLISHED
+            status__in=["draft", "published"]
         ).select_related("dataset_specification__dataset")
         context["profile_indicators"] = instance.indicator_version_links.select_related(
             "indicator_version__indicator"
         )
         context["available_indicator_versions"] = IndicatorVersion.objects.filter(
-            status=IndicatorVersion.Status.PUBLISHED
+            status__in=["draft", "published"]
         ).select_related("indicator")
         try:
             context.update(

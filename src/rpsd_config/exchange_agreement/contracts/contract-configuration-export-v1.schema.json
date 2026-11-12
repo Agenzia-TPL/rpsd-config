@@ -1,0 +1,415 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rpsd.example/contracts/contract-configuration-export-v1.schema.json",
+  "$comment": "SPDX-FileCopyrightText: 2026 AGENZIA TPL BACINO CITTA' METROPOLITANA MILANO, MONZA E BRIANZA, LODI, PAVIA; SPDX-License-Identifier: EUPL-1.2",
+  "title": "Saved contract configuration export; never an operational plan",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "contract-configuration-export-v1"
+    },
+    "mode": {
+      "enum": [
+        "draft_preview",
+        "frozen_revision"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "contract_code": {
+          "type": "string"
+        },
+        "contract_status": {
+          "type": "string"
+        },
+        "revision_code": {
+          "type": "string"
+        },
+        "revision_status": {
+          "enum": [
+            "draft",
+            "approved",
+            "withdrawn"
+          ]
+        },
+        "revision_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "valid_from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "profile_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "profile_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot_schema_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snapshot_checksum": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "contract_code",
+        "contract_status",
+        "revision_code",
+        "revision_status",
+        "revision_number",
+        "valid_from",
+        "profile_code",
+        "profile_status",
+        "snapshot_schema_version",
+        "snapshot_checksum"
+      ],
+      "additionalProperties": false
+    },
+    "selection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "const": "revision"
+            }
+          },
+          "required": [
+            "scope"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "const": "dataset"
+            },
+            "dataset_code": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "dataset_code"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "const": "indicator"
+            },
+            "indicator_version_code": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "indicator_version_code"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "contract": {
+      "type": "object",
+      "properties": {
+        "metadata_source": {
+          "const": "current_database"
+        },
+        "code": {
+          "type": "string"
+        },
+        "start_date": {
+          "type": "string"
+        },
+        "end_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "client_agency": {
+          "type": "object"
+        },
+        "contractor_company": {
+          "type": "object"
+        },
+        "lot": {
+          "type": "object"
+        },
+        "tender_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "metadata_source",
+        "code",
+        "start_date",
+        "end_date",
+        "client_agency",
+        "contractor_company",
+        "lot",
+        "tender_id"
+      ],
+      "additionalProperties": false
+    },
+    "configuration": {
+      "type": "object",
+      "properties": {
+        "processing_profile": {
+          "type": "object"
+        },
+        "orchestration_flow": {
+          "type": "object"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/input"
+          }
+        },
+        "effective_indicators": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "code",
+              "version",
+              "role"
+            ]
+          }
+        },
+        "validation_rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        },
+        "indicator_configurations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "indicator_version_code",
+              "parameters"
+            ]
+          }
+        },
+        "dependency_edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "dependent",
+              "prerequisite"
+            ]
+          }
+        },
+        "formal_metadata": {
+          "type": "object"
+        },
+        "context_inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/input"
+          }
+        }
+      },
+      "required": [
+        "processing_profile",
+        "orchestration_flow",
+        "inputs"
+      ]
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "blocking_phase": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "path",
+          "message",
+          "blocking_phase"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "content_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "exported_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schema_version",
+    "mode",
+    "source",
+    "selection",
+    "contract",
+    "configuration",
+    "issues",
+    "content_digest",
+    "exported_at"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "asset": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "checksum": {
+          "$ref": "#/$defs/digest"
+        },
+        "role": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "bundle_manifest": {
+          "type": "object"
+        },
+        "download_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "version",
+        "checksum",
+        "role",
+        "required"
+      ]
+    },
+    "input": {
+      "type": "object",
+      "properties": {
+        "dataset_code": {
+          "type": "string"
+        },
+        "dataset_specification": {
+          "type": "object",
+          "required": [
+            "code",
+            "version"
+          ]
+        },
+        "input_flow": {
+          "type": "object",
+          "required": [
+            "code",
+            "version"
+          ]
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          }
+        },
+        "rule_bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rule_code",
+              "rule_version",
+              "import_policy",
+              "consumers"
+            ]
+          }
+        }
+      },
+      "required": [
+        "dataset_code",
+        "dataset_specification",
+        "input_flow",
+        "assets"
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "properties": {
+        "rule_code": {
+          "type": "string"
+        },
+        "rule_version": {
+          "type": "string"
+        },
+        "validation_type": {
+          "type": "string"
+        },
+        "language_version": {
+          "type": "string"
+        },
+        "definition": {
+          "type": "string"
+        },
+        "options": {
+          "type": "object"
+        },
+        "result_contract": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_code",
+        "rule_version",
+        "validation_type",
+        "language_version",
+        "definition",
+        "options",
+        "result_contract"
+      ]
+    }
+  }
+}

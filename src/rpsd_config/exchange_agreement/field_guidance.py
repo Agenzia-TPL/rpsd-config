@@ -192,6 +192,12 @@ FIELDS = {
         "disponibile. Config non esegue la validazione.",
         "Configurazione",
     ),
+    "revision_users": guide(
+        "Usato da queste revisioni",
+        "Revisioni che selezionano questo profilo. Le modifiche a un profilo "
+        "in bozza compaiono nel prossimo export delle revisioni draft collegate. "
+        "Gli snapshot approvati conservano il contenuto congelato.",
+    ),
     "profile_users": guide(
         "Utilizzato dai profili tecnici",
         "Versioni di profilo che selezionano questo processo. I collegamenti ai "
@@ -283,13 +289,16 @@ FIELDS = {
     ),
     "input_flow_version": guide(
         "Flusso di importazione",
-        "Flusso pubblicato per la versione del dataset selezionata. L’importazione e "
+        "Versione esatta del flusso per questo dataset: bozza o pubblicata durante "
+        "la preparazione, pubblicata prima dell’approvazione. L’importazione e "
         "la validazione del file avverranno nel servizio esterno.",
         "Processi e riferimenti",
     ),
     "orchestration_flow_version": guide(
         "Flusso di orchestrazione",
-        "Versione pubblicata del processo che coordina la lavorazione del profilo; "
+        "Versione esatta del processo che coordina il profilo. In preparazione può "
+        "essere in bozza; per pubblicare il profilo deve essere pubblicata. "
+        "Il flusso "
         "non attende implicitamente tutti i trasferimenti per validare un singolo "
         "file.",
         "Processi e riferimenti",
@@ -297,7 +306,8 @@ FIELDS = {
     "processing_profile_version": guide(
         "Versione del profilo tecnico",
         "Composizione versionata di input, flussi e indicatori ammessi. Selezionare "
-        "un profilo pubblicato per la revisione contrattuale.",
+        "anche un profilo in bozza con i permessi del catalogo e del contratto. "
+        "L’approvazione della revisione richiede un profilo pubblicato.",
         "Configurazione",
     ),
     "proposed_by_default": guide(
@@ -330,7 +340,9 @@ FIELDS = {
     ),
     "rule_version": guide(
         "Versione della regola",
-        "Definizione esatta pubblicata da applicare. Una bozza non è associabile; il "
+        "Definizione esatta da applicare. Nella composizione in bozza si può scegliere "
+        "una regola draft; prima di pubblicare il proprietario occorre pubblicarla. "
+        "Il "
         "riferimento viene congelato nella configurazione approvata.",
         "Configurazione",
     ),
@@ -384,7 +396,8 @@ FIELDS = {
     ),
     "prerequisite": guide(
         "Indicatore prerequisito (B)",
-        "Versione pubblicata di B usata da A. I parametri di B sono configurati "
+        "Versione esatta di B usata da A, anche draft durante la preparazione. Prima "
+        "di pubblicare A occorre pubblicare B. I parametri di B sono configurati "
         "separatamente nella revisione e non copiati da A.",
         "Configurazione",
     ),
@@ -1081,7 +1094,9 @@ OVERRIDES = {
     ),
     ("IndicatorVersionInput", "dataset_specification"): guide(
         "Input richiesto: versione del dataset",
-        "Dataset pubblicato necessario al calcolo anche se non ha regole. L’input "
+        "Versione dataset necessaria al calcolo anche senza regole, anche draft "
+        "durante la preparazione. Deve essere pubblicata prima dell’indicatore. "
+        "L’input "
         "viene ereditato dai dipendenti; non attendere tutti gli input per "
         "controllare il trasferimento corrente.",
     ),

@@ -141,7 +141,9 @@ def _validate_scalar(spec: dict, value, name: str, *, decimal_strings=False) -> 
         raise ValidationError(f"Parameter {name} is outside its bounds.")
 
 
-def validate_indicator_parameters(schema: dict, values: dict) -> None:
+def validate_indicator_parameters(
+    schema: dict, values: dict, *, partial: bool = False
+) -> None:
     """Check a revision's own values against its indicator's declared schema."""
     validate_parameter_schema(schema)
     if not isinstance(values, dict):
@@ -149,7 +151,7 @@ def validate_indicator_parameters(schema: dict, values: dict) -> None:
     if not schema:
         return
     props = schema.get("properties", {})
-    if set(schema.get("required", [])) - set(values):
+    if not partial and set(schema.get("required", [])) - set(values):
         raise ValidationError(
             "Required indicator parameters are missing.",
             code="missing_dependency_parameters",

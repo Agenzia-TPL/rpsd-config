@@ -2406,7 +2406,9 @@ def contract_revision_detail_page(
         selected_indicator_links = [
             link for link in indicator_links if link.pk in selected_indicator_ids
         ]
-        resolution = resolve_revision_inputs(profile, selected_indicator_links)
+        resolution = resolve_revision_inputs(
+            profile, selected_indicator_links, allow_drafts=revision.status == "draft"
+        )
         optional_rows = [
             {"link": item, "selected": item.pk in selected_input_ids}
             for item in resolution.optional_inputs
@@ -2439,6 +2441,12 @@ def contract_revision_detail_page(
     value_rows = []
     if revision.status == "draft":
         value_rows = revision_indicator_value_rows(revision)
+        if error_message and request.POST.get("action") == "save-indicator-values":
+            for row in value_rows:
+                if row["code"] == request.POST.get("indicator_version_code"):
+                    for value in row["values"]:
+                        if value["name"] in request.POST:
+                            value["json"] = request.POST[value["name"]]
     else:
         from rpsd_config.exchange_agreement.services.contract_revisions import (
             canonical_snapshot_checksum,

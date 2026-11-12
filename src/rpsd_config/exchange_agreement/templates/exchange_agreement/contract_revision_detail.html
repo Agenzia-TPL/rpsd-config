@@ -16,6 +16,7 @@
 {% if error_message %}{% include "includes/ui_alert.html" with alert_variant="danger" alert_message=error_message %}{% endif %}
 {% if success_message %}{% include "includes/ui_alert.html" with alert_variant="success" alert_message=success_message %}{% endif %}
 
+<p><a class="btn btn-outline-primary" href="{% url 'exchange_agreement:configuration-export' contract.contract_code revision.pk %}">Scarica JSON della configurazione salvata</a></p>
 <div class="row g-3">
   <div class="col-12 col-xl-8">
     <section class="card border-0 shadow-sm mb-3">

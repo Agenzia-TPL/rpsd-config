@@ -1,0 +1,19 @@
+{% extends base_template %}
+{% block content %}
+<h1>{{ title }} · {{ revision.code }}</h1>
+<p>Esporta soltanto i dati salvati. Le modifiche non salvate nei moduli non sono incluse.</p>
+<p><strong>{{ preview.mode }}</strong> · profilo {{ preview.source.profile_code }} · {{ preview.source.profile_status|default:"stato non conservato nello snapshot storico" }}.</p>
+{% if preview.mode == 'draft_preview' %}<p>Anteprima di bozza: non utilizzabile dalle API operative e non equivale a un’approvazione.</p>{% endif %}
+<p>Le modifiche al profilo condiviso compaiono al successivo export delle bozze. I dati congelati provengono dallo snapshot; l’anagrafica del contratto è corrente.</p>
+<form method="get"><input type="hidden" name="download" value="1"><input type="hidden" name="scope" value="revision"><button type="submit">Scarica JSON completo</button></form>
+<form method="get"><input type="hidden" name="download" value="1"><input type="hidden" name="scope" value="dataset">
+<label for="dataset-code">Dataset selezionato</label><select id="dataset-code" name="dataset_code" required>
+{% for input in preview.configuration.inputs %}<option value="{{ input.dataset_code }}">{{ input.dataset_code }} · {{ input.dataset_specification.code }}</option>{% endfor %}</select><button type="submit">Scarica JSON dataset</button></form>
+<form method="get"><input type="hidden" name="download" value="1"><input type="hidden" name="scope" value="indicator">
+<label for="indicator-code">Indicatore e prerequisiti</label><select id="indicator-code" name="indicator_version_code" required>
+{% for item in preview.configuration.effective_indicators %}<option value="{{ item.code }}">{{ item.code }} · {{ item.role }}</option>{% endfor %}</select><button type="submit">Scarica JSON indicatore</button></form>
+<h2>Problemi nella configurazione salvata ({{ preview.issues|length }})</h2>
+<ul>{% for issue in preview.issues %}<li><code>{{ issue.code }}</code> · {{ issue.path }}: {{ issue.message }} (fase: {{ issue.blocking_phase }})</li>{% empty %}<li>Nessun problema rilevato nell’export. L’approvazione richiede comunque i controlli del suo percorso.</li>{% endfor %}</ul>
+<p>Digest: <code>{{ preview.content_digest }}</code></p>
+{% if is_admin %}<p><a href="../change/">Torna alla revisione</a></p>{% else %}<p><a href="{% url 'exchange_agreement:contract-revision-detail' revision.contract.contract_code revision.pk %}">Torna alla revisione</a></p>{% endif %}
+{% endblock %}

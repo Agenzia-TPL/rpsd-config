@@ -154,18 +154,21 @@ class ValidationBindingsTests(TestCase):
         self.assertEqual(len(closure["versions"]), 4)
         self.assertEqual(len(closure["paths"][base.pk]), 2)
 
-    def test_self_reference_and_unpublished_prerequisite_are_rejected(self):
+    def test_self_reference_is_rejected_and_draft_prerequisite_blocks_publication(self):
         version = self.indicator("draft")
         with self.assertRaises(ValidationError):
             add_indicator_dependency(
                 dependent=version, prerequisite=version, actor=self.admin
             )
         other = self.indicator("other")
+        add_indicator_dependency(
+            dependent=version, prerequisite=other, actor=self.admin
+        )
+        self.assertTrue(IndicatorVersionDependency.objects.exists())
         with self.assertRaises(ValidationError):
-            add_indicator_dependency(
-                dependent=version, prerequisite=other, actor=self.admin
-            )
-        self.assertFalse(IndicatorVersionDependency.objects.exists())
+            publish_indicator_version(version, actor=self.admin)
+        version.refresh_from_db()
+        self.assertEqual(version.status, "draft")
 
     def draft_spec(self, version="003", dataset=None, file_format="xml"):
         return DatasetSpecification.objects.create(

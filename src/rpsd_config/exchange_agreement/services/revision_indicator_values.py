@@ -44,7 +44,8 @@ def save_revision_indicator_values(revision, *, version_code: str, values: dict,
         [
             c.processing_profile_indicator_version.indicator_version
             for c in selected.values()
-        ]
+        ],
+        allow_drafts=True,
     )
     version = next((v for v in closure["versions"] if v.code == version_code), None)
     if version is None:
@@ -77,7 +78,9 @@ def save_revision_indicator_values(revision, *, version_code: str, values: dict,
         values[field] = old
     for field in fields:
         validate_business_configuration(values[field], field_name=field)
-    validate_indicator_parameters(version.parameter_schema, values["parameters"])
+    validate_indicator_parameters(
+        version.parameter_schema, values["parameters"], partial=True
+    )
     for field in fields:
         setattr(config, field, values[field])
     config.save()
@@ -101,7 +104,8 @@ def revision_indicator_value_rows(revision) -> list[dict]:
         [
             c.processing_profile_indicator_version.indicator_version
             for c in selected.values()
-        ]
+        ],
+        allow_drafts=revision.status == "draft",
     )
     rows = []
     for version in closure["versions"]:

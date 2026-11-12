@@ -4,6 +4,10 @@ from django.contrib import admin
 from django.urls import path
 
 from rpsd_config.exchange_agreement.evaluation_views import indicator_evaluations_page
+from rpsd_config.exchange_agreement.export_views import (
+    configuration_export_page,
+    revision_asset_download,
+)
 
 from .technical_catalog_views import (
     technical_catalog_detail_page,
@@ -45,6 +49,16 @@ admin.site.index_title = "Admin"
 
 
 urlpatterns = [
+    path(
+        "me/contracts/<str:contract_code>/revisions/<int:revision_id>/export/",
+        configuration_export_page,
+        name="configuration-export",
+    ),
+    path(
+        "me/contracts/<str:contract_code>/revisions/<int:revision_id>/export-assets/<int:asset_id>/",
+        revision_asset_download,
+        name="revision-asset-download",
+    ),
     path(
         (
             "me/contracts/<str:contract_code>/revisions/<int:revi"

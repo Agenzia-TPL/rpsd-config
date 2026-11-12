@@ -3001,6 +3001,18 @@ class ContractRevisionIndicator(models.Model):
                 errors["processing_profile_indicator_version"] = _(
                     "The indicator version must belong to the revision profile."
                 )
+            from rpsd_config.exchange_agreement.services.parameter_schema import (
+                validate_indicator_parameters,
+            )
+
+            try:
+                validate_indicator_parameters(
+                    profile_link.indicator_version.parameter_schema,
+                    self.parameters,
+                    partial=True,
+                )
+            except ValidationError as exc:
+                errors["parameters"] = exc.messages
             duplicates = (
                 type(self)
                 .objects.filter(

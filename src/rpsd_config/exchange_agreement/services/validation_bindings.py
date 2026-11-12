@@ -90,7 +90,7 @@ def declare_indicator_input(*, indicator_version, specification, actor):
 
 
 def resolve_dataset_rules(
-    specification, indicator_versions, *, paths=None
+    specification, indicator_versions, *, paths=None, validate_bindings=True
 ) -> list[dict]:
     """Resolve import policies and distinct consumers without executing checks."""
     paths = paths or {}
@@ -99,7 +99,8 @@ def resolve_dataset_rules(
     for binding in specification.rule_bindings.select_related(
         "rule_version__rule", "rule_version__validation_type_version"
     ):
-        binding.full_clean()
+        if validate_bindings:
+            binding.full_clean()
         entries[binding.rule_version_id] = {
             "rule": serialize_validation_rule(binding.rule_version),
             "import_policy": binding.failure_policy,
@@ -109,7 +110,8 @@ def resolve_dataset_rules(
         for binding in version.rule_bindings.filter(
             dataset_specification=specification
         ).select_related("rule_version__rule", "rule_version__validation_type_version"):
-            binding.validate_complete()
+            if validate_bindings:
+                binding.validate_complete()
             entry = entries.setdefault(
                 binding.rule_version_id,
                 {

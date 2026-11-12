@@ -31,7 +31,7 @@ PUBLISHED_CHOICES = {
 
 
 def requires_published_choice(field):
-    """A newly created draft cannot be selected by these composition fields."""
+    """These relations require publication outside authorized draft authoring."""
     return (field.model._meta.concrete_model.__name__, field.name) in PUBLISHED_CHOICES
 
 
@@ -72,12 +72,15 @@ def relation_formfield(admin_object, field, request, kwargs):
 
 
 def apply_related_controls(field, formfield, request, site=None):
-    """Avoid offering a popup that only creates an ineligible draft."""
+    """Keep related controls consistent with the actor’s authoring permissions."""
     if formfield is None or not getattr(field, "remote_field", None):
         return formfield
-    if requires_published_choice(field) and hasattr(
-        formfield.widget, "can_add_related"
-    ):
+    from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
+
+    if (
+        requires_published_choice(field)
+        and not resolve_user_agency_scope(request.user).is_platform_admin
+    ) and hasattr(formfield.widget, "can_add_related"):
         formfield.widget.can_add_related = False
         if "Selezionare una versione pubblicata." not in str(formfield.help_text):
             formfield.help_text = format_html(

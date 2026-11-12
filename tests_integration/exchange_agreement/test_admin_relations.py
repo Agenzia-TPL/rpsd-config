@@ -74,7 +74,7 @@ class AdminRelatedCatalogTests(TestCase):
         self.client.force_login(self.staff)
         self.assertEqual(self.client.get(path).status_code, 403)
 
-    def test_autocomplete_keeps_published_only_and_denies_ordinary_staff(self):
+    def test_autocomplete_allows_authorized_drafts_and_denies_ordinary_staff(self):
         flows = []
         for index in range(2):
             flow = models.OrchestrationFlowVersion.objects.create(
@@ -97,7 +97,8 @@ class AdminRelatedCatalogTests(TestCase):
         response = self.client.get(reverse("admin:autocomplete"), query)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
-            [r["id"] for r in response.json()["results"]], [str(published.pk)]
+            [r["id"] for r in response.json()["results"]],
+            [str(flows[0].pk), str(published.pk)],
         )
         self.client.force_login(self.staff)
         self.assertEqual(

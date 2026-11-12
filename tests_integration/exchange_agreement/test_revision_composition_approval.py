@@ -4,7 +4,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
@@ -84,14 +84,13 @@ class RevisionCompositionApprovalTests(_ContractRevisionFixtureMixin, TestCase):
             description="Profile not yet approved by the platform.",
             orchestration_flow_version=(self.profile.orchestration_flow_version),
         )
-        with self.assertRaises(ContractRevisionValidationError) as raised:
+        with self.assertRaises(PermissionDenied):
             create_revision_draft(
                 self.contract,
                 draft_profile,
                 timezone.localdate(),
                 self.agency_user,
             )
-        self.assertEqual(raised.exception.code, "profile_not_published")
 
     def test_replace_derives_mandatory_inputs_and_is_atomic(self):
         revision = create_revision_draft(

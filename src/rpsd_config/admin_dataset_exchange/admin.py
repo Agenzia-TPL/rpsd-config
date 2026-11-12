@@ -21,6 +21,7 @@ from rpsd_config.admin_dataset_exchange.validation_admin import (
     IndicatorInputInline,
     register_validation_admin,
 )
+from rpsd_config.admin_draft_deletion import DraftDeletionAdminMixin
 from rpsd_config.admin_guidance import GuidedAdminMixin, GuidedInlineMixin
 from rpsd_config.exchange_agreement.asset_forms import ConfigurationAssetUploadForm
 from rpsd_config.exchange_agreement.models import (
@@ -156,6 +157,7 @@ class DatasetSpecificationAssetInline(GuidedInlineMixin, admin.TabularInline):
 
 @admin.register(DatasetSpecificationAdminProxy)
 class DatasetSpecificationAdmin(
+    DraftDeletionAdminMixin,
     _PlatformCatalogAdminMixin,
     _HumanReadableTimestampsMixin,
     admin.ModelAdmin,
@@ -264,6 +266,7 @@ class IndicatorAdmin(
 
 @admin.register(IndicatorVersionAdminProxy)
 class IndicatorVersionAdmin(
+    DraftDeletionAdminMixin,
     _PlatformCatalogAdminMixin,
     _HumanReadableTimestampsMixin,
     admin.ModelAdmin,
@@ -490,6 +493,7 @@ class IndicatorVersionStatusEventAdmin(
 
 
 class _FlowVersionAdminBase(
+    DraftDeletionAdminMixin,
     _PlatformCatalogAdminMixin,
     _HumanReadableTimestampsMixin,
     admin.ModelAdmin,
@@ -684,7 +688,7 @@ class ProcessingProfileInputFlowInline(GuidedInlineMixin, admin.TabularInline):
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "input_flow_version":
             kwargs["queryset"] = InputFlowVersion.objects.filter(
-                status=InputFlowVersion.Status.PUBLISHED
+                status__in=("draft", "published")
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
@@ -705,7 +709,7 @@ class ProcessingProfileIndicatorVersionInline(GuidedInlineMixin, admin.TabularIn
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "indicator_version":
             kwargs["queryset"] = IndicatorVersion.objects.filter(
-                status=IndicatorVersion.Status.PUBLISHED
+                status__in=("draft", "published")
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
@@ -721,6 +725,7 @@ class ProcessingProfileIndicatorVersionInline(GuidedInlineMixin, admin.TabularIn
 
 @admin.register(ProcessingProfileVersionAdminProxy)
 class ProcessingProfileVersionAdmin(
+    DraftDeletionAdminMixin,
     _PlatformCatalogAdminMixin,
     _HumanReadableTimestampsMixin,
     admin.ModelAdmin,
@@ -742,6 +747,7 @@ class ProcessingProfileVersionAdmin(
         "published_at",
         "created_at_human",
         "updated_at_human",
+        "revision_users",
     )
     inlines = (
         ProcessingProfileInputFlowInline,
@@ -749,10 +755,33 @@ class ProcessingProfileVersionAdmin(
     )
     actions = ("publish_selected", "deprecate_selected", "withdraw_selected")
 
+    @admin.display(description="Usato da queste revisioni")
+    def revision_users(self, obj):
+        from django.utils.html import format_html_join
+
+        return format_html_join(
+            " · ",
+            '<a href="{}">{} ({})</a>',
+            (
+                (
+                    reverse(
+                        "admin:admin_agreements_contractconfigurationrevisionadminproxy_change",
+                        args=[revision.pk],
+                    ),
+                    revision.code,
+                    revision.status,
+                )
+                for revision in obj.contract_revisions.order_by("code")
+            ),
+        ) or (
+            "Nessuna revisione. Le modifiche al profilo cambiano "
+            "le anteprime delle bozze collegate."
+        )
+
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "orchestration_flow_version":
             kwargs["queryset"] = OrchestrationFlowVersion.objects.filter(
-                status=OrchestrationFlowVersion.Status.PUBLISHED
+                status__in=("draft", "published")
             )
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 

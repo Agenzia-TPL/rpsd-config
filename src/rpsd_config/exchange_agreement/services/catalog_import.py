@@ -8,6 +8,7 @@ from django.contrib.admin.models import ADDITION, LogEntry
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.http import Http404
 
 from rpsd_config.exchange_agreement import models as domain
 from rpsd_config.exchange_agreement.services.catalog_contract import (
@@ -105,6 +106,7 @@ class CatalogPlan:
                     self.fail(
                         key, "Identità occupata con contenuto differente.", field=field
                     )
+            self.candidates[cache_key] = found
             self.report["operations"].append(
                 {
                     "action": "reuse",
@@ -237,7 +239,7 @@ def plan_catalog(package: CatalogPackage, *, actor) -> CatalogPlan:
                 )
             try:
                 load_configuration_asset_content(assets[0])
-            except ValidationError as exc:
+            except (ValidationError, Http404) as exc:
                 plan.fail(item.code, str(exc), action="unresolved")
             plan.stage(
                 domain.DatasetSpecificationAsset,
@@ -619,6 +621,15 @@ def apply_catalog(package: CatalogPackage, *, actor) -> dict:
     require_catalog_admin(actor)
     lock_indicator_graph()
     plan = plan_catalog(package, actor=actor)
+    return apply_catalog_plan(plan, actor=actor)
+
+
+def apply_catalog_plan(plan, *, actor):
+    """Apply an already locked plan, also usable by the authorized demo seed."""
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError("A catalog plan requires a locked atomic transaction.")
+    require_catalog_admin(actor)
+    package = plan.package
     for obj in plan.pending:
         for field in obj._meta.fields:
             if field.is_relation:
