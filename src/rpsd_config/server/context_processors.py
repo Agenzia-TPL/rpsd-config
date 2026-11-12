@@ -7,7 +7,6 @@ from django.urls import NoReverseMatch, reverse
 from rpsd_config.exchange_agreement.models import ContractMembership
 from rpsd_config.exchange_agreement.rbac import resolve_user_agency_scope
 
-
 _ACTIVE_SECTION_BY_URL_NAME = {
     "user-area": "user",
     "user-area-legacy": "user",
@@ -250,9 +249,7 @@ def navigation_context(request):
             or user.is_superuser
             or bool(agency_scope.admin_agency_keys)
         )
-        has_contract_memberships = ContractMembership.objects.filter(
-            user=user
-        ).exists()
+        has_contract_memberships = ContractMembership.objects.filter(user=user).exists()
 
     nav_items = [
         {

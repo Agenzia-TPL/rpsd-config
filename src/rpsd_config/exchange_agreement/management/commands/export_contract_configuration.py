@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: EUPL-1.2
 """Export one authorized saved contract revision, optionally with its assets."""
 
+import json
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
@@ -35,6 +36,7 @@ class Command(BaseCommand):
         parser.add_argument("--output", type=Path)
         parser.add_argument("--handoff-dir", type=Path)
         parser.add_argument("--include-assets", action="store_true")
+        parser.add_argument("--seed-manifest", type=Path)
 
     def handle(self, *args, **options):
         try:
@@ -61,6 +63,11 @@ class Command(BaseCommand):
                     **common,
                     directory=options["handoff_dir"],
                     include_assets=options["include_assets"],
+                    seed_manifest=(
+                        json.loads(options["seed_manifest"].read_text())
+                        if options["seed_manifest"]
+                        else None
+                    ),
                 )
                 self.stdout.write(json_text(report))
                 if not report["complete"]:
@@ -69,8 +76,10 @@ class Command(BaseCommand):
                         "i JSON diagnostici sono conservati."
                     )
             else:
-                if options["include_assets"]:
-                    raise CommandError("--include-assets richiede --handoff-dir.")
+                if options["include_assets"] or options["seed_manifest"]:
+                    raise CommandError(
+                        "--include-assets/--seed-manifest richiedono --handoff-dir."
+                    )
                 payload = export_contract_configuration(
                     **common,
                     **{
@@ -91,6 +100,7 @@ class Command(BaseCommand):
             ConfigurationExportError,
             Http404,
             OSError,
+            ValueError,
         ) as exc:
             raise CommandError(
                 str(exc) or "Attore o revisione non disponibili."

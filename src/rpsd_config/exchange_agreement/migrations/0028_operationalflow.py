@@ -46,10 +46,7 @@ class Migration(migrations.Migration):
                                     "^[a-z0-9][a-z0-9-]*_[0-9]{3}"
                                     "(?:[a-z0-9-]*)?$."
                                 ),
-                                regex=(
-                                    "^[a-z0-9][a-z0-9-]*_[0-9]{3}"
-                                    "(?:[a-z0-9-]*)?$"
-                                ),
+                                regex=("^[a-z0-9][a-z0-9-]*_[0-9]{3}(?:[a-z0-9-]*)?$"),
                             )
                         ],
                     ),
@@ -98,7 +95,9 @@ class Migration(migrations.Migration):
                 "verbose_name_plural": "Operational flows",
                 "ordering": ["supported_what", "code"],
                 "indexes": [
-                    models.Index(fields=["status"], name="exchange_ag_status_8c0478_idx"),
+                    models.Index(
+                        fields=["status"], name="exchange_ag_status_8c0478_idx"
+                    ),
                     models.Index(
                         fields=["supported_what"],
                         name="exchange_ag_support_1da89f_idx",

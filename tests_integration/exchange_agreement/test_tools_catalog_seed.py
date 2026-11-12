@@ -48,6 +48,8 @@ class ToolsCatalogSeedTests(TestCase):
         self,
     ):
         before = list(models.DatasetSpecification.objects.values())
+        before_rules = models.ValidationRuleVersion.objects.count()
+        before_bindings = models.DatasetVersionRule.objects.count()
         output = io.StringIO()
         call_command("seed_tools_catalog", actor=self.actor.username, stdout=output)
         self.assertFalse(models.IndicatorVersion.objects.exists())
@@ -61,6 +63,26 @@ class ToolsCatalogSeedTests(TestCase):
             models.ConfigurationAsset.objects.count(),
         )
         self.assertEqual(counts[0], 14)
+        self.assertEqual(counts[1] - before_rules, 67)
+        self.assertEqual(
+            models.DatasetVersionRule.objects.count() - before_bindings, 57
+        )
+        self.assertEqual(models.IndicatorVersionRule.objects.count(), 111)
+        python_rule = models.ValidationRuleVersion.objects.get(
+            validation_type_version__validation_type="python"
+        )
+        self.assertEqual(python_rule.language_version, "0.3.0")
+        self.assertEqual(python_rule.options, {"python_version": "3.13"})
+        self.assertEqual(python_rule.version, "1")
+        self.assertEqual(
+            models.ValidationRuleVersion.objects.filter(version="2").count(), 5
+        )
+        line_rules = models.IndicatorVersionRule.objects.filter(impact="dimension")
+        self.assertEqual(line_rules.count(), 3)
+        self.assertEqual(
+            set(line_rules.values_list("affected_dimensions__code", flat=True)),
+            {"linea"},
+        )
         self.assertFalse(
             models.IndicatorVersion.objects.exclude(status="draft").exists()
         )
@@ -68,7 +90,7 @@ class ToolsCatalogSeedTests(TestCase):
         self.assertEqual(fid.definition_kind, "composite")
         self.assertEqual(fid.formula_value_kind, "number")
         self.assertEqual(verification_state(fid), "current")
-        self.assertTrue(fid.formal_verification["limitations"])
+        self.assertFalse(fid.formal_verification["limitations"])
         self.assertEqual(
             set(
                 fid.dependency_links.values_list(
@@ -88,12 +110,14 @@ class ToolsCatalogSeedTests(TestCase):
         )
         self.assertIn("CORSE_PDE", confirmed.formal_verification["context_bindings"])
         self.assertEqual(verification_state(confirmed), "current")
-        for code in ("siri-pt_v003", "siri-et_v003"):
+        for code in ("siri-pt_v004", "siri-et_v004"):
             spec = models.DatasetSpecification.objects.get(code=code)
             self.assertEqual(
                 spec.asset_links.get().configuration_asset_id, self.siri.pk
             )
-            self.assertEqual(spec.rule_bindings.count(), 2)
+            self.assertEqual(
+                spec.rule_bindings.count(), 12 if spec.dataset.code == "siri-pt" else 18
+            )
         call_command(
             "seed_tools_catalog", actor=self.actor.username, apply=True, stdout=output
         )
@@ -124,12 +148,10 @@ class ToolsCatalogSeedTests(TestCase):
         directory = (
             Path(__file__).resolve().parents[2] / "src/rpsd_config/exchange_agreement"
         )
-        package = load_package(
-            (directory / "seed_data/tools_v020/catalog.json").read_text()
-        )
-        self.assertEqual(len(package.selection.exclusions), 12)
+        package = load_package((directory / "seed_data/tools/catalog.json").read_text())
+        self.assertEqual(len(package.selection.exclusions), 0)
         schema = json.loads(
-            (directory / "contracts/config-catalog-import-v1.schema.json").read_text()
+            (directory / "contracts/config-catalog-import-v2.schema.json").read_text()
         )
         for key in ("$schema", "$id"):
             schema.pop(key)

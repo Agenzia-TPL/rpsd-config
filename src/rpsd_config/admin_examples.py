@@ -74,7 +74,41 @@ CORSE_BUNDLE_MANIFEST = {
     ],
 }
 
+_PASSING_TIME_PATH = (
+    "//netex:ServiceJourney/netex:passingTimes/netex:TimetabledPassingTime"
+)
+_PATTERN_POINT_PATH = (
+    "//netex:ServiceJourneyPattern/netex:pointsInSequence/"
+    "netex:StopPointInJourneyPattern"
+)
+
 RULE_EXAMPLES = (
+    {
+        "validation_type": "python",
+        "language_version": "0.3.0",
+        "definition": json.dumps(
+            {
+                "function": "netex_passing_times_increasing",
+                "paths": [
+                    "//netex:ServiceJourney/netex:ServiceJourneyPatternRef/@ref",
+                    _PASSING_TIME_PATH + "/netex:StopPointInJourneyPatternRef/@ref",
+                    _PASSING_TIME_PATH + "/netex:ArrivalTime",
+                    _PASSING_TIME_PATH + "/netex:DepartureTime",
+                    _PASSING_TIME_PATH + "/netex:ArrivalDayOffset",
+                    _PASSING_TIME_PATH + "/netex:DepartureDayOffset",
+                    "//netex:ServiceJourneyPattern/@id",
+                    _PATTERN_POINT_PATH + "/@id",
+                    _PATTERN_POINT_PATH + "/@order",
+                ],
+                "namespaces": {"netex": "http://www.netex.org.uk/netex"},
+                "definition_sha256": (
+                    "37ecb256d27d5754611fad428b1061fc922c45e8e56feae62157884135996200"
+                ),
+            }
+        ),
+        "options": {"python_version": "3.13"},
+        "result_contract": "violating_entities",
+    },
     {
         "validation_type": "dbt",
         "language_version": "1",

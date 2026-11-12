@@ -14,8 +14,10 @@ def resolve_default_m2m_client_id(
     environment: str | None = None,
 ) -> str:
     env = (
-        environment or getattr(settings, "M2M_DEFAULT_ENVIRONMENT", "prod")
-    ).strip().lower()
+        (environment or getattr(settings, "M2M_DEFAULT_ENVIRONMENT", "prod"))
+        .strip()
+        .lower()
+    )
     existing = (
         IntegrationPrincipal.objects.filter(company=company, environment=env)
         .order_by("id")
@@ -31,7 +33,5 @@ def resolve_default_m2m_client_id(
     if not IntegrationPrincipal.objects.filter(keycloak_client_id=candidate).exists():
         return candidate
 
-    digest = hashlib.sha1(
-        f"{company.pk}:{company.name}:{env}".encode("utf-8")
-    ).hexdigest()[:8]
+    digest = hashlib.sha1(f"{company.pk}:{company.name}:{env}".encode()).hexdigest()[:8]
     return f"{base}-{suffix}-{digest}".lower()

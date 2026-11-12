@@ -26,10 +26,10 @@ classifiers = [
 keywords = ["django", "web", "framework"]
 
 dependencies = [
-    "rpsd-core==0.3.0",
+    "rpsd-core==0.4.0",
     "rpsd-storage",
     "rpsd-transport[rabbitmq]",
-    "django[gis]>=5.2.0",  # ---> rimuovo "django>=5.2.0",
+    "django>=5.2.0",  # GIS is included in Django; native libraries are in Dockerfile.
     "psycopg[binary]>=3.1.0",    # Environment variables
     "pillow>=10.0.0",          # Image processing
     "pydantic-settings>=2.12.0",

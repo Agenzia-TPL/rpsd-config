@@ -215,7 +215,9 @@ class AgencyInvitationApiAndOnboardingTests(TestCase):
             self.client.session.get("onboarding_invitation_token"),
             str(invitation.token),
         )
-        self.assertEqual(self.client.session.get("onboarding_invitation_kind"), "agency")
+        self.assertEqual(
+            self.client.session.get("onboarding_invitation_kind"), "agency"
+        )
         self.assertEqual(
             self.client.session.get("prepared_invitation_credentials_token"),
             str(invitation.token),

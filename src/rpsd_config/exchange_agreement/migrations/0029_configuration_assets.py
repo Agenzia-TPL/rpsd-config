@@ -47,7 +47,12 @@ class Migration(migrations.Migration):
                         max_length=32,
                     ),
                 ),
-                ("what", models.CharField(blank=True, db_index=True, default="", max_length=64)),
+                (
+                    "what",
+                    models.CharField(
+                        blank=True, db_index=True, default="", max_length=64
+                    ),
+                ),
                 ("label", models.CharField(blank=True, default="", max_length=128)),
                 ("version", models.PositiveIntegerField(default=1)),
                 (
@@ -66,9 +71,15 @@ class Migration(migrations.Migration):
                 ("is_active", models.BooleanField(db_index=True, default=False)),
                 ("storage_url", models.CharField(max_length=1024)),
                 ("storage_provider", models.CharField(max_length=32)),
-                ("storage_key", models.CharField(blank=True, default="", max_length=512)),
+                (
+                    "storage_key",
+                    models.CharField(blank=True, default="", max_length=512),
+                ),
                 ("original_filename", models.CharField(max_length=255)),
-                ("content_type", models.CharField(blank=True, default="", max_length=128)),
+                (
+                    "content_type",
+                    models.CharField(blank=True, default="", max_length=128),
+                ),
                 ("checksum_sha256", models.CharField(db_index=True, max_length=64)),
                 ("size_bytes", models.PositiveBigIntegerField(default=0)),
                 (
@@ -78,9 +89,18 @@ class Migration(migrations.Migration):
                         default=django.utils.timezone.now,
                     ),
                 ),
-                ("activated_at", models.DateTimeField(blank=True, db_index=True, null=True)),
-                ("archived_at", models.DateTimeField(blank=True, db_index=True, null=True)),
-                ("publish_status", models.CharField(blank=True, default="", max_length=16)),
+                (
+                    "activated_at",
+                    models.DateTimeField(blank=True, db_index=True, null=True),
+                ),
+                (
+                    "archived_at",
+                    models.DateTimeField(blank=True, db_index=True, null=True),
+                ),
+                (
+                    "publish_status",
+                    models.CharField(blank=True, default="", max_length=16),
+                ),
                 ("last_publish_error", models.TextField(blank=True, default="")),
                 (
                     "activated_by",
@@ -158,7 +178,10 @@ class Migration(migrations.Migration):
                 ),
                 ("attempts", models.PositiveIntegerField(default=0)),
                 ("last_error", models.TextField(blank=True, default="")),
-                ("published_at", models.DateTimeField(blank=True, db_index=True, null=True)),
+                (
+                    "published_at",
+                    models.DateTimeField(blank=True, db_index=True, null=True),
+                ),
                 (
                     "asset",
                     models.ForeignKey(

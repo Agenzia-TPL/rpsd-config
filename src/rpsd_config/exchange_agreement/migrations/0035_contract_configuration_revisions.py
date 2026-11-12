@@ -155,8 +155,14 @@ class Migration(migrations.Migration):
                 ),
                 ("configuration_snapshot", models.JSONField(blank=True, default=dict)),
                 ("snapshot_checksum", models.CharField(blank=True, max_length=71)),
-                ("approved_at", models.DateTimeField(blank=True, db_index=True, null=True)),
-                ("withdrawn_at", models.DateTimeField(blank=True, db_index=True, null=True)),
+                (
+                    "approved_at",
+                    models.DateTimeField(blank=True, db_index=True, null=True),
+                ),
+                (
+                    "withdrawn_at",
+                    models.DateTimeField(blank=True, db_index=True, null=True),
+                ),
                 (
                     "approved_by",
                     models.ForeignKey(
@@ -217,7 +223,11 @@ class Migration(migrations.Migration):
             options={
                 "verbose_name": "Contract configuration revision",
                 "verbose_name_plural": "Contract configuration revisions",
-                "ordering": ["contract__contract_code", "valid_from", "revision_number"],
+                "ordering": [
+                    "contract__contract_code",
+                    "valid_from",
+                    "revision_number",
+                ],
                 "indexes": [
                     models.Index(
                         fields=["contract", "status", "valid_from"],

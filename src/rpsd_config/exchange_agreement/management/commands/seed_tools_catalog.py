@@ -19,13 +19,10 @@ class Command(BaseCommand):
         parser.add_argument("--apply", action="store_true")
         parser.add_argument("--report", type=Path)
         parser.add_argument("--dbt-contexts-only", action="store_true")
+        parser.add_argument("--scenario")
 
     def handle(self, *args, **options):
-        seed = (
-            "tools_v030/dbt-contexts.json"
-            if options["dbt_contexts_only"]
-            else "tools_v020/catalog.json"
-        )
+        seed = "tools/catalog.json"
         path = Path(__file__).resolve().parents[2] / "seed_data" / seed
         call_command(
             "import_tools_catalog",
@@ -33,6 +30,8 @@ class Command(BaseCommand):
             actor=options["actor"],
             apply=options["apply"],
             report=options["report"],
+            dbt_contexts_only=options["dbt_contexts_only"],
+            scenario=options["scenario"],
             stdout=self.stdout,
             stderr=self.stderr,
         )

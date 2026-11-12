@@ -35,7 +35,10 @@ class Migration(migrations.Migration):
                 ),
                 ("updated_at", models.DateTimeField(auto_now=True, db_index=True)),
                 ("name", models.CharField(max_length=128)),
-                ("environment", models.CharField(db_index=True, default="prod", max_length=8)),
+                (
+                    "environment",
+                    models.CharField(db_index=True, default="prod", max_length=8),
+                ),
                 ("keycloak_client_id", models.CharField(max_length=255, unique=True)),
                 (
                     "keycloak_client_uuid",
@@ -81,8 +84,14 @@ class Migration(migrations.Migration):
                 "verbose_name": "Integration principal",
                 "verbose_name_plural": "Integration principals",
                 "indexes": [
-                    models.Index(fields=["company", "environment"], name="exchange_ag_company_09bbf6_idx"),
-                    models.Index(fields=["company", "status"], name="exchange_ag_company_ec5e2b_idx"),
+                    models.Index(
+                        fields=["company", "environment"],
+                        name="exchange_ag_company_09bbf6_idx",
+                    ),
+                    models.Index(
+                        fields=["company", "status"],
+                        name="exchange_ag_company_ec5e2b_idx",
+                    ),
                 ],
                 "constraints": [
                     models.UniqueConstraint(

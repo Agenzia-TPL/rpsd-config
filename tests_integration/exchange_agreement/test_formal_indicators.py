@@ -96,22 +96,13 @@ class FormalIndicatorTests(TestCase):
         )
         self.package = generic_package()
 
-    def test_supported_previous_core_provenance_preserves_semantic_freshness(self):
+    def test_current_core_proof_rejects_an_unrecognized_commit(self):
         from django.db import models as orm
-
-        from rpsd_config.exchange_agreement.services.formal_definitions import (
-            CORE_RELEASES,
-        )
 
         apply_catalog(self.package, actor=self.actor)
         version = IndicatorVersion.objects.get(code="base_001")
-        proof = dict(version.formal_verification)
-        proof.update(core_version="0.2.0", core_commit=CORE_RELEASES["0.2.0"])
-        orm.QuerySet.update(
-            IndicatorVersion.objects.filter(pk=version.pk), formal_verification=proof
-        )
-        version.refresh_from_db()
         self.assertEqual(verification_state(version), "current")
+        proof = dict(version.formal_verification)
         proof["core_commit"] = "0" * 40
         orm.QuerySet.update(
             IndicatorVersion.objects.filter(pk=version.pk), formal_verification=proof

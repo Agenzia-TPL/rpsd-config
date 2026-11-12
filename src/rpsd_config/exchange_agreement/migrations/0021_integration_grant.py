@@ -43,9 +43,18 @@ class Migration(migrations.Migration):
                         max_length=64,
                     ),
                 ),
-                ("data_category", models.CharField(blank=True, max_length=64, null=True)),
-                ("valid_from", models.DateTimeField(blank=True, db_index=True, null=True)),
-                ("valid_to", models.DateTimeField(blank=True, db_index=True, null=True)),
+                (
+                    "data_category",
+                    models.CharField(blank=True, max_length=64, null=True),
+                ),
+                (
+                    "valid_from",
+                    models.DateTimeField(blank=True, db_index=True, null=True),
+                ),
+                (
+                    "valid_to",
+                    models.DateTimeField(blank=True, db_index=True, null=True),
+                ),
                 (
                     "status",
                     models.CharField(

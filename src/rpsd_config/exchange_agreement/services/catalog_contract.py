@@ -10,8 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from rpsd_config.exchange_agreement.services.formal_definitions import (
     CORE_COMMIT,
-    CORE_RELEASES,
     LANGUAGE_VERSION,
+    SUPPORTED_CORE_VERSION,
     analyze_records,
     core_version,
     digest,
@@ -24,15 +24,21 @@ class CatalogRecord(BaseModel):
 
 class Producer(CatalogRecord):
     name: Literal["rpsd-config-tools-adapter"] = "rpsd-config-tools-adapter"
-    version: Literal["1"] = "1"
-    core_version: Literal["0.2.0", "0.3.0"] = core_version
+    version: Literal["2"] = "2"
+    core_version: str = core_version
     core_commit: str = CORE_COMMIT
     language_version: Literal[LANGUAGE_VERSION] = LANGUAGE_VERSION
 
     @model_validator(mode="after")
     def check_release(self):
-        if CORE_RELEASES[self.core_version] != self.core_commit:
-            raise ValueError("Versione e commit del core non coerenti.")
+        if (
+            self.core_version != SUPPORTED_CORE_VERSION
+            or self.core_commit != CORE_COMMIT
+        ):
+            raise ValueError(
+                f"Usare Core {SUPPORTED_CORE_VERSION} sul commit corrente "
+                "e rigenerare il pacchetto."
+            )
         return self
 
 
@@ -141,6 +147,35 @@ class CatalogRule(CatalogRecord):
     artifact_identifier: Literal[""] = ""
 
 
+class RuleSource(CatalogRecord):
+    """Import provenance, independent from the persisted validation definition."""
+
+    rule_code: str
+    rule_version: str
+    origin: Literal["tools", "config"]
+    source_code: str = ""
+    source_version: int | None = Field(default=None, gt=0)
+    fingerprint: str = ""
+
+    @model_validator(mode="after")
+    def check_source(self):
+        import re
+
+        if self.origin == "tools" and (
+            not self.source_code
+            or self.source_version is None
+            or not re.fullmatch(r"[a-f0-9]{64}", self.fingerprint)
+        ):
+            raise ValueError(
+                "Provenienza Tools incompleta: codice, versione e impronta."
+            )
+        if self.origin == "config" and (
+            self.source_code or self.source_version is not None or self.fingerprint
+        ):
+            raise ValueError("Una regola Config non ha una provenienza Tools.")
+        return self
+
+
 class DatasetRuleRecord(CatalogRecord):
     specification: str
     rule_code: str
@@ -168,7 +203,7 @@ class ProfileTemplate(CatalogRecord):
 
 
 class CatalogPackage(CatalogRecord):
-    schema_version: Literal["config-catalog-import-v1"] = "config-catalog-import-v1"
+    schema_version: Literal["config-catalog-import-v2"] = "config-catalog-import-v2"
     producer: Producer = Field(default_factory=Producer)
     sources: list[CatalogSource]
     selection: CatalogSelection
@@ -177,11 +212,26 @@ class CatalogPackage(CatalogRecord):
     dependencies: list[CatalogDependency]
     dataset_bindings: list[CatalogDataset] = Field(default_factory=list)
     rule_versions: list[CatalogRule] = Field(default_factory=list)
+    rule_sources: list[RuleSource] = Field(default_factory=list)
     dataset_rules: list[DatasetRuleRecord] = Field(default_factory=list)
     indicator_rules: list[IndicatorRuleRecord] = Field(default_factory=list)
     profile_templates: list[ProfileTemplate] = Field(default_factory=list)
     analysis: dict
     package_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def check_rule_sources(self):
+        keys = {(r.code, r.version) for r in self.rule_versions}
+        source_keys = [(r.rule_code, r.rule_version) for r in self.rule_sources]
+        if len(keys) != len(self.rule_versions) or len(source_keys) != len(
+            set(source_keys)
+        ):
+            raise ValueError("Identità/versioni regola duplicate.")
+        if keys != set(source_keys):
+            raise ValueError(
+                "Ogni regola richiede una sola provenienza corrispondente."
+            )
+        return self
 
 
 def package_payload(package: CatalogPackage) -> dict:
@@ -210,9 +260,12 @@ def load_package(content: str) -> CatalogPackage:
     def nonfinite(value):
         raise ValueError(f"Non-finite JSON number: {value}")
 
-    package = CatalogPackage.model_validate(
-        json.loads(content, object_pairs_hook=unique, parse_constant=nonfinite)
-    )
+    payload = json.loads(content, object_pairs_hook=unique, parse_constant=nonfinite)
+    if not isinstance(payload, dict) or payload.get("schema_version") != (
+        "config-catalog-import-v2"
+    ):
+        raise ValueError("Formato catalogo superato: rigenerare il pacchetto v2.")
+    package = CatalogPackage.model_validate(payload)
     if digest(package_payload(package)) != package.package_digest:
         raise ValueError("Catalog package digest mismatch.")
     return package
@@ -293,3 +346,28 @@ def analyze_package(package: CatalogPackage) -> dict:
         analyzed = analyze_records(sorted(collected.values(), key=lambda r: r["code"]))
         output[record["code"]] = analyzed["indicators"][record["code"]]
     return {"schema_version": "indicator-formal-analysis-v1", "indicators": output}
+
+
+def documentary_package(package: CatalogPackage) -> CatalogPackage:
+    """Project global contexts from the one current catalog without DB dependencies."""
+    rules = [r for r in package.rule_versions if r.validation_type == "dbt"]
+    keys = {(r.code, r.version) for r in rules}
+    projected = seal_package(
+        {
+            "sources": [s.model_dump() for s in package.sources],
+            "selection": {"roots": []},
+            "dimensions": [],
+            "indicator_versions": [],
+            "dependencies": [],
+            "analysis": {},
+            "rule_versions": [r.model_dump() for r in rules],
+            "rule_sources": [
+                r.model_dump()
+                for r in package.rule_sources
+                if (r.rule_code, r.rule_version) in keys
+            ],
+        }
+    )
+    return seal_package(
+        {**package_payload(projected), "analysis": analyze_package(projected)}
+    )

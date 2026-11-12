@@ -1,0 +1,299 @@
+{
+  "dataset_rules": [
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-netex-lev5-xsd",
+      "rule_version": "1",
+      "specification": "netex-it-lev5_004"
+    },
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-siri-2-2-1-xsd",
+      "rule_version": "1",
+      "specification": "siri-pt_v004"
+    },
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-siri-pt-service",
+      "rule_version": "1",
+      "specification": "siri-pt_v004"
+    },
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-siri-2-2-1-xsd",
+      "rule_version": "1",
+      "specification": "siri-et_v004"
+    },
+    {
+      "failure_policy": "reject_import",
+      "rule_code": "tools-siri-et-service",
+      "rule_version": "1",
+      "specification": "siri-et_v004"
+    }
+  ],
+  "datasets": [
+    {
+      "assets": [
+        {
+          "code": "netex-it-lev5-schema",
+          "required": true,
+          "role": "validation_schema",
+          "sha256": "025b31af23d04f672488eef7c1d70867af4ca4d8d40e57c6ebd4b14fa45e9f2f",
+          "version": 1
+        }
+      ],
+      "code": "netex-it-lev5_004",
+      "create": true,
+      "dataset_code": "netex",
+      "dataset_name": "NeTEx",
+      "description": "NeTEx: specifica del catalogo Tools 0.4.0.",
+      "format": "xml",
+      "metadata": {
+        "source_commit": "cecb0cde1820650af1d7b829107bef1ee8635ed7",
+        "source_repository": "https://github.com/5Tsrl/netex-italian-profile",
+        "standard": "NeTEx",
+        "standard_version": "IT-Lev5"
+      },
+      "source_dataset": "NETEX",
+      "source_schema": "netex-it-lev5@cecb0cd",
+      "version": "004"
+    },
+    {
+      "assets": [
+        {
+          "code": "siri-2-2-1-schema",
+          "required": true,
+          "role": "validation_schema",
+          "sha256": "6820a7bb73e334a4b98af940fcf4021ff97a8a950b942cad8b2b14762092ac6f",
+          "version": 1
+        }
+      ],
+      "code": "siri-pt_v004",
+      "create": true,
+      "dataset_code": "siri-pt",
+      "dataset_name": "SIRI PT",
+      "description": "SIRI PT: specifica del catalogo Tools 0.4.0.",
+      "format": "xml",
+      "metadata": {
+        "source_commit": "06b5aa632300985c117c485a3298320fd2b9b51d",
+        "source_repository": "https://github.com/SIRI-CEN/SIRI",
+        "standard": "SIRI",
+        "standard_version": "2.2.1"
+      },
+      "source_dataset": "SIRI-PT",
+      "source_schema": "siri@v2.2.1",
+      "version": "004"
+    },
+    {
+      "assets": [
+        {
+          "code": "siri-2-2-1-schema",
+          "required": true,
+          "role": "validation_schema",
+          "sha256": "6820a7bb73e334a4b98af940fcf4021ff97a8a950b942cad8b2b14762092ac6f",
+          "version": 1
+        }
+      ],
+      "code": "siri-et_v004",
+      "create": true,
+      "dataset_code": "siri-et",
+      "dataset_name": "SIRI ET",
+      "description": "SIRI ET: specifica del catalogo Tools 0.4.0.",
+      "format": "xml",
+      "metadata": {
+        "source_commit": "06b5aa632300985c117c485a3298320fd2b9b51d",
+        "source_repository": "https://github.com/SIRI-CEN/SIRI",
+        "standard": "SIRI",
+        "standard_version": "2.2.1"
+      },
+      "source_dataset": "SIRI-ET",
+      "source_schema": "siri@v2.2.1",
+      "version": "004"
+    }
+  ],
+  "extra_rules": [
+    {
+      "code": "tools-netex-lev5-xsd",
+      "definition": "{\"asset_code\": \"netex-it-lev5-schema\", \"asset_version\": \"1\", \"bundle_sha256\": \"025b31af23d04f672488eef7c1d70867af4ca4d8d40e57c6ebd4b14fa45e9f2f\", \"entrypoint\": \"NeTEx_publication_Lev5.xsd\"}",
+      "description": "Validazione strutturale tramite bundle condiviso. Deployment esterno da configurare.",
+      "language_version": "1.0",
+      "name": "Schema XSD NeTEx Lev5",
+      "result_contract": "structured_report",
+      "validation_type": "xsd_bundle",
+      "version": "1"
+    },
+    {
+      "code": "tools-siri-2-2-1-xsd",
+      "definition": "{\"asset_code\": \"siri-2-2-1-schema\", \"asset_version\": \"1\", \"bundle_sha256\": \"6820a7bb73e334a4b98af940fcf4021ff97a8a950b942cad8b2b14762092ac6f\", \"entrypoint\": \"siri.xsd\"}",
+      "description": "Validazione strutturale tramite bundle condiviso. Deployment esterno da configurare.",
+      "language_version": "1.0",
+      "name": "Schema XSD SIRI 2.2.1",
+      "result_contract": "structured_report",
+      "validation_type": "xsd_bundle",
+      "version": "1"
+    },
+    {
+      "code": "tools-siri-pt-service",
+      "definition": "/*[not(self::siri:Siri) or not(siri:ServiceDelivery/siri:ProductionTimetableDelivery)]",
+      "description": "Il contenuto deve essere una risposta del servizio SIRI selezionato, oltre a rispettare lo schema comune.",
+      "language_version": "1.0",
+      "name": "Servizio atteso SIRI PT",
+      "options": {
+        "namespaces": {
+          "siri": "http://www.siri.org.uk/siri"
+        }
+      },
+      "validation_type": "xpath",
+      "version": "1"
+    },
+    {
+      "code": "tools-siri-et-service",
+      "definition": "/*[not(self::siri:Siri) or not(siri:ServiceDelivery/siri:EstimatedTimetableDelivery)]",
+      "description": "Il contenuto deve essere una risposta del servizio SIRI selezionato, oltre a rispettare lo schema comune.",
+      "language_version": "1.0",
+      "name": "Servizio atteso SIRI ET",
+      "options": {
+        "namespaces": {
+          "siri": "http://www.siri.org.uk/siri"
+        }
+      },
+      "validation_type": "xpath",
+      "version": "1"
+    }
+  ],
+  "indicators": {
+    "CORSE_CONF": {
+      "code": "corse-conf-tools_004",
+      "indicator_code": "corse-conf",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_CONF_G": {
+      "code": "corse-conf-g-tools_004",
+      "indicator_code": "corse-conf-g",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_CONF_SIRI": {
+      "code": "corse-conf-siri-tools_004",
+      "indicator_code": "corse-conf-siri",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_LIM": {
+      "code": "corse-lim-tools_004",
+      "indicator_code": "corse-lim",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_LIM_ES": {
+      "code": "corse-lim-es-tools_004",
+      "indicator_code": "corse-lim-es",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_LIM_PROG": {
+      "code": "corse-lim-prog-tools_004",
+      "indicator_code": "corse-lim-prog",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_PDE": {
+      "code": "corse-pde-tools_004",
+      "indicator_code": "corse-pde",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_PS": {
+      "code": "corse-ps-tools_004",
+      "indicator_code": "corse-ps",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_RIP": {
+      "code": "corse-rip-tools_004",
+      "indicator_code": "corse-rip",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_SOPP": {
+      "code": "corse-sopp-tools_004",
+      "indicator_code": "corse-sopp",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_SOPP_ES": {
+      "code": "corse-sopp-es-tools_004",
+      "indicator_code": "corse-sopp-es",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_SOPP_PROG": {
+      "code": "corse-sopp-prog-tools_004",
+      "indicator_code": "corse-sopp-prog",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "CORSE_SOST_EFF": {
+      "code": "corse-sost-eff-tools_004",
+      "indicator_code": "corse-sost-eff",
+      "limitations": [],
+      "version": "tools-004"
+    },
+    "FID": {
+      "code": "fid-tools_004",
+      "indicator_code": "fid",
+      "limitations": [],
+      "output_schema": {
+        "description": "Contratto proposto del risultato FID mensile per tipo di domanda; implementazione esterna da fornire.",
+        "identifier": "rpsd:kpi:fid:tools-004",
+        "metrics": [
+          {
+            "aggregations": [
+              "already_aggregated"
+            ],
+            "code": "fid",
+            "dimensions": [
+              "tipo_domanda"
+            ],
+            "grain": "month",
+            "type": "number",
+            "unit": "percent"
+          }
+        ],
+        "schema_version": 2
+      },
+      "version": "tools-004"
+    }
+  },
+  "profile_templates": [
+    {
+      "code": "tools-fid_004",
+      "description": "Template da completare con i riferimenti reali, non un profilo operativo.",
+      "indicators": [
+        "fid-tools_004"
+      ],
+      "input_flows": [],
+      "name": "Pilot FID da Tools 0.4.0",
+      "orchestration_flow": null,
+      "version": "004"
+    }
+  ],
+  "roots": [
+    "FID"
+  ],
+  "rule_codes": {
+    "SIRI_ET_LINE_MATCHES_PLANNED": "siri-et-line-matches-planned",
+    "SIRI_ET_ORDER_MATCHES_NETEX": "siri-et-order-matches-netex",
+    "SIRI_ET_STOPS_IN_NETEX": "siri-et-stops-in-netex",
+    "SIRI_ET_TRIP_KNOWN": "siri-et-trip-known",
+    "SIRI_PT_CALLS_COMPLETE": "siri-pt-calls-complete",
+    "SIRI_PT_COVERS_PDE": "siri-pt-covers-pde",
+    "SIRI_PT_EXTRA_NOT_IN_NETEX": "siri-pt-extra-not-in-netex",
+    "SIRI_PT_LINE_IN_NETEX": "siri-pt-line-in-netex",
+    "SIRI_PT_ORDER_MATCHES_NETEX": "siri-pt-order-matches-netex",
+    "SIRI_PT_STOPS_IN_NETEX": "siri-pt-stops-in-netex",
+    "SIRI_PT_TRIP_IN_NETEX": "siri-pt-trip-in-netex"
+  },
+  "source_commit": "c4c268daaa6489bbda607821a1499a568fa0577e"
+}

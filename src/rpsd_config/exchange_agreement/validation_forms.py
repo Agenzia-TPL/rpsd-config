@@ -60,6 +60,21 @@ class ValidationRuleVersionForm(forms.ModelForm):
             validation_type="dbt", language_version="1"
         ).first()
         is_dbt = bool(pair and str(selected) == str(pair.pk))
+        if any(
+            str(item.pk) == str(selected)
+            for item in ValidationTypeVersion.objects.filter(validation_type="python")
+        ):
+            from rpsd_config.exchange_agreement.services.validation_registry import (
+                PYTHON_RULE_HELP,
+            )
+
+            if "definition" in self.fields:
+                self.fields["definition"].help_text = PYTHON_RULE_HELP
+            if "options" in self.fields:
+                self.fields["options"].help_text = (
+                    'Interprete della regola registrata: {"python_version": "3.13"}. '
+                    "La funzione viene eseguita dal validatore esterno."
+                )
         if "validation_type_version" in self.fields:
             self.fields["validation_type_version"].widget.attrs[
                 "data-dbt-context-type"

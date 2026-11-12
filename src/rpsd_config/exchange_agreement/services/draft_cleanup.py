@@ -15,7 +15,6 @@ from rpsd_config.exchange_agreement.services.configuration_exports import (
 from rpsd_config.exchange_agreement.services.contract_demo import (
     demo_package,
     fixture,
-    object_fingerprint,
 )
 from rpsd_config.exchange_agreement.services.contract_revision_permissions import (
     require_revision_preparer,
@@ -24,6 +23,7 @@ from rpsd_config.exchange_agreement.services.formal_definitions import digest
 from rpsd_config.exchange_agreement.services.indicator_dependencies import (
     lock_indicator_graph,
 )
+from rpsd_config.exchange_agreement.services.seed_manifests import object_fingerprint
 from rpsd_config.exchange_agreement.services.validation_catalog import (
     require_catalog_admin,
 )

@@ -471,7 +471,7 @@ rimossi; vedere [USAGE.md](USAGE.md) per recupero file e aggiornamento senza res
 
 
 Feature 033 adds formal indicator metadata and an offline, transactional Tools
-catalog import. Formulas are verified statically with pinned `rpsd-core` 0.3.0;
+catalog import. Formulas are verified statically with pinned `rpsd-core` 0.4.0;
 calculation remains external. See [USAGE](USAGE.md#formal-indicator-catalog-feature-033)
 for local dependency builds, preview/apply commands, pilot limitations and the
 formal-aware M2M v5 API.
@@ -482,3 +482,10 @@ indicator execution references at publication, and native Django admin relation
 widgets with permission-aware popups and readable publication feedback.
 See [USAGE](USAGE.md#contesti-documentali-dbt-e-riferimenti-facoltativi-034035)
 for the standalone draft context seed and the execution metadata rules.
+
+
+Feature 038 uses only the current local Tools/Core baseline (0.4.0), a single
+v2 catalog package, source-owned rule versions/policies/impacts and native Python
+rule descriptors. Identical seeds reuse; different seeds coexist. Explicit
+manifest cleanup retires chosen development attempts while preserving shared
+resources and audit evidence. See [USAGE](USAGE.md#catalogo-tools-corrente-038).

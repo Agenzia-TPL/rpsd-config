@@ -1530,7 +1530,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=41.0" },
-    { name = "django", extras = ["gis"], specifier = ">=5.2.0" },
+    { name = "django", specifier = ">=5.2.0" },
     { name = "django-allauth", specifier = ">=0.56.0" },
     { name = "django-extensions", specifier = ">=3.2.0" },
     { name = "django-leaflet", specifier = ">=0.29.0" },
@@ -1561,7 +1561,7 @@ dev = [
 
 [[package]]
 name = "rpsd-core"
-version = "0.3.0"
+version = "0.4.0"
 source = { directory = "../rpsd-tools/packages/rpsd-core" }
 dependencies = [
     { name = "elementpath" },

@@ -1178,8 +1178,8 @@ La versione della specifica in Config è un ulteriore identificativo distinto.
 
 Config now stores `formula_symbol` on the logical indicator and a versioned
 formal definition on `IndicatorVersion`. The supported grammar identifier is
-`rpsd-formula-v1`, implemented by the pinned `rpsd-core` 0.3.0 release
-(`27f74313648dea3b58d12bca2285efa18e04ef62`). Formulas document and verify metadata;
+`rpsd-formula-v1`, implemented by the pinned `rpsd-core` 0.4.0 release
+(`c4c268daaa6489bbda607821a1499a568fa0577e`). Formulas document and verify metadata;
 Config does not execute them on datasets, generate SQL or call Prefect.
 
 Each version owns its dimensions through `IndicatorVersionDimension`, including
@@ -1212,11 +1212,11 @@ Config never resolves an arbitrary latest version.
 
 ### Install and build
 
-Config installs `rpsd-core==0.3.0` from the sibling directory
+Config installs `rpsd-core==0.4.0` from the sibling directory
 `../rpsd-tools/packages/rpsd-core`, declared in `[tool.uv.sources]`.
 `uv.lock` records the local source and resolved package version; it does not pin
 a Git commit for a directory dependency. The reviewed release baseline is
-`27f74313648dea3b58d12bca2285efa18e04ef62`; keep a compatible local checkout and
+`c4c268daaa6489bbda607821a1499a568fa0577e`; keep a compatible local checkout and
 review updates before changing the expected version.
 
 The workspace must contain these sibling directories:
@@ -1251,10 +1251,10 @@ For a direct build from `rpsd-config/`, provide both local contexts:
 ```bash
 docker build --build-context rpsd-commons=../rpsd-commons \
   --build-context rpsd-tools=../rpsd-tools \
-  -t rpsd-config:033 .
+  -t rpsd-config:local .
 ```
 
-CI checks out Tools at `v0.3.0` beside Config before installing or building,
+CI checks out Tools at commit `c4c268d` beside Config before installing or building,
 and supplies the same local build contexts. The runner needs read access to that
 repository while it remains private; no SSH build secret is configured.
 
@@ -1271,7 +1271,7 @@ Use a clean Tools checkout on the exact commit declared by the reviewed mapping:
 
 ```bash
 uv run manage export_tools_catalog --source ../rpsd-tools \
-  --mapping src/rpsd_config/exchange_agreement/seed_data/tools_v020/mapping.json \
+  --mapping src/rpsd_config/exchange_agreement/seed_data/tools/mapping.json \
   --out /tmp/tools-catalog.json
 uv run manage import_tools_catalog --package /tmp/tools-catalog.json \
   --actor rpsd_admin --report /tmp/catalog-preview.json
@@ -1287,48 +1287,72 @@ list create/reuse/conflict/unresolved operations, source limitations and missing
 profile references. There is no import of `contracts.yaml` economic values.
 
 The closed interchange schema is
-`src/rpsd_config/exchange_agreement/contracts/config-catalog-import-v1.schema.json`.
+`src/rpsd_config/exchange_agreement/contracts/config-catalog-import-v2.schema.json`.
 Unknown fields, duplicate JSON keys, nonfinite numbers, invalid digests, unregistered
 rule interpreters and inconsistent analyzer results are rejected. The digest
 covers normalized contract defaults; it is an integrity check, not a signature.
 No package content is executed.
 
-### Packaged Tools 0.2.0 pilot
+### Catalogo Tools corrente (038)
 
-First load the pinned schema resources in the configured storage, if absent:
+Il solo pacchetto standard è `seed_data/tools/catalog.json`, formato
+`config-catalog-import-v2`, generato con Core 0.4.0. I vecchi pacchetti richiedono
+rigenerazione; non vengono convertiti. Prima predisporre gli asset fissati:
 
 ```bash
-uv run manage seed_netex_italian_profile --actor rpsd_admin
-uv run manage seed_siri_schema --actor rpsd_admin --standard-version 2.2.1
-uv run manage seed_tools_catalog --actor rpsd_admin --report /tmp/pilot-preview.json
-uv run manage seed_tools_catalog --actor rpsd_admin --apply \
-  --report /tmp/pilot-applied.json
+uv run manage seed_netex_italian_profile --actor dummy_admin
+uv run manage seed_siri_schema --actor dummy_admin --standard-version 2.2.1
+uv run manage seed_tools_catalog --actor dummy_admin --report /tmp/catalog-manifest.json
+uv run manage seed_tools_catalog --actor dummy_admin --apply --report /tmp/catalog-manifest.json
 ```
 
-The offline package contains all 14 source indicators, 19 dimension definitions,
-51 XPath rules and four additional schema/service rules. It creates separate
-`netex-it-lev5_002` (`002`), `siri-pt_v003` (`003`) and `siri-et_v003` (`003`)
-specifications. PT and ET share `siri-2-2-1-schema@1`, while distinct service rules
-check their delivery elements. Existing NeTEx/SIRI versions, profiles and contracts
-are not rewritten. The seed imports no source repository or network resource.
+Sono presenti 14 indicatori, 19 dimensioni, 12 dipendenze e tre specifiche
+`netex-it-lev5_004`, `siri-pt_v004`, `siri-et_v004`. I bundle NeTEx e SIRI 2.2.1
+sono riusati per identità/versione/checksum. Le regole sono 63 Tools (51 XPath,
+una Python, 11 contesti dbt) e quattro controlli Config di XSD/tipo servizio.
+57 associazioni dataset e 111 associazioni consumer; nessuna esclusione tecnica.
+I default dei parametri sorgente restano informazioni da revisionare, mai valori
+contrattuali assegnati automaticamente.
 
-This is a reviewable draft catalog. One Python and 11 dbt rules are reported as
-unsupported requirements. Each indicator also carries an explicit review gate
-for the initial conservative `calculation` impact mapping; source parameter
-defaults are reported for review, not assigned to contracts. These limitations
-prevent publication until reviewed and resolved explicitly. A current static
-proof does not mean that the indicator is ready for calculation. The original
-0.2.0 package and its limitations remain historical evidence; importing the
-standalone 0.3.0 dbt contexts does not silently rewrite these indicator drafts.
+Le politiche sono esplicite: tutti i 26 controlli NeTEx rifiutano l'import;
+i 10 SIRI-PT e i 16 SIRI-ET generano avvisi. Un controllo dataset viene applicato
+anche senza selezionare il suo indicatore. I cinque binding XSD/tipo servizio
+aggiunti da Config restano bloccanti. Severity, politica e impatto sono distinti.
+I tre controlli NeTEx sulla linea hanno impatto `dimension` / `linea` per CORSE_PDE;
+il rifiuto NeTEx resta applicato. Gli impatti provengono da Tools, non dal mapping.
 
-The `tools-fid_001` profile template is reported with missing published versions,
-input flows and orchestrator. It is not created with fake references. After
-resolving the operational validators and reviewing the limitations, revise the mapping and
-bindings, verify and publish in dependency order, create a profile using real
-input/orchestration references, then select FID in a contract draft. Configure
-parameters of implicit prerequisites in their existing contractual owner. Review
-and approve the revision only after all gates are closed. SQL/dbt calculations,
-scenarios, results and runtime integration remain separate acceptance work.
+Le cinque XPath SIRI corrette hanno versione 2, le altre regole Tools versione 1.
+Il mapping mantiene identità Config e riferimenti; il generatore esegue i controlli
+ufficiali sulle sorgenti e sul lock prima di scrivere il pacchetto. Il seed
+successivo è offline. La provenienza per regola è in `rule_sources` nel pacchetto
+riportata anche nel manifest. I contesti dbt non hanno binding operativi.
+
+La regola `tools-netex-passing-times-increasing@1` usa il tipo Python. Definition
+è un descrittore JSON chiuso con `function`, `paths`, `namespaces`,
+`definition_sha256`; options richiede `{"python_version":"3.13"}`. Il linguaggio
+`0.3.0` è il Core di registrazione conservato nel lock Tools, mentre Config usa
+soltanto Core 0.4.0. Non installare un vecchio Core e non riscrivere quel valore.
+Django controlla il descrittore e la funzione registrata, senza eseguirla.
+Il validatore esterno deve verificare il proprio ambiente e l'impronta.
+
+Il template `tools-fid_004` indica i riferimenti da completare; non crea workflow
+fittizi o un profilo operativo. Per provare l'export usare il demo draft descritto
+sotto. Pubblicazione e approvazione restano azioni esplicite.
+
+### Seed distinti, riuso e conflitti
+
+Applicare due volte lo stesso pacchetto non duplica i record e non cambia stati.
+Riutilizzare lo stesso file `--report` conserva la proprietà iniziale dei creati.
+Un pacchetto con nuovi dataset/versioni/profili si affianca ai precedenti; le
+risorse comuni identiche vengono riusate. Stessa identità/versione con contenuto
+diverso produce conflitto e rollback, senza overwrite o cleanup automatico.
+
+```bash
+uv run manage import_tools_catalog --package /tmp/altro-catalogo-v2.json \
+  --actor dummy_admin --scenario altro-catalogo --report /tmp/altro-manifest.json
+uv run manage import_tools_catalog --package /tmp/altro-catalogo-v2.json \
+  --actor dummy_admin --scenario altro-catalogo --apply --report /tmp/altro-manifest.json
+```
 
 ### Snapshot/API compatibility and rollout
 
@@ -1370,42 +1394,22 @@ il contratto del modello esistente. La definizione preserva requisito, regola,
 relazioni citate, note e provenienza. Eventuali `when`, `expect` o prove della
 fonte sono documentazione; Config non li interpreta.
 
-Il pacchetto offline contiene gli **11 contesti di Tools 0.3.0**, incluso
-`SIRI_PT_COVERS_PDE`, con identità Config `siri-pt-covers-pde@tools-001`.
-Dalla directory Config, usando un account platform admin esistente:
+Gli **11 contesti del catalogo corrente**, incluso `siri-pt-covers-pde@1`,
+possono essere importati senza dataset, indicatori o asset:
 
 ```bash
-uv run manage seed_tools_catalog --actor rpsd-admin --dbt-contexts-only \
-  --report /tmp/dbt-contexts-preview.json
-uv run manage seed_tools_catalog --actor rpsd-admin --dbt-contexts-only --apply \
-  --report /tmp/dbt-contexts-applied.json
+uv run manage seed_tools_catalog --actor dummy_admin --dbt-contexts-only \
+  --report /tmp/dbt-manifest.json
+uv run manage seed_tools_catalog --actor dummy_admin --dbt-contexts-only --apply \
+  --report /tmp/dbt-manifest.json
 ```
 
-L'anteprima non scrive. `--apply` crea le regole **in bozza**, senza creare o
-modificare dataset, indicatori, profili, contratti o collegamenti operativi.
-La ripetizione riusa il contenuto identico; un conflitto annulla l'importazione.
-Non pubblica automaticamente i contesti. Il report distingue
-`documentary_contexts` e `previous_dbt_limitations`: queste ultime sono un
-inventario delle vecchie segnalazioni sulle bozze degli indicatori, da revisionare
-esplicitamente. Non vengono cancellate e le altre limitazioni restano valide.
-
-Per rigenerare il pacchetto da una copia locale pulita sul commit dichiarato
-nel mapping:
-
-```bash
-uv run manage export_tools_catalog --source ../rpsd-tools \
-  --mapping src/rpsd_config/exchange_agreement/seed_data/tools_v030/dbt-mapping.json \
-  --dbt-contexts-only --out /tmp/dbt-contexts.json
-```
-
-Il producer riporta core 0.3.0 e la provenienza effettiva. I pacchetti 0.2.0
-restano leggibili: non sono rietichettati come 0.3.0. Le prove pregresse con
-provenienza 0.2.0 verificabile restano correnti soltanto se tutti i metadati e
-l'analisi coincidono; provenienze sconosciute o modifiche semantiche le invalidano.
-Gli snapshot storici non vengono rigenerati. Per le nuove composizioni,
-`effective_indicators` conserva la forma precedente nel caso Prefect e aggiunge
-`execution_engine` per un motore diverso o vuoto; la sezione `indicator_version`
-contiene già sempre il motore effettivo.
+La proiezione usa il medesimo catalogo corrente, non un secondo pacchetto storico.
+Crea bozze e riusa i contenuti identici; non pubblica o genera test e non crea
+collegamenti operativi. Per rigenerare solo questi contesti usare
+`export_tools_catalog` con il mapping corrente e `--dbt-contexts-only`.
+Gli indicatori/regole operativi ammettono riferimenti esecutivi vuoti; se presenti
+devono essere coerenti. Un documento dbt continua a vietarli.
 
 ## Relazioni e messaggi nell'admin Django (036)
 
@@ -1431,52 +1435,16 @@ ragione. Nelle azioni multiple, il conteggio dei successi comprende soltanto
 le pubblicazioni riuscite; ogni record mantiene la propria transazione.
 
 
-## Pubblicazione del catalogo FID — revisione del 10/11/2026
+## Pubblicazione del catalogo FID corrente
 
-La pubblicazione delle regole di validazione, come quella degli indicatori,
-congela una configurazione editoriale: il processo esterno può essere registrato
-in seguito in una nuova versione, senza riferimenti fittizi. Interprete,
-definizione, opzioni e convenzione del risultato restano controllati. Un
-riferimento Prefect compilato deve essere valido; i contesti documentali dbt
-continuano a non ammetterlo. Input flow e orchestratori conservano i loro vincoli.
-
-Il catalogo FID mantiene la scelta conservativa `calculation` per i requisiti
-associati: una violazione riguarda la calcolabilità dell’indicatore, mentre
-la politica di rifiuto del dataset resta separata. I sei parametri di CORSE_PS
-restano obbligatori nella revisione contrattuale; i default dei Tools non sono
-assegnati ai contratti. La revisione delle precedenti segnalazioni è tracciata
-nelle prove formali e nell’audit, senza cancellarne la provenienza.
-
-Il supplemento offline
-`seed_data/tools_v030/fid-validation-supplement.json` aggiunge soltanto la regola
-`tools-netex-passing-times-increasing@tools-001`, in forma XPath 3.1 equivalente
-alla funzione Python dei Tools. Non introduce un interprete Python in Config.
-La provenienza identifica l’XPath approvato mantenuto nei test di core 0.3.0.
-Confronto isolato con la funzione: 47 violazioni sull’esempio originale, zero
-sul corretto, una sulla mutazione prevista; stessi nodi nei due casi esecutivi.
-
-Per importare soltanto tale regola in un nuovo ambiente, prima anteprima e poi
-applicazione esplicita:
-
-```bash
-uv run manage import_tools_catalog \
-  --package src/rpsd_config/exchange_agreement/seed_data/tools_v030/fid-validation-supplement.json \
-  --actor rpsd-admin
-uv run manage import_tools_catalog \
-  --package src/rpsd_config/exchange_agreement/seed_data/tools_v030/fid-validation-supplement.json \
-  --actor rpsd-admin --apply
-```
-
-La regola è un requisito di CORSE_PDE, CORSE_CONF_SIRI, CORSE_LIM_PROG e
-CORSE_LIM_ES, sulla specifica `netex-it-lev5_002`, con impatto `calculation`.
-Il supplemento importa una bozza; i binding e la pubblicazione sono operazioni
-di revisione esplicite. Il pacchetto storico Tools 0.2.0 resta un seed
-conservativo in bozza: non va usato per sovrascrivere una composizione già
-revisionata e pubblicata. I conflitti di composizione sono mantenuti.
-
-La pubblicazione locale segue l’ordine regole → specifiche → verifica formale
-→ indicatori dai prerequisiti ai dipendenti. Il report operativo è in
-[docs/operations/fid-catalog-publication-20261110.md](docs/operations/fid-catalog-publication-20261110.md).
+Pubblicare congela la configurazione editoriale, senza eseguire processi.
+Riferimenti di calcolo/validazione facoltativi e, se compilati, validi;
+input flow e orchestratori mantengono i propri vincoli. I sei parametri CORSE_PS
+restano obbligatori nella revisione: i default Tools non sono assegnati al contratto.
+L'ordine è regole → specifiche → verifica formale → indicatori dai prerequisiti
+ai dipendenti → profilo → approvazione della revisione. Gli impatti della nuova
+sorgente e la regola Python sostituiscono il vecchio mapping conservativo e il
+supplemento XPath. Nessuna pubblicazione è implicita nel seed corrente.
 
 ## Bozze contrattuali ed export per il validatore (037)
 
@@ -1507,7 +1475,7 @@ API utente autenticata, con gli stessi permessi di lettura del contratto:
 ```text
 GET /exchange_agreement/api/v1/contracts/DEMO-FID-DEMO/configuration-revisions/DEMO-FID-DEMO-r001/export?scope=revision
 GET /exchange_agreement/api/v1/contracts/DEMO-FID-DEMO/configuration-revisions/DEMO-FID-DEMO-r001/export?scope=dataset&dataset_code=netex
-GET /exchange_agreement/api/v1/contracts/DEMO-FID-DEMO/configuration-revisions/DEMO-FID-DEMO-r001/export?scope=indicator&indicator_version_code=fid-demo-fid-tools_001
+GET /exchange_agreement/api/v1/contracts/DEMO-FID-DEMO/configuration-revisions/DEMO-FID-DEMO-r001/export?scope=indicator&indicator_version_code=fid-demo-fid-tools_004
 ```
 
 Un token di servizio del validatore non acquisisce accesso alle bozze da questa
@@ -1538,7 +1506,8 @@ uv run manage export_contract_configuration --actor dummy_admin \
 
 uv run manage export_contract_configuration --actor dummy_admin \
   --contract-code DEMO-FID-DEMO --revision-code DEMO-FID-DEMO-r001 \
-  --handoff-dir /tmp/fid-handoff-001 --include-assets
+  --handoff-dir /tmp/fid-handoff-001 --include-assets \
+  --seed-manifest /tmp/fid-demo-manifest.json
 ```
 
 La cartella di consegna deve essere vuota. Contiene `revision.json`, un
@@ -1571,12 +1540,12 @@ uv run manage seed_contract_configuration_demo --actor dummy_admin \
 
 Il report riusato mantiene l’elenco originale dei record creati. Non sostituirlo
 con un report appartenente a un altro tentativo. Namespace: 1–20 caratteri
-minuscoli, cifre o trattini, iniziale alfabetica. La fixture `contract_demo/fid-v1.json`
-fissa periodo 01/01/2027–31/12/2027, pacchetto Tools e supplemento XPath verificato.
+minuscoli, cifre o trattini, iniziale alfabetica. La fixture `contract_demo/fid.json`
+fissa periodo 01/01/2027–31/12/2027, pacchetto Tools corrente verificato.
 La configurazione include versioni demo delle stesse identità logiche, anche
 quelle richieste soltanto dal contesto formale; non modifica il catalogo FID
 pubblicato. Il profilo e la revisione selezionano FID: chiusura esecutiva di sei
-indicatori, input NeTEx e SIRI-ET con 27 e 15 regole applicabili.
+indicatori, input NeTEx e SIRI-ET con 27 e 18 regole applicabili (45 complessive).
 
 I sei parametri CORSE_PS sono valori demo espliciti: 20 minuti di cadenzamento,
 regimi OLTRE_SOGLIA e ULTIMA_CORSA_GIORNO, finestre di sostituzione da 40 minuti
@@ -1621,3 +1590,49 @@ Non deduce retroattivamente quali input o prerequisiti fossero necessari.
 Negli export moderni di un prerequisito i percorsi delle dipendenze sono
 riferiti al target richiesto (`export_root_indicators`); il ruolo selezionato/
 implicito conserva il significato che aveva nella revisione contrattuale.
+
+
+## Pulizia esplicita dei tentativi di sviluppo (038)
+
+Un nuovo seed non elimina mai il precedente. Per scartare uno scenario usare
+il manifest prodotto da quel seed: il piano distingue candidati, condivisi da
+conservare e blocchi. Risorse riusate non diventano proprietà del secondo seed.
+
+```bash
+uv run manage cleanup_tools_seed --actor dummy_admin \
+  --manifest /tmp/altro-manifest.json --report /tmp/altro-cleanup-plan.json
+uv run manage cleanup_tools_seed --actor dummy_admin \
+  --manifest /tmp/altro-manifest.json --apply --report /tmp/altro-cleanup-result.json
+```
+
+Se il tentativo è stato modificato/pubblicato, costruire prima un nuovo inventario
+esplicito tramite i digest esatti dei pacchetti applicati, recuperabili dai report
+e dagli ADDITION del registro admin. Non servono vecchi Core o reader di pacchetti:
+
+```bash
+uv run manage inventory_tools_seed --actor dummy_admin \
+  --package-digest DIGEST_SHA256_DEL_PACCHETTO_APPLICATO \
+  --scenario tentativo-da-scartare --output /tmp/retire-manifest.json
+uv run manage cleanup_tools_seed --actor dummy_admin \
+  --manifest /tmp/retire-manifest.json --retire-published-development \
+  --report /tmp/retire-plan.json
+uv run manage cleanup_tools_seed --actor dummy_admin \
+  --manifest /tmp/retire-manifest.json --retire-published-development \
+  --confirm-database rpsd --apply --report /tmp/retire-result.json
+```
+
+Sostituire `rpsd` con il nome esatto del target sviluppo. Il ritiro dei pubblicati
+è ammesso solo con DEBUG, PostgreSQL default e conferma esatta del database.
+L'admin e le API ordinarie continuano a impedirne la cancellazione. Il piano
+rivalida proprietà negli audit, impronte e riferimenti ORM/formali; cambiamenti
+successivi o riferimenti incompatibili richiedono un nuovo piano. Nessun reset
+DB, nessuna modifica a utenti/IAM, nessuna rimozione dei file fisici. Gli eventi
+di stato dei record ritirati sono conservati integralmente in LogEntry prima
+della rimozione delle FK protette, nella stessa transazione; gli altri audit restano.
+
+La consegna FID corrente contiene 45 controlli: 27 NeTEx bloccanti e 18 ET
+(due bloccanti XSD/servizio e 16 avvisi). I tre controlli ET aggiunti riguardano
+CORSE_LIM_ES/CORSE_SOPP_ES: sono presenti per la politica sul dataset anche
+senza quei consumer nel FID selezionato. Con `--seed-manifest`, il manifest di
+handoff riporta le corrispondenze/impronte sorgente delle regole effettive.
+Nessun SIRI-PT o contesto dbt diventa un input operativo del demo.

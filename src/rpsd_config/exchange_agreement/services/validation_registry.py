@@ -7,6 +7,26 @@ import re
 from dataclasses import asdict, dataclass
 
 from django.core.exceptions import ValidationError
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class PythonRuleDescriptor(BaseModel):
+    """Closed metadata contract; never an executable Python expression."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    function: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    paths: list[str] = Field(min_length=1)
+    namespaces: dict[str, str]
+    definition_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+PYTHON_RULE_HELP = (
+    "Funzione registrata eseguita dal validatore esterno, mai da Django. "
+    "Definition è un JSON con function, paths, namespaces e definition_sha256. "
+    "La versione del linguaggio identifica il Core di registrazione della regola; "
+    "options.python_version identifica l'interprete richiesto. Non indicano "
+    "la versione Core installata in Config. Il riferimento Prefect è facoltativo."
+)
 
 
 @dataclass(frozen=True)
@@ -21,6 +41,9 @@ class ValidationCapability:
 
 
 CAPABILITIES = {
+    "python": ValidationCapability(
+        "python", ("xml",), ("0.3.0",), ("violating_entities",), ("python_version",)
+    ),
     "dbt": ValidationCapability("dbt", (), ("1",), ("structured_report",), ()),
     "xpath": ValidationCapability(
         "xpath",
@@ -95,7 +118,29 @@ def validate_rule_definition(
         raise ValidationError(
             "Unknown interpreter options.", code="invalid_definition_options"
         )
-    if validation_type == "dbt":
+    if validation_type == "python":
+        from rpsd_core.validation_rules.functions import REGISTRY
+
+        try:
+            descriptor = PythonRuleDescriptor.model_validate(json.loads(definition))
+        except (ValueError, TypeError) as exc:
+            raise ValidationError(
+                {"definition": "Descrittore Python non valido: " + str(exc)},
+                code="invalid_definition_options",
+            ) from exc
+        if descriptor.function not in REGISTRY:
+            raise ValidationError({"definition": "Funzione Python non registrata."})
+        if options != {"python_version": "3.13"}:
+            raise ValidationError({"options": "Specificare python_version: 3.13."})
+        for path in descriptor.paths:
+            validate_rule_definition(
+                validation_type="xpath",
+                language_version="1.0",
+                definition=path,
+                options={"namespaces": descriptor.namespaces},
+                result_contract="violating_entities",
+            )
+    elif validation_type == "dbt":
         from rpsd_config.exchange_agreement.services.dbt_contexts import (
             load_dbt_context,
         )

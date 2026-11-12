@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Agenzia-TPL/rpsd-tools
-          ref: v0.3.0
+          ref: c4c268daaa6489bbda607821a1499a568fa0577e
           path: rpsd-tools
           persist-credentials: false
 
@@ -111,7 +111,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Agenzia-TPL/rpsd-tools
-          ref: v0.3.0
+          ref: c4c268daaa6489bbda607821a1499a568fa0577e
           path: rpsd-tools
           persist-credentials: false
 
@@ -209,7 +209,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Agenzia-TPL/rpsd-tools
-          ref: v0.3.0
+          ref: c4c268daaa6489bbda607821a1499a568fa0577e
           path: rpsd-tools
           persist-credentials: false
 

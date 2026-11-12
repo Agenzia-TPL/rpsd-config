@@ -9,7 +9,10 @@ from pathlib import Path
 from django.core.exceptions import ValidationError
 from django.http import Http404
 
-from rpsd_config.exchange_agreement.models import ConfigurationAsset
+from rpsd_config.exchange_agreement.models import (
+    ConfigurationAsset,
+    ValidationRuleVersion,
+)
 from rpsd_config.exchange_agreement.services.configuration_assets import (
     load_configuration_asset_content,
 )
@@ -25,7 +28,13 @@ def json_text(value):
 
 
 def write_configuration_handoff(
-    *, actor, contract_code, revision_code, directory, include_assets=False
+    *,
+    actor,
+    contract_code,
+    revision_code,
+    directory,
+    include_assets=False,
+    seed_manifest=None,
 ):
     directory = Path(directory)
     if directory.exists() and any(directory.iterdir()):
@@ -40,6 +49,59 @@ def write_configuration_handoff(
             "revision_code": revision_code,
         }
         full = export_contract_configuration(**common)
+        rule_sources = []
+        if seed_manifest is not None:
+            from rpsd_config.exchange_agreement.services.seed_manifests import (
+                object_fingerprint,
+                validate_manifest_digest,
+            )
+
+            validate_manifest_digest(seed_manifest)
+            scenario = seed_manifest.get("scenario", {})
+            if isinstance(scenario, dict) and any(
+                scenario.get(key) != common[key]
+                for key in ("contract_code", "revision_code")
+            ):
+                raise ConfigurationExportError(
+                    "Il manifest appartiene a un'altra revisione."
+                )
+            keys = {
+                (r["rule_code"], r["rule_version"])
+                for r in full["configuration"].get("validation_rules", [])
+            }
+            rule_sources = [
+                row
+                for row in seed_manifest.get("rule_sources", [])
+                if (row["rule_code"], row["rule_version"]) in keys
+            ]
+            if {(r["rule_code"], r["rule_version"]) for r in rule_sources} != keys:
+                raise ConfigurationExportError(
+                    "Provenienza delle regole incompleta nel manifest."
+                )
+            records = {
+                row["pk"]: row
+                for row in [
+                    *seed_manifest.get("created", []),
+                    *seed_manifest.get("reused", []),
+                ]
+                if row["model"] == "exchange_agreement.validationruleversion"
+            }
+            saved = {
+                (obj.rule.code, obj.version): obj
+                for obj in ValidationRuleVersion.objects.filter(
+                    pk__in=records
+                ).select_related("rule", "validation_type_version")
+            }
+            if any(
+                key not in saved
+                or object_fingerprint(saved[key])
+                != records[saved[key].pk]["fingerprint"]
+                for key in keys
+            ):
+                raise ConfigurationExportError(
+                    "Le regole sono cambiate dal seed: esportare senza --seed-manifest "
+                    "oppure revisionare la provenienza prima di consegnarla."
+                )
         exports = [("revision.json", full)]
         for index, item in enumerate(full["configuration"].get("inputs", []), 1):
             exports.append(
@@ -67,6 +129,8 @@ def write_configuration_handoff(
         "files": [],
         "assets": [],
         "errors": [],
+        "rule_sources": rule_sources,
+        "catalog_sources": seed_manifest.get("sources", []) if seed_manifest else [],
     }
     for name, payload in exports:
         content = json_text(payload).encode()

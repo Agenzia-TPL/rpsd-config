@@ -10,9 +10,11 @@ from pathlib import Path
 from django.core.exceptions import ValidationError
 from pydantic import Field
 from rpsd_core.config_input import load
-from rpsd_core.validation_rules.export import used_namespaces
-from rpsd_core.validation_rules.loader import load_rules
-from rpsd_core.validation_rules.models import DbtRule, XPathRule
+from rpsd_core.validation_rules import checks
+from rpsd_core.validation_rules.common import used_namespaces
+from rpsd_core.validation_rules.export import build
+from rpsd_core.validation_rules.loader import load_fixtures, load_rules
+from rpsd_core.validation_rules.models import DbtRule, PythonRule, XPathRule
 
 from rpsd_config.exchange_agreement.services.catalog_contract import (
     CatalogDataset,
@@ -26,6 +28,7 @@ from rpsd_config.exchange_agreement.services.catalog_contract import (
     seal_package,
 )
 from rpsd_config.exchange_agreement.services.formal_definitions import (
+    CORE_COMMIT,
     KINDS,
     LANGUAGE_VERSION,
 )
@@ -42,20 +45,13 @@ class IndicatorMapping(CatalogRecord):
     limitations: list[dict] = Field(default_factory=list)
 
 
-class RuleMapping(CatalogRecord):
-    code: str
-    version: str
-    execution_reference: str = ""
-    failure_policy: str | None = None
-    consumers: dict[str, dict] = Field(default_factory=dict)
-
-
 class ToolsMapping(CatalogRecord):
     source_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     roots: list[str]
     indicators: dict[str, IndicatorMapping]
     datasets: list[CatalogDataset]
-    rules: dict[str, RuleMapping] = Field(default_factory=dict)
+    rule_codes: dict[str, str] = Field(default_factory=dict)
+    rule_execution_references: dict[str, str] = Field(default_factory=dict)
     extra_rules: list[CatalogRule] = Field(default_factory=list)
     dataset_rules: list[DatasetRuleRecord] = Field(default_factory=list)
     technical_dependencies: list[CatalogDependency] = Field(default_factory=list)
@@ -102,6 +98,11 @@ def export_tools_catalog(
     source: Path, mapping: ToolsMapping, *, contexts_only: bool = False
 ) -> CatalogPackage:
     """Read a clean pinned source checkout and produce deterministic JSON metadata."""
+    if mapping.source_commit != CORE_COMMIT:
+        raise ValidationError(
+            "Il mapping non corrisponde alla baseline Core corrente: "
+            "revisionare versione/commit e rigenerare il pacchetto."
+        )
     result = subprocess.run(
         ["git", "-C", str(source), "rev-parse", "HEAD"],
         capture_output=True,
@@ -124,6 +125,8 @@ def export_tools_catalog(
             "inputs",
             "references",
             "rules",
+            "fixtures",
+            "packages/rpsd-core",
         ],
         check=False,
     )
@@ -139,6 +142,8 @@ def export_tools_catalog(
             "inputs",
             "references",
             "rules",
+            "fixtures",
+            "packages/rpsd-core",
         ],
         capture_output=True,
         text=True,
@@ -152,6 +157,16 @@ def export_tools_catalog(
     rules = load_rules(source / "rules")
     if not loaded.ok or not rules.ok:
         raise ValidationError([str(i) for i in [*loaded.issues, *rules.issues]])
+    fixtures, fixture_issues = load_fixtures(source / "fixtures")
+    if fixture_issues:
+        raise ValidationError([str(i) for i in fixture_issues])
+    verified = checks.check_all(
+        loaded.inputs, rules, fixtures, source, source / "references"
+    )
+    if not verified.ok:
+        raise ValidationError([str(i) for i in verified.issues])
+    exported = build(loaded.inputs, rules, source, source / "references", fixtures)
+    verified_rules = {r.code: r for r in exported.rules}
     inputs = loaded.inputs
     if contexts_only:
         mapping = ToolsMapping(
@@ -159,7 +174,7 @@ def export_tools_catalog(
             roots=[],
             indicators={},
             datasets=[],
-            rules=mapping.rules,
+            rule_codes=mapping.rule_codes,
         )
     definitions, dimensions, edges, rule_defs, bindings, exclusions = (
         [],
@@ -251,7 +266,6 @@ def export_tools_catalog(
                 "limitations": limits,
             }
         )
-    definitions_by_symbol = {r["symbol"]: r for r in definitions}
     for dimension in inputs.catalog.dimensions:
         if dimension.code in own_codes:
             dimensions.append(
@@ -289,128 +303,130 @@ def export_tools_catalog(
     edges.extend(e.model_dump() for e in mapping.technical_dependencies)
     requirements = inputs.requirements_by_code
     dataset_rules = [r.model_dump() for r in mapping.dataset_rules]
-    for group in sorted(rules.groups):
-        for rule in sorted(rules.groups[group].rules, key=lambda r: r.code):
-            requirement = requirements[rule.requirement]
-            if isinstance(rule, DbtRule):
-                policy = mapping.rules.get(rule.code)
-                if policy is None:
-                    raise ValidationError(
-                        f"Mapping del contesto dbt assente: {rule.code}."
-                    )
-                refs = sorted(set(requirement.relations) | set(rule.relations))
-                document = {
-                    "schema_version": "dbt-context-v1",
-                    "requirement": requirement.model_dump(mode="json"),
-                    "rule": rule.model_dump(mode="json"),
-                    "relations": [
-                        inputs.relations_by_code[ref].model_dump(
-                            mode="json", by_alias=True
-                        )
-                        for ref in refs
+    rule_sources = []
+    for rule in sorted(rules.all_rules(), key=lambda r: r.code):
+        requirement = requirements[rule.requirement]
+        source_rule = verified_rules[rule.code]
+        code = mapping.rule_codes.get(
+            rule.code, "tools-" + rule.code.lower().replace("_", "-")
+        )
+        version = str(rule.version)
+        common = {
+            "code": code,
+            "version": version,
+            "name": rule.name,
+            "description": rule.description,
+            "execution_reference": mapping.rule_execution_references.get(rule.code, ""),
+        }
+        if isinstance(rule, DbtRule):
+            refs = sorted(set(requirement.relations) | set(rule.relations))
+            document = {
+                "schema_version": "dbt-context-v1",
+                "requirement": requirement.model_dump(mode="json"),
+                "rule": rule.model_dump(mode="json"),
+                "relations": [
+                    inputs.relations_by_code[ref].model_dump(mode="json", by_alias=True)
+                    for ref in refs
+                ],
+                "notes": ["Contesto editoriale: non genera né esegue un test dbt."],
+                "provenance": {
+                    "repository": "https://github.com/Agenzia-TPL/rpsd-tools",
+                    "commit": mapping.source_commit,
+                    "files": [
+                        "inputs/requirements.yaml",
+                        "inputs/relations.yaml",
+                        "rules/cross-dataset.yaml",
                     ],
-                    "notes": ["Contesto editoriale: non genera né esegue un test dbt."],
-                    "provenance": {
-                        "repository": "https://github.com/Agenzia-TPL/rpsd-tools",
-                        "commit": mapping.source_commit,
-                        "files": [
-                            "inputs/requirements.yaml",
-                            "inputs/relations.yaml",
-                            "rules/cross-dataset.yaml",
-                        ],
-                    },
-                }
-                rule_defs.append(
-                    {
-                        "code": policy.code,
-                        "version": policy.version,
-                        "name": rule.name,
-                        "description": rule.description,
-                        "validation_type": "dbt",
-                        "language_version": "1",
-                        "definition": json.dumps(
-                            document, sort_keys=True, ensure_ascii=False, indent=2
-                        ),
-                        "options": {},
-                        "result_contract": "structured_report",
-                        "execution_reference": "",
-                    }
-                )
-                continue
-            consumers = sorted(set(requirement.consumers) & needed)
-            if not consumers:
-                continue
-            policy = mapping.rules.get(rule.code)
-            spec = dataset_map[(requirement.dataset.value, requirement.dataset_version)]
-            if not isinstance(rule, XPathRule) or policy is None:
-                limitation = {
-                    "code": "unsupported_rule"
-                    if not isinstance(rule, XPathRule)
-                    else "binding_policy_not_mapped",
-                    "rule": rule.code,
-                    "requirement": rule.requirement,
-                    "consumers": consumers,
-                    "reason": (
-                        "Regola Python/cross-dataset non rappresentabile nel registry "
-                        "Config."
-                    )
-                    if not isinstance(rule, XPathRule)
-                    else "Associazione non definita dal mapping esplicito.",
-                }
-                exclusions.append(limitation)
-                for symbol in consumers:
-                    definitions_by_symbol[symbol]["limitations"].append(limitation)
-                continue
+                },
+            }
             rule_defs.append(
                 {
-                    "code": policy.code,
-                    "version": policy.version,
-                    "name": rule.name,
-                    "description": (
-                        f"{rule.description}\n\nTools: requisito {rule.requirement}; "
-                        f"severity {rule.severity.value}; "
-                        f"revisione {rule.status.value}. "
-                        "Policy e impact provengono dal mapping Config, "
-                        "non dalla severity."
+                    **common,
+                    "validation_type": "dbt",
+                    "language_version": "1",
+                    "definition": json.dumps(
+                        document, sort_keys=True, ensure_ascii=False, indent=2
                     ),
+                    "options": {},
+                    "result_contract": "structured_report",
+                    "execution_reference": "",
+                }
+            )
+        else:
+            key = (requirement.dataset.value, requirement.dataset_version)
+            spec = dataset_map.get(key)
+            if spec is None:
+                if set(requirement.consumers) & needed:
+                    raise ValidationError(
+                        f"Mapping dataset assente per {rule.code}: {key}."
+                    )
+                continue
+            if isinstance(rule, XPathRule):
+                descriptor = {
                     "validation_type": "xpath",
                     "language_version": rule.xpath_version,
                     "definition": rule.xpath,
                     "options": {"namespaces": used_namespaces(rule.xpath)},
-                    "execution_reference": policy.execution_reference,
+                }
+            elif isinstance(rule, PythonRule):
+                namespaces = {}
+                for path in rule.paths:
+                    namespaces.update(used_namespaces(path))
+                descriptor = {
+                    "validation_type": "python",
+                    "language_version": source_rule.core_version,
+                    "definition": json.dumps(
+                        {
+                            "function": rule.function,
+                            "paths": list(rule.paths),
+                            "namespaces": namespaces,
+                            "definition_sha256": source_rule.fingerprint,
+                        },
+                        sort_keys=True,
+                        ensure_ascii=False,
+                    ),
+                    "options": {"python_version": source_rule.python_version},
+                }
+            else:
+                raise ValidationError(
+                    f"Tipo di regola Tools non rappresentabile: {rule.code}."
+                )
+            rule_defs.append({**common, **descriptor})
+            dataset_rules.append(
+                {
+                    "specification": spec.code,
+                    "rule_code": code,
+                    "rule_version": version,
+                    "failure_policy": str(rule.failure_policy),
                 }
             )
-            if policy.failure_policy is not None:
-                dataset_rules.append(
-                    {
-                        "specification": spec.code,
-                        "rule_code": policy.code,
-                        "rule_version": policy.version,
-                        "failure_policy": policy.failure_policy,
-                    }
-                )
-            for symbol in consumers:
-                consumer = policy.consumers.get(symbol)
-                if consumer is None:
-                    limitation = {
-                        "code": "consumer_policy_not_mapped",
-                        "rule": rule.code,
-                        "consumers": [symbol],
-                        "reason": "Impact non configurato per questo consumatore.",
-                    }
-                    exclusions.append(limitation)
-                    definitions_by_symbol[symbol]["limitations"].append(limitation)
-                    continue
+            for symbol in sorted(set(requirement.consumers) & needed):
+                impact = rule.impacts[symbol]
                 bindings.append(
                     {
                         "indicator_version": mapping.indicators[symbol].code,
                         "specification": spec.code,
-                        "rule_code": policy.code,
-                        "rule_version": policy.version,
-                        **consumer,
+                        "rule_code": code,
+                        "rule_version": version,
+                        "impact": str(impact.impact),
+                        "affected_dimensions": list(impact.dimensions or ()),
                     }
                 )
+        rule_sources.append(
+            {
+                "rule_code": code,
+                "rule_version": version,
+                "origin": "tools",
+                "source_code": rule.code,
+                "source_version": rule.version,
+                "fingerprint": source_rule.fingerprint,
+            }
+        )
     rule_defs.extend(r.model_dump() for r in mapping.extra_rules)
+    rule_sources.extend(
+        {"rule_code": r.code, "rule_version": r.version, "origin": "config"}
+        for r in mapping.extra_rules
+    )
     files = sorted(
         [
             *source.joinpath("inputs").glob("*.yaml"),
@@ -439,7 +455,11 @@ def export_tools_catalog(
         ),
         "dataset_bindings": [d.model_dump() for d in mapping.datasets],
         "rule_versions": sorted(rule_defs, key=lambda r: (r["code"], r["version"])),
-        "dataset_rules": dataset_rules,
+        "rule_sources": rule_sources,
+        "dataset_rules": sorted(
+            dataset_rules,
+            key=lambda r: (r["specification"], r["rule_code"], r["rule_version"]),
+        ),
         "indicator_rules": bindings,
         "profile_templates": [p.model_dump() for p in mapping.profile_templates],
         "analysis": {},

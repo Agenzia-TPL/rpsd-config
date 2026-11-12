@@ -262,13 +262,17 @@ def plan_catalog(package: CatalogPackage, *, actor) -> CatalogPlan:
         ).first()
         if (
             capability is None
-            and item.validation_type == "dbt"
-            and item.language_version == "1"
+            and item.validation_type in {"dbt", "python"}
+            and item.language_version
+            in CAPABILITIES[item.validation_type].language_versions
         ):
             capability = plan.stage(
                 domain.ValidationTypeVersion,
-                "dbt/1",
-                {"validation_type": "dbt", "language_version": "1"},
+                f"{item.validation_type}/{item.language_version}",
+                {
+                    "validation_type": item.validation_type,
+                    "language_version": item.language_version,
+                },
                 {},
             )
         if capability is None or item.validation_type not in CAPABILITIES:
@@ -616,12 +620,22 @@ def plan_catalog(package: CatalogPackage, *, actor) -> CatalogPlan:
 
 
 @transaction.atomic
-def apply_catalog(package: CatalogPackage, *, actor) -> dict:
+def apply_catalog(
+    package: CatalogPackage, *, actor, previous_manifest=None, scenario=None
+) -> dict:
     """Replan under the shared graph lock and apply all or nothing."""
     require_catalog_admin(actor)
     lock_indicator_graph()
     plan = plan_catalog(package, actor=actor)
-    return apply_catalog_plan(plan, actor=actor)
+    created = list(plan.pending)
+    apply_catalog_plan(plan, actor=actor)
+    for obj in plan.candidates.values():
+        obj.refresh_from_db()
+    from rpsd_config.exchange_agreement.services.seed_manifests import catalog_manifest
+
+    return catalog_manifest(
+        plan, created=created, previous=previous_manifest, scenario=scenario
+    )
 
 
 def apply_catalog_plan(plan, *, actor):

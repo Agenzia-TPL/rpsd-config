@@ -107,7 +107,9 @@ class SocialAccountAdapterTests(SimpleTestCase):
         assert adapter.is_open_for_signup(request, sociallogin) is True
 
     @override_settings(OIDC_ALLOW_PLATFORM_ADMIN_SIGNUP_WITHOUT_INVITATION=False)
-    def test_platform_admin_group_falls_back_to_default_signup_policy_when_disabled(self):
+    def test_platform_admin_group_falls_back_to_default_signup_policy_when_disabled(
+        self,
+    ):
         adapter = RpsdSocialAccountAdapter()
         request = RequestFactory().get("/accounts/oidc/keycloak/login/")
         sociallogin = _DummySocialLogin(

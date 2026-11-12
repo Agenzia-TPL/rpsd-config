@@ -24,7 +24,6 @@ from rpsd_config.exchange_agreement.services.catalog_import import (
 )
 from rpsd_config.exchange_agreement.services.configuration_exports import (
     consistent_configuration_read,
-    normalise_export,
 )
 from rpsd_config.exchange_agreement.services.contract_revision_permissions import (
     require_revision_preparer,
@@ -33,6 +32,7 @@ from rpsd_config.exchange_agreement.services.formal_definitions import digest
 from rpsd_config.exchange_agreement.services.indicator_dependencies import (
     lock_indicator_graph,
 )
+from rpsd_config.exchange_agreement.services.seed_manifests import object_record
 from rpsd_config.exchange_agreement.services.validation_catalog import (
     require_catalog_admin,
 )
@@ -41,7 +41,7 @@ SEEDS = Path(__file__).resolve().parents[1] / "seed_data"
 
 
 def fixture():
-    return json.loads((SEEDS / "contract_demo/fid-v1.json").read_text())
+    return json.loads((SEEDS / "contract_demo/fid.json").read_text())
 
 
 def demo_package(namespace):
@@ -50,15 +50,9 @@ def demo_package(namespace):
         raise ValidationError(
             "Namespace: 1–20 lettere minuscole, cifre o trattini, iniziale alfabetica."
         )
-    source = load_package((SEEDS / "tools_v020/catalog.json").read_text())
-    supplement = load_package(
-        (SEEDS / "tools_v030/fid-validation-supplement.json").read_text()
-    )
+    source = load_package((SEEDS / "tools/catalog.json").read_text())
     spec = fixture()
-    if (
-        source.package_digest != spec["catalog_digest"]
-        or supplement.package_digest != spec["supplement_digest"]
-    ):
+    if source.package_digest != spec["catalog_digest"]:
         raise ValidationError(
             "Le sorgenti non corrispondono alla fixture demo fissata."
         )
@@ -80,52 +74,30 @@ def demo_package(namespace):
             codes[item["dependent"]],
             codes[item["prerequisite"]],
         )
-    payload["rule_versions"] += [v.model_dump() for v in supplement.rule_versions]
+    # Global documentary contexts are imported once by the catalog seed.
+    payload["rule_versions"] = [
+        r for r in payload["rule_versions"] if r["validation_type"] != "dbt"
+    ]
+    own_rules = {(r["code"], r["version"]) for r in payload["rule_versions"]}
+    payload["rule_sources"] = [
+        r
+        for r in payload["rule_sources"]
+        if (r["rule_code"], r["rule_version"]) in own_rules
+    ]
     for item in payload["rule_versions"]:
-        item["version"] = namespace
+        item["version"] = namespace + "-" + item["version"]
+    for item in payload["rule_sources"]:
+        item["rule_version"] = namespace + "-" + item["rule_version"]
     for group in ("dataset_rules", "indicator_rules"):
         for item in payload[group]:
-            item["specification"], item["rule_version"] = (
-                specs[item["specification"]],
-                namespace,
-            )
+            item["specification"] = specs[item["specification"]]
+            item["rule_version"] = namespace + "-" + item["rule_version"]
             if group == "indicator_rules":
                 item["indicator_version"] = codes[item["indicator_version"]]
-    for symbol in ("CORSE_PDE", "CORSE_CONF_SIRI", "CORSE_LIM_PROG", "CORSE_LIM_ES"):
-        version = next(v for v in source.indicator_versions if v.symbol == symbol)
-        payload["indicator_rules"].append(
-            {
-                "indicator_version": codes[version.code],
-                "specification": specs["netex-it-lev5_002"],
-                "rule_code": supplement.rule_versions[0].code,
-                "rule_version": namespace,
-                "impact": "calculation",
-                "affected_dimensions": [],
-            }
-        )
     payload["profile_templates"] = []
     package = seal_package(payload)
     payload["analysis"] = analyze_package(package)
     return seal_package(payload)
-
-
-def object_fingerprint(obj):
-    """Opaque manifest fingerprint: no secrets or model dumps in the report."""
-    values = {}
-    for field in obj._meta.concrete_fields:
-        value = getattr(obj, field.attname)
-        if hasattr(value, "name"):
-            value = value.name
-        values[field.attname] = normalise_export(value)
-    return digest(values)
-
-
-def object_record(obj):
-    return {
-        "model": obj._meta.label_lower,
-        "pk": obj.pk,
-        "fingerprint": object_fingerprint(obj),
-    }
 
 
 def _scenario_plan(namespace, actor):
@@ -184,7 +156,7 @@ def _scenario_plan(namespace, actor):
             "description": "Riferimento dimostrativo, nessun deployment predisposto.",
             "engine": "prefect",
             "deployment_name": "demo/fid",
-            "artifact_identifier": "demo:fid-v1",
+            "artifact_identifier": "demo:fid",
             "status": "draft",
         },
     )
@@ -222,7 +194,7 @@ def _scenario_plan(namespace, actor):
                 "description": "Processo demo, non distribuito.",
                 "engine": "prefect",
                 "deployment_name": "demo/" + dataset_code,
-                "artifact_identifier": "demo:fid-v1",
+                "artifact_identifier": "demo:fid",
                 "status": "draft",
             },
         )
@@ -237,7 +209,8 @@ def _scenario_plan(namespace, actor):
                 {"input_flow_version": flow},
             )
         )
-    root = plan.versions[namespace + "-fid-tools_001"]
+    by_symbol = {v.symbol: plan.versions[v.code] for v in package.indicator_versions}
+    root = by_symbol["FID"]
     selected = stage(
         domain.ProcessingProfileIndicatorVersion,
         "demo-fid-selection",
@@ -253,7 +226,7 @@ def _scenario_plan(namespace, actor):
             "revision_number": 1,
             "processing_profile_version": profile,
             "valid_from": date.fromisoformat(spec["start_date"]),
-            "change_reason": "Fixture FID v1: dati dimostrativi espliciti",
+            "change_reason": "Fixture FID: dati dimostrativi espliciti",
             "created_by": actor,
             "status": "draft",
         },
@@ -276,7 +249,7 @@ def _scenario_plan(namespace, actor):
         "demo-CORSE-PS-values",
         {
             "revision": revision,
-            "indicator_version": plan.versions[namespace + "-corse-ps-tools_001"],
+            "indicator_version": by_symbol["CORSE_PS"],
         },
         {
             "parameters": spec["parameters_CORSE_PS"],
@@ -347,6 +320,8 @@ def seed_contract_demo(*, namespace, actor, apply=False, previous_manifest=None)
             ],
             "created_this_run": len(created),
             "fixture_digest": digest(fixture()),
+            "rule_sources": [r.model_dump() for r in plan.package.rule_sources],
+            "sources": [r.model_dump() for r in plan.package.sources],
         }
         report["manifest_digest"] = digest(report)
         return report

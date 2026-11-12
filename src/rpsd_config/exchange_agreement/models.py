@@ -1195,7 +1195,7 @@ class IndicatorVersion(TimeStampedModel):
         default="",
         verbose_name="Versione del linguaggio",
         help_text=(
-            "Usare rpsd-formula-v1 per la grammatica di rpsd-core 0.2.0; non "
+            "Usare rpsd-formula-v1 per il linguaggio delle formule; non "
             "è la versione dell'indicatore."
         ),
     )

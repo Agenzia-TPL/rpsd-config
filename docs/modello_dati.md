@@ -473,3 +473,16 @@ Il pacchetto pilot fornisce bozze e un report di requisiti esclusi; non configur
 un runtime o un contratto operativo. `canonical-json-v4` conserva metadati
 formali autocontenuti e richiede M2M v5/`validation-plan-v3`; i vecchi snapshot
 mantengono i propri contenuti e i reader precedenti rifiutano il downcast.
+
+
+## Catalogo Tools corrente — 038
+
+Il modello relazionale mantiene regole versionate, policy sui binding dataset e
+impatti sui binding indicatore. Il registro ammette anche `python`: un descrittore
+JSON della funzione registrata, con path/namespace/impronta, non codice eseguito
+da Django. La versione del linguaggio è quella di registrazione; la libreria
+Core installata in Config è un concetto separato. Non vengono aggiunte tabelle
+o colonne. Provenienza e proprietà dei seed risiedono nei pacchetti/manifest;
+seed distinti possono convivere e condividere componenti. Il ritiro speciale
+riguarda soltanto tentativi di sviluppo esplicitamente selezionati: lifecycle
+ordinario e protezione dei pubblicati rimangono invariati.

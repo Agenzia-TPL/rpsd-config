@@ -348,7 +348,7 @@ FIELDS = {
     ),
     "validation_type": guide(
         "Tipo di validazione",
-        "Interprete: xpath e xsd_bundle per xml; csv_expression per csv; "
+        "Interprete: xpath, xsd_bundle e python per xml; csv_expression per csv; "
         "spreadsheet_expression per xlsx; text_expression per txt. Sono contratti di "
         "configurazione del validator esterno; application_state non è disponibile.",
         "Definizione della regola",
@@ -358,14 +358,17 @@ FIELDS = {
         "Stringa completa per l’interprete scelto: XPath seleziona i nodi non "
         "conformi; gli altri tipi usano i descrittori JSON mostrati negli esempi. "
         "Config controlla il contratto dichiarato, senza eseguire la regola sul "
-        "dataset.",
+        "dataset. Python descrive una funzione registrata: nome, path, namespace "
+        "e impronta; non contiene codice libero.",
         "Definizione della regola",
     ),
     "language_version": guide(
         "Versione del linguaggio",
         "xpath: 1.0, 2.0 o 3.1; xsd_bundle: 1.0; CSV/XLSX/TXT: 1. Usare una "
         "combinazione supportata dal registro e dal futuro validator. dbt / 1 "
-        "identifica il formato documentale, non la versione del software dbt.",
+        "identifica il formato documentale, non la versione del software dbt. "
+        "Per python è il Core di registrazione della regola (oggi 0.3.0), "
+        "distinto dal Core corrente installato in Config.",
         "Definizione della regola",
     ),
     "options": guide(
@@ -373,7 +376,7 @@ FIELDS = {
         "Oggetto JSON con le sole chiavi supportate. XPath: namespaces e "
         "empty_context (pass/violation/not_applicable). Per CSV/XLSX/TXT tutte le "
         "opzioni mostrate negli esempi sono esplicite e obbligatorie; xsd_bundle usa "
-        "{}.",
+        '{}. Python richiede {"python_version": "3.13"}.',
         "Definizione della regola",
     ),
     "result_contract": guide(

@@ -11,6 +11,7 @@ from django.test import TransactionTestCase, override_settings
 
 from rpsd_config.exchange_agreement import models as domain
 from rpsd_config.exchange_agreement.services.configuration_exports import (
+    ConfigurationExportError,
     export_contract_configuration,
 )
 from rpsd_config.exchange_agreement.services.configuration_handoff import (
@@ -85,14 +86,15 @@ class ContractDemoTests(TransactionTestCase):
         self.assertEqual(len(cfg["effective_indicators"]), 6)
         self.assertEqual(
             {i["dataset_code"]: len(i["rule_bindings"]) for i in cfg["inputs"]},
-            {"netex": 27, "siri-et": 15},
+            {"netex": 27, "siri-et": 18},
         )
-        self.assertEqual(len(cfg["validation_rules"]), 42)
+        self.assertEqual(len(cfg["validation_rules"]), 45)
         handoff = write_configuration_handoff(
             actor=self.actor,
             **{k: scenario[k] for k in ("contract_code", "revision_code")},
             directory=self.directory / "handoff",
             include_assets=True,
+            seed_manifest=report,
         )
         self.assertTrue(handoff["complete"], handoff)
         self.assertEqual(len(handoff["files"]), 4)
@@ -102,7 +104,7 @@ class ContractDemoTests(TransactionTestCase):
             verify_definition,
         )
 
-        source = domain.IndicatorVersion.objects.get(code="trial-corse-pde-tools_001")
+        source = domain.IndicatorVersion.objects.get(code="trial-corse-pde-tools_004")
         identity = domain.Indicator.objects.create(
             code="outside",
             name="Outside",
@@ -153,7 +155,7 @@ class ContractDemoTests(TransactionTestCase):
         self,
     ):
         report = self.seed(apply=True)
-        fid = domain.IndicatorVersion.objects.get(code="trial-fid-tools_001")
+        fid = domain.IndicatorVersion.objects.get(code="trial-fid-tools_004")
         fid.description += " revised"
         fid.save()
         with self.assertRaises(ValidationError):
@@ -162,3 +164,16 @@ class ContractDemoTests(TransactionTestCase):
             cleanup_demo(report, actor=self.actor, apply=True)
         fid.refresh_from_db()
         self.assertTrue(fid.description.endswith(" revised"))
+        rule = domain.ValidationRuleVersion.objects.get(
+            rule__code="tools-netex-day-type-assigned", version="trial-1"
+        )
+        rule.description += " revised rule"
+        rule.save()
+        with self.assertRaisesMessage(ConfigurationExportError, "regole sono cambiate"):
+            write_configuration_handoff(
+                actor=self.actor,
+                contract_code=report["scenario"]["contract_code"],
+                revision_code=report["scenario"]["revision_code"],
+                directory=self.directory / "stale-provenance",
+                seed_manifest=report,
+            )

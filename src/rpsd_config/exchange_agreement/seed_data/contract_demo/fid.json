@@ -1,0 +1,25 @@
+{
+  "schema_version": "contract-demo-fixture-v1",
+  "catalog_digest": "02fb78c74d1a22fe18362e36b3c14290fa233a21006a682126df5c60f86c5844",
+  "start_date": "2027-01-01",
+  "end_date": "2027-12-31",
+  "input_datasets": [
+    "netex",
+    "siri-et"
+  ],
+  "parameters_CORSE_PS": {
+    "soglia_cadenzamento": 20,
+    "regimi_con_obbligo": [
+      "CADENZAMENTO_OLTRE_SOGLIA",
+      "ULTIMA_CORSA_GIORNO"
+    ],
+    "regimi_qualificanti": [
+      "CADENZAMENTO_OLTRE_SOGLIA",
+      "ULTIMA_CORSA_GIORNO"
+    ],
+    "soglia_sost_regime_b": 40,
+    "soglia_sost_regime_c": 40,
+    "copertura_fermate_min": 100
+  },
+  "note": "Valori esclusivamente dimostrativi espliciti; nessuna soglia o penale implicita. Le limitazioni del catalogo sorgente restano diagnosticate."
+}

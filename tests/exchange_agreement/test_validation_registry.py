@@ -3,6 +3,7 @@
 """Closed registry rejects incomplete or mismatched rule definitions."""
 
 import json
+from unittest.mock import Mock, patch
 
 from django.core.exceptions import ValidationError
 from django.test import SimpleTestCase
@@ -15,6 +16,38 @@ from rpsd_config.exchange_agreement.services.validation_registry import (
 
 
 class ValidationRegistryTests(SimpleTestCase):
+    def test_python_descriptor_is_metadata_and_never_executes_the_function(self):
+        from rpsd_core.validation_rules.functions import REGISTRY
+
+        descriptor = {
+            "function": "netex_passing_times_increasing",
+            "paths": ["//n:ServiceJourney"],
+            "namespaces": {"n": "http://www.netex.org.uk/netex"},
+            "definition_sha256": "a" * 64,
+        }
+        values = self.values(
+            validation_type="python",
+            language_version="0.3.0",
+            definition=json.dumps(descriptor),
+            options={"python_version": "3.13"},
+        )
+        forbidden = Mock(side_effect=AssertionError("Runtime executed"))
+        with patch.dict(REGISTRY, {descriptor["function"]: forbidden}):
+            validate_rule_definition(**values)
+        forbidden.assert_not_called()
+        for updates in (
+            {"function": "os.system"},
+            {"definition_sha256": "bad"},
+            {"extra": "code"},
+            {"paths": []},
+        ):
+            with self.subTest(updates=updates), self.assertRaises(ValidationError):
+                validate_rule_definition(
+                    **{**values, "definition": json.dumps({**descriptor, **updates})}
+                )
+        with self.assertRaises(ValidationError):
+            validate_rule_definition(**{**values, "options": {}})
+
     def values(self, **overrides):
         return (
             dict(
@@ -40,7 +73,7 @@ class ValidationRegistryTests(SimpleTestCase):
 
     def test_unknown_type_version_and_result_contract(self):
         for value in (
-            {"validation_type": "python"},
+            {"validation_type": "shell"},
             {"language_version": "9"},
             {"result_contract": "boolean_assertion"},
             {"definition": ""},

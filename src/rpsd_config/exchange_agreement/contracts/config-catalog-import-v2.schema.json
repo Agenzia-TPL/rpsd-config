@@ -7,9 +7,15 @@
           "title": "Code",
           "type": "string"
         },
-        "required": {
-          "title": "Required",
-          "type": "boolean"
+        "version": {
+          "exclusiveMinimum": 0,
+          "title": "Version",
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
         },
         "role": {
           "enum": [
@@ -22,15 +28,9 @@
           "title": "Role",
           "type": "string"
         },
-        "sha256": {
-          "pattern": "^[a-f0-9]{64}$",
-          "title": "Sha256",
-          "type": "string"
-        },
-        "version": {
-          "exclusiveMinimum": 0,
-          "title": "Version",
-          "type": "integer"
+        "required": {
+          "title": "Required",
+          "type": "boolean"
         }
       },
       "required": [
@@ -46,23 +46,13 @@
     "CatalogDataset": {
       "additionalProperties": false,
       "properties": {
-        "assets": {
-          "items": {
-            "$ref": "#/$defs/AssetReference"
-          },
-          "title": "Assets",
-          "type": "array"
-        },
-        "code": {
-          "maxLength": 96,
-          "minLength": 1,
-          "title": "Code",
+        "source_dataset": {
+          "title": "Source Dataset",
           "type": "string"
         },
-        "create": {
-          "default": false,
-          "title": "Create",
-          "type": "boolean"
+        "source_schema": {
+          "title": "Source Schema",
+          "type": "string"
         },
         "dataset_code": {
           "title": "Dataset Code",
@@ -72,10 +62,22 @@
           "title": "Dataset Name",
           "type": "string"
         },
-        "description": {
-          "default": "",
-          "title": "Description",
+        "code": {
+          "maxLength": 96,
+          "minLength": 1,
+          "title": "Code",
           "type": "string"
+        },
+        "version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "create": {
+          "default": false,
+          "title": "Create",
+          "type": "boolean"
         },
         "format": {
           "default": "xml",
@@ -88,24 +90,22 @@
           "title": "Format",
           "type": "string"
         },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
         "metadata": {
           "additionalProperties": true,
           "title": "Metadata",
           "type": "object"
         },
-        "source_dataset": {
-          "title": "Source Dataset",
-          "type": "string"
-        },
-        "source_schema": {
-          "title": "Source Schema",
-          "type": "string"
-        },
-        "version": {
-          "maxLength": 32,
-          "minLength": 1,
-          "title": "Version",
-          "type": "string"
+        "assets": {
+          "items": {
+            "$ref": "#/$defs/AssetReference"
+          },
+          "title": "Assets",
+          "type": "array"
         }
       },
       "required": [
@@ -126,6 +126,10 @@
           "title": "Dependent",
           "type": "string"
         },
+        "prerequisite": {
+          "title": "Prerequisite",
+          "type": "string"
+        },
         "origin": {
           "enum": [
             "formula",
@@ -135,8 +139,9 @@
           "title": "Origin",
           "type": "string"
         },
-        "prerequisite": {
-          "title": "Prerequisite",
+        "technical_reason": {
+          "default": "",
+          "title": "Technical Reason",
           "type": "string"
         },
         "required_dimensions": {
@@ -145,11 +150,6 @@
           },
           "title": "Required Dimensions",
           "type": "array"
-        },
-        "technical_reason": {
-          "default": "",
-          "title": "Technical Reason",
-          "type": "string"
         }
       },
       "required": [
@@ -163,20 +163,64 @@
     "CatalogIndicator": {
       "additionalProperties": false,
       "properties": {
-        "annual_aggregation_description": {
-          "default": "",
-          "title": "Annual Aggregation Description",
+        "symbol": {
+          "maxLength": 96,
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Symbol",
           "type": "string"
         },
-        "artifact_identifier": {
-          "default": "",
-          "title": "Artifact Identifier",
+        "indicator_code": {
+          "maxLength": 96,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Indicator Code",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Name",
           "type": "string"
         },
         "code": {
           "maxLength": 96,
           "minLength": 1,
           "title": "Code",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "formula_description": {
+          "minLength": 1,
+          "title": "Formula Description",
+          "type": "string"
+        },
+        "definition_kind": {
+          "enum": [
+            "base",
+            "projection",
+            "composite"
+          ],
+          "title": "Definition Kind",
+          "type": "string"
+        },
+        "formula_definition": {
+          "default": "",
+          "title": "Formula Definition",
+          "type": "string"
+        },
+        "formula_language_version": {
+          "const": "rpsd-formula-v1",
+          "default": "rpsd-formula-v1",
+          "title": "Formula Language Version",
           "type": "string"
         },
         "consistency_checks": {
@@ -189,26 +233,25 @@
           "title": "Consistency Notes",
           "type": "string"
         },
-        "definition_kind": {
-          "enum": [
-            "base",
-            "projection",
-            "composite"
-          ],
-          "title": "Definition Kind",
+        "annual_aggregation_description": {
+          "default": "",
+          "title": "Annual Aggregation Description",
           "type": "string"
         },
-        "description": {
-          "minLength": 1,
-          "title": "Description",
-          "type": "string"
+        "parameter_schema": {
+          "additionalProperties": true,
+          "title": "Parameter Schema",
+          "type": "object"
         },
-        "dimensions": {
-          "items": {
-            "$ref": "#/$defs/OwnDimension"
-          },
-          "title": "Dimensions",
-          "type": "array"
+        "input_schema": {
+          "additionalProperties": true,
+          "title": "Input Schema",
+          "type": "object"
+        },
+        "output_schema": {
+          "additionalProperties": true,
+          "title": "Output Schema",
+          "type": "object"
         },
         "execution_engine": {
           "default": "",
@@ -226,32 +269,17 @@
           "title": "Execution Reference",
           "type": "string"
         },
-        "formula_definition": {
+        "artifact_identifier": {
           "default": "",
-          "title": "Formula Definition",
+          "title": "Artifact Identifier",
           "type": "string"
         },
-        "formula_description": {
-          "minLength": 1,
-          "title": "Formula Description",
-          "type": "string"
-        },
-        "formula_language_version": {
-          "const": "rpsd-formula-v1",
-          "default": "rpsd-formula-v1",
-          "title": "Formula Language Version",
-          "type": "string"
-        },
-        "indicator_code": {
-          "maxLength": 96,
-          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-          "title": "Indicator Code",
-          "type": "string"
-        },
-        "input_schema": {
-          "additionalProperties": true,
-          "title": "Input Schema",
-          "type": "object"
+        "dimensions": {
+          "items": {
+            "$ref": "#/$defs/OwnDimension"
+          },
+          "title": "Dimensions",
+          "type": "array"
         },
         "inputs": {
           "items": {
@@ -267,34 +295,6 @@
           },
           "title": "Limitations",
           "type": "array"
-        },
-        "name": {
-          "maxLength": 128,
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
-        },
-        "output_schema": {
-          "additionalProperties": true,
-          "title": "Output Schema",
-          "type": "object"
-        },
-        "parameter_schema": {
-          "additionalProperties": true,
-          "title": "Parameter Schema",
-          "type": "object"
-        },
-        "symbol": {
-          "maxLength": 96,
-          "pattern": "^[A-Z][A-Z0-9_]*$",
-          "title": "Symbol",
-          "type": "string"
-        },
-        "version": {
-          "maxLength": 32,
-          "minLength": 1,
-          "title": "Version",
-          "type": "string"
         }
       },
       "required": [
@@ -313,35 +313,32 @@
     "CatalogRule": {
       "additionalProperties": false,
       "properties": {
-        "artifact_identifier": {
-          "const": "",
-          "default": "",
-          "title": "Artifact Identifier",
-          "type": "string"
-        },
         "code": {
           "title": "Code",
           "type": "string"
         },
-        "definition": {
-          "title": "Definition",
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
           "type": "string"
         },
         "description": {
           "title": "Description",
           "type": "string"
         },
-        "execution_reference": {
-          "default": "",
-          "title": "Execution Reference",
+        "validation_type": {
+          "title": "Validation Type",
           "type": "string"
         },
         "language_version": {
           "title": "Language Version",
           "type": "string"
         },
-        "name": {
-          "title": "Name",
+        "definition": {
+          "title": "Definition",
           "type": "string"
         },
         "options": {
@@ -358,12 +355,15 @@
           "title": "Result Contract",
           "type": "string"
         },
-        "validation_type": {
-          "title": "Validation Type",
+        "execution_reference": {
+          "default": "",
+          "title": "Execution Reference",
           "type": "string"
         },
-        "version": {
-          "title": "Version",
+        "artifact_identifier": {
+          "const": "",
+          "default": "",
+          "title": "Artifact Identifier",
           "type": "string"
         }
       },
@@ -382,19 +382,19 @@
     "CatalogSelection": {
       "additionalProperties": false,
       "properties": {
+        "roots": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Roots",
+          "type": "array"
+        },
         "exclusions": {
           "items": {
             "additionalProperties": true,
             "type": "object"
           },
           "title": "Exclusions",
-          "type": "array"
-        },
-        "roots": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Roots",
           "type": "array"
         }
       },
@@ -407,6 +407,10 @@
     "CatalogSource": {
       "additionalProperties": false,
       "properties": {
+        "repository": {
+          "title": "Repository",
+          "type": "string"
+        },
         "commit": {
           "pattern": "^[a-f0-9]{40}$",
           "title": "Commit",
@@ -418,10 +422,6 @@
           },
           "title": "Files",
           "type": "object"
-        },
-        "repository": {
-          "title": "Repository",
-          "type": "string"
         }
       },
       "required": [
@@ -435,12 +435,8 @@
     "DatasetRuleRecord": {
       "additionalProperties": false,
       "properties": {
-        "failure_policy": {
-          "enum": [
-            "reject_import",
-            "warn"
-          ],
-          "title": "Failure Policy",
+        "specification": {
+          "title": "Specification",
           "type": "string"
         },
         "rule_code": {
@@ -451,8 +447,12 @@
           "title": "Rule Version",
           "type": "string"
         },
-        "specification": {
-          "title": "Specification",
+        "failure_policy": {
+          "enum": [
+            "reject_import",
+            "warn"
+          ],
+          "title": "Failure Policy",
           "type": "string"
         }
       },
@@ -468,6 +468,23 @@
     "DimensionRecord": {
       "additionalProperties": false,
       "properties": {
+        "code": {
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Code",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
         "allowed_values": {
           "anyOf": [
             {
@@ -482,23 +499,6 @@
           ],
           "default": null,
           "title": "Allowed Values"
-        },
-        "code": {
-          "maxLength": 96,
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "title": "Code",
-          "type": "string"
-        },
-        "description": {
-          "default": "",
-          "title": "Description",
-          "type": "string"
-        },
-        "name": {
-          "maxLength": 128,
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
         }
       },
       "required": [
@@ -511,23 +511,12 @@
     "IndicatorRuleRecord": {
       "additionalProperties": false,
       "properties": {
-        "affected_dimensions": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Affected Dimensions",
-          "type": "array"
-        },
-        "impact": {
-          "enum": [
-            "calculation",
-            "dimension"
-          ],
-          "title": "Impact",
-          "type": "string"
-        },
         "indicator_version": {
           "title": "Indicator Version",
+          "type": "string"
+        },
+        "specification": {
+          "title": "Specification",
           "type": "string"
         },
         "rule_code": {
@@ -538,9 +527,20 @@
           "title": "Rule Version",
           "type": "string"
         },
-        "specification": {
-          "title": "Specification",
+        "impact": {
+          "enum": [
+            "calculation",
+            "dimension"
+          ],
+          "title": "Impact",
           "type": "string"
+        },
+        "affected_dimensions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected Dimensions",
+          "type": "array"
         }
       },
       "required": [
@@ -556,6 +556,10 @@
     "OwnDimension": {
       "additionalProperties": false,
       "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
         "allowed_values": {
           "anyOf": [
             {
@@ -571,23 +575,19 @@
           "default": null,
           "title": "Allowed Values"
         },
-        "code": {
-          "title": "Code",
-          "type": "string"
-        },
         "is_carried": {
           "default": false,
           "title": "Is Carried",
           "type": "boolean"
         },
-        "is_contractual": {
-          "default": false,
-          "title": "Is Contractual",
-          "type": "boolean"
-        },
         "is_monitoring": {
           "default": false,
           "title": "Is Monitoring",
+          "type": "boolean"
+        },
+        "is_contractual": {
+          "default": false,
+          "title": "Is Contractual",
           "type": "boolean"
         }
       },
@@ -600,26 +600,6 @@
     "Producer": {
       "additionalProperties": false,
       "properties": {
-        "core_commit": {
-          "default": "27f74313648dea3b58d12bca2285efa18e04ef62",
-          "title": "Core Commit",
-          "type": "string"
-        },
-        "core_version": {
-          "default": "0.3.0",
-          "enum": [
-            "0.2.0",
-            "0.3.0"
-          ],
-          "title": "Core Version",
-          "type": "string"
-        },
-        "language_version": {
-          "const": "rpsd-formula-v1",
-          "default": "rpsd-formula-v1",
-          "title": "Language Version",
-          "type": "string"
-        },
         "name": {
           "const": "rpsd-config-tools-adapter",
           "default": "rpsd-config-tools-adapter",
@@ -627,9 +607,25 @@
           "type": "string"
         },
         "version": {
-          "const": "1",
-          "default": "1",
+          "const": "2",
+          "default": "2",
           "title": "Version",
+          "type": "string"
+        },
+        "core_version": {
+          "default": "0.4.0",
+          "title": "Core Version",
+          "type": "string"
+        },
+        "core_commit": {
+          "default": "c4c268daaa6489bbda607821a1499a568fa0577e",
+          "title": "Core Commit",
+          "type": "string"
+        },
+        "language_version": {
+          "const": "rpsd-formula-v1",
+          "default": "rpsd-formula-v1",
+          "title": "Language Version",
           "type": "string"
         }
       },
@@ -641,6 +637,14 @@
       "properties": {
         "code": {
           "title": "Code",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
           "type": "string"
         },
         "description": {
@@ -661,10 +665,6 @@
           "title": "Input Flows",
           "type": "array"
         },
-        "name": {
-          "title": "Name",
-          "type": "string"
-        },
         "orchestration_flow": {
           "anyOf": [
             {
@@ -676,10 +676,6 @@
           ],
           "default": null,
           "title": "Orchestration Flow"
-        },
-        "version": {
-          "title": "Version",
-          "type": "string"
         }
       },
       "required": [
@@ -691,50 +687,86 @@
       ],
       "title": "ProfileTemplate",
       "type": "object"
+    },
+    "RuleSource": {
+      "additionalProperties": false,
+      "description": "Import provenance, independent from the persisted validation definition.",
+      "properties": {
+        "rule_code": {
+          "title": "Rule Code",
+          "type": "string"
+        },
+        "rule_version": {
+          "title": "Rule Version",
+          "type": "string"
+        },
+        "origin": {
+          "enum": [
+            "tools",
+            "config"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "source_code": {
+          "default": "",
+          "title": "Source Code",
+          "type": "string"
+        },
+        "source_version": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Version"
+        },
+        "fingerprint": {
+          "default": "",
+          "title": "Fingerprint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_code",
+        "rule_version",
+        "origin"
+      ],
+      "title": "RuleSource",
+      "type": "object"
     }
   },
-  "$id": "urn:rpsd:config-catalog-import-v1",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "analysis": {
-      "additionalProperties": true,
-      "title": "Analysis",
-      "type": "object"
+    "schema_version": {
+      "const": "config-catalog-import-v2",
+      "default": "config-catalog-import-v2",
+      "title": "Schema Version",
+      "type": "string"
     },
-    "dataset_bindings": {
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "sources": {
       "items": {
-        "$ref": "#/$defs/CatalogDataset"
+        "$ref": "#/$defs/CatalogSource"
       },
-      "title": "Dataset Bindings",
+      "title": "Sources",
       "type": "array"
     },
-    "dataset_rules": {
-      "items": {
-        "$ref": "#/$defs/DatasetRuleRecord"
-      },
-      "title": "Dataset Rules",
-      "type": "array"
-    },
-    "dependencies": {
-      "items": {
-        "$ref": "#/$defs/CatalogDependency"
-      },
-      "title": "Dependencies",
-      "type": "array"
+    "selection": {
+      "$ref": "#/$defs/CatalogSelection"
     },
     "dimensions": {
       "items": {
         "$ref": "#/$defs/DimensionRecord"
       },
       "title": "Dimensions",
-      "type": "array"
-    },
-    "indicator_rules": {
-      "items": {
-        "$ref": "#/$defs/IndicatorRuleRecord"
-      },
-      "title": "Indicator Rules",
       "type": "array"
     },
     "indicator_versions": {
@@ -744,19 +776,18 @@
       "title": "Indicator Versions",
       "type": "array"
     },
-    "package_digest": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Package Digest",
-      "type": "string"
-    },
-    "producer": {
-      "$ref": "#/$defs/Producer"
-    },
-    "profile_templates": {
+    "dependencies": {
       "items": {
-        "$ref": "#/$defs/ProfileTemplate"
+        "$ref": "#/$defs/CatalogDependency"
       },
-      "title": "Profile Templates",
+      "title": "Dependencies",
+      "type": "array"
+    },
+    "dataset_bindings": {
+      "items": {
+        "$ref": "#/$defs/CatalogDataset"
+      },
+      "title": "Dataset Bindings",
       "type": "array"
     },
     "rule_versions": {
@@ -766,21 +797,43 @@
       "title": "Rule Versions",
       "type": "array"
     },
-    "schema_version": {
-      "const": "config-catalog-import-v1",
-      "default": "config-catalog-import-v1",
-      "title": "Schema Version",
-      "type": "string"
-    },
-    "selection": {
-      "$ref": "#/$defs/CatalogSelection"
-    },
-    "sources": {
+    "rule_sources": {
       "items": {
-        "$ref": "#/$defs/CatalogSource"
+        "$ref": "#/$defs/RuleSource"
       },
-      "title": "Sources",
+      "title": "Rule Sources",
       "type": "array"
+    },
+    "dataset_rules": {
+      "items": {
+        "$ref": "#/$defs/DatasetRuleRecord"
+      },
+      "title": "Dataset Rules",
+      "type": "array"
+    },
+    "indicator_rules": {
+      "items": {
+        "$ref": "#/$defs/IndicatorRuleRecord"
+      },
+      "title": "Indicator Rules",
+      "type": "array"
+    },
+    "profile_templates": {
+      "items": {
+        "$ref": "#/$defs/ProfileTemplate"
+      },
+      "title": "Profile Templates",
+      "type": "array"
+    },
+    "analysis": {
+      "additionalProperties": true,
+      "title": "Analysis",
+      "type": "object"
+    },
+    "package_digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Package Digest",
+      "type": "string"
     }
   },
   "required": [
@@ -793,5 +846,7 @@
     "package_digest"
   ],
   "title": "CatalogPackage",
-  "type": "object"
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "config-catalog-import-v2.schema.json"
 }
